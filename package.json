@@ -6,8 +6,9 @@
   "type": "module",
   "scripts": {
     "start": "tsx src/index.ts",
-    "dev": "tsx watch src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "dev": "concurrently -k -n manager,ui -c blue,magenta \"tsx watch src/index.ts\" \"vite --config ui/vite.config.ts\"",
+    "build": "vite build --config ui/vite.config.ts",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p ui"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.318",
@@ -15,7 +16,17 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.2.1",
+    "concurrently": "^10.0.6",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-markdown": "^10.1.0",
+    "rehype-highlight": "^7.0.2",
+    "remark-gfm": "^4.0.1",
     "tsx": "^4.23.15",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vite": "^8.3.6"
   }
 }
