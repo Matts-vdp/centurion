@@ -3,3 +3,5 @@ dist/
 # Per-environment config and state (session IDs only exist on the machine that made them)
 agent-manager.config.json
 .agent-manager/
+# Handoff files orchestrators and experts write while working
+handoffs/
