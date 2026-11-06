@@ -1,6 +1,8 @@
-import type { AgentRecord, QueuedMessage } from '../../src/types';
+import type { AgentRecord, Plan, QuestionSet, QueuedMessage, Track, UserQuestion } from '../../src/types';
 
-export type { AgentRecord, QueuedMessage };
+export type { AgentRecord, Plan, QuestionSet, QueuedMessage, Track, UserQuestion };
+
+export type AnswerPayload = { questionId: string; choices: string[]; text: string };
 
 /** The token arrives once as ?token= and is kept for the browser tab. */
 function loadToken(): string {
@@ -68,5 +70,9 @@ export const commands = {
   setArchived: (id: string, archived: boolean) =>
     api<AgentRecord>(`/api/agents/${id}/archive`, { method: 'POST', body: { archived } }),
   history: (id: string) => api<HistoryMessage[]>(`/api/agents/${id}/history`),
+  startPlan: (id: string, start: string[], skip: string[]) => api<Plan>(`/api/plans/${id}/start`, { method: 'POST', body: { start, skip } }),
+  setPlanNotify: (id: string, mode: 'round' | 'each') => api<Plan>(`/api/plans/${id}/notify`, { method: 'POST', body: { mode } }),
+  answerQuestions: (id: string, answers: AnswerPayload[], corrections: { questionId: string; text: string }[]) =>
+    api<QuestionSet>(`/api/questions/${id}/answer`, { method: 'POST', body: { answers, corrections } }),
   info: () => api<{ orchestratorFolder: string; permissionMode: string; platform: string }>('/api/info'),
 };

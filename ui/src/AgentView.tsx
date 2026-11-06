@@ -68,6 +68,7 @@ export function AgentView({ agent, agents, epoch, onSelect, onOpenDrawer }: Prop
         agent={agent}
         agents={agents}
         onSelect={onSelect}
+        run={run}
       />
       <Composer agent={agent} agents={agents} run={run} onInterrupt={interrupt} />
     </div>

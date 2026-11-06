@@ -195,9 +195,9 @@ The summary is only for you to decide on. The expert's real instructions are the
 - **Enter** in the composer sends only what you typed, never the checkboxes. "Only start track 1, and tell it Safari is the priority" is a normal chat message, and the orchestrator acts on it. The composer hint says so: "Enter sends just your message, never the checkboxes."
 - There is no keyboard shortcut for Start, so a mistyped key can't fire it.
 
-Either way, the orchestrator writes the handoff prompts and calls `create_expert` / `message_expert` as today, passing the `track_id`, so the manager can tie each expert to its track. Subagent tracks it runs itself. The tracker shows the tracks that were **actually started** (from those `track_id`s), not the checkbox state, so it is right whichever way you started them.
+Either way, the orchestrator writes the handoff prompts and calls `create_expert` / `message_expert` as today, passing the `track_id`, so the manager can tie each expert to its track. Subagent tracks it runs itself. The tracker shows the tracks that were **actually started** (from those `track_id`s), not the checkbox state, so it is right whichever way you started them. A plan started from the chat (no Start) shows its other tracks as `Not started`. Once a round is started, `propose_tracks` for that round is refused; the next round gets the next number.
 
-**After Start** (canvas: *Track plan after Start*). The same object becomes the round's tracker, filling in as the orchestrator starts each track: a thin progress bar with one segment per track, and one row per track with the expert's mark, name, folder, model, live status and the first line of its reply. Skipped tracks stay as one muted line. By default the orchestrator gets **one combined notification when every track of the round has replied**, which fits "collect, then plan round 2"; a toggle switches to a notification per reply. Round 2 appears as a new plan further down.
+**After Start** (canvas: *Track plan after Start*). The same object becomes the round's tracker, filling in as the orchestrator starts each track: a thin progress bar with one segment per track, and one row per track with the expert's mark, name, folder, model, live status and the first line of its reply. Skipped tracks stay as one muted line. By default the orchestrator gets **one combined notification when every track of the round has replied**, which fits "collect, then plan round 2"; a toggle switches to a notification per reply. The manager holds the track replies back and releases them once every started track has replied and either every chosen track was started or the orchestrator is idle (so a track it decided not to start doesn't block the round). Round 2 appears as a new plan further down.
 
 **Backend needs.** The `propose_tracks` tool and a `plans` list in state (per orchestrator: rounds, versions, tracks, status), an optional `track_id` on `create_expert` and `message_expert`, `POST /api/plans/:id/start` (only the checked and skipped track ids, delivered as a normal message to the orchestrator), a `plan` SSE event, and round-level notification grouping in `manager.ts`. `prompts/orchestrator.md` describes when to propose tracks, that it must wait after proposing, and that it should propose a new version when the user asks for changes.
 
@@ -226,7 +226,7 @@ ask_user({
 })
 ```
 
-Like `propose_tracks`, it stores the set and returns at once, and the orchestrator ends its turn. The orchestrator shows **Needs you · 3 questions for you**. For `routed` questions it also calls `message_expert`; the manager matches the reply to the question.
+Like `propose_tracks`, it stores the set and returns at once, and the orchestrator ends its turn. The orchestrator shows **Needs you · 3 questions for you**. For `routed` questions it also calls `message_expert` with the `question_id`; the expert's reply to that message becomes the question's answer.
 
 **What you see** (canvas: *Questions for you*). A question set is one object on `--raised`, with every question visible in one list:
 - Header: the title, `1 of 3 answered` and a segmented progress bar, one segment per question for you.
@@ -238,7 +238,7 @@ Like `propose_tracks`, it stores the set and returns at once, and the orchestrat
 - **Answered by the orchestrator** and **Sent to another repo**: two folded groups on a `--sunken` band below, so you can see every question without them competing with yours. Each answered one shows the answer and where it came from (`from notes/releases`, `you said so at 10:29`) with **Correct**, which opens it as a question for you. A routed question shows the expert, its repo and live status, then its answer when it replies.
 - Footer: `2 of 3 ready. Unanswered questions stay open here.`, the keyboard hint (`1`–`4` picks, `Tab` next question), and **Send 2 answers**.
 
-**Sending.** The same rule as Start: **Send** delivers only the answers, as one structured message (question id, answer, and any corrections of the orchestrator's answers). Enter in the composer sends only what you typed, never the selected answers. You can send part of the answers; the rest stay open in the set, and the sidebar keeps showing the count. Once every question is answered, the set folds to one line (`Questions from round 1 · 3 by you, 2 by checkout-dropoff, 1 by api-contracts`) that opens on click. The orchestrator passes the answers on to the experts that asked.
+**Sending.** The same rule as Start: **Send** delivers only the answers, as one structured message (question id, answer, and any corrections of the orchestrator's answers). Enter in the composer sends only what you typed, never the selected answers. You can send part of the answers; the rest stay open in the set, and the sidebar keeps showing the count. Unsent picks are kept per browser tab, so switching agents doesn't lose them. **Change** reopens an answered question; sending it again marks the answer as changed for the orchestrator. Once every question is answered, the set folds to one line (`Questions from round 1 · 3 by you, 2 by checkout-dropoff, 1 by api-contracts`) that opens on click. The orchestrator passes the answers on to the experts that asked.
 
 **Backend and prompts.** The `ask_user` tool and a `questions` list in state (per orchestrator: sets, questions, answers, status), `POST /api/questions/:id/answer`, a `questions` SSE event, and matching a routed question to the expert's reply. `prompts/expert.md` asks experts to end their findings with their open questions, each marked `cross-repo` or `human`, with what they would assume. `prompts/orchestrator.md` describes the triage: answer what it can (and say where from), route cross-repo questions, ask the user the rest with options when there are clear choices, and suggest one when it has a preference.
 
@@ -253,7 +253,7 @@ Like `propose_tracks`, it stores the set and returns at once, and the orchestrat
 
 Each step is shippable on its own and gets its own commit. Check every step in the browser against a test manager, in light, dark and a narrow width, and compare it with the canvas. Mark a step done here when it lands.
 
-Status: steps 1–5 done.
+Status: steps 1–5, 7 and 8 done.
 
 1. **Foundations.** *(done)* New tokens in `styles.css` (both themes), Plex fonts, Lucide icons, button / input / menu restyle. Drop the activity bar.
 2. **Sidebar and header.** *(done)* Agent marks with status, two-line rows with the folder name, Needs you group, footer counts, search field (opens a basic switcher), the two-line header with repo chip and context ring.
@@ -261,8 +261,8 @@ Status: steps 1–5 done.
 4. **Transcript.** *(done)* Message blocks with speaker lines, prose typography, work-log grouping (`timeline.ts` groups consecutive tool items), turn footers, event lines.
 5. **Delegations.** *(done)* The delegation object, folding notifications and `get_expert_output` into it (client-side, matched by expert id and order).
 6. **Model and effort.** The header chip and popover, the endpoint, `model` / `effort` on `create_expert`.
-7. **Track plans.** `propose_tracks`, plan state and endpoints, the plan object and its tracker, round notifications, the orchestrator prompt.
-8. **Questions.** `ask_user`, question state and endpoint, the question set, routing cross-repo questions, the expert and orchestrator prompts.
+7. **Track plans.** *(done)* `propose_tracks`, plan state and endpoints, the plan object and its tracker, round notifications, the orchestrator prompt.
+8. **Questions.** *(done)* `ask_user`, question state and endpoint, the question set, routing cross-repo questions, the expert and orchestrator prompts.
 9. **Overview.** The no-selection home.
 
 Backend needs: none for steps 1–5. Turn footers need per-turn duration and cost on each reply in `replies` (the cost is already computed per turn in `AgentRuntime`; duration is `result.duration_ms`). Steps 6 to 8 need the backend work described in their sections. "Spend today" in the overview needs cost per day, which can wait.

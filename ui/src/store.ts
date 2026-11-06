@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { eventsUrl, type AgentRecord, type LiveMessage, type QueuedMessage } from './api';
+import { eventsUrl, type AgentRecord, type LiveMessage, type Plan, type QuestionSet, type QueuedMessage } from './api';
 import { toolDetail } from './tools';
 
 export type LiveEvent =
@@ -15,6 +15,9 @@ type State = {
   agents: Map<string, AgentRecord>;
   /** agentId → live activity, for status lines everywhere. */
   activity: Map<string, Activity>;
+  /** Track plans and question sets by id (sent after the snapshot, then on every change). */
+  plans: Map<string, Plan>;
+  questionSets: Map<string, QuestionSet>;
   connected: boolean;
   /** Bumped on every snapshot, i.e. on every (re)connect. The open transcript reloads its history then. */
   epoch: number;
@@ -24,7 +27,7 @@ type State = {
 
 /** The agent registry fed by the manager's SSE stream, plus a channel for transcript events. */
 class ManagerStore {
-  private state: State = { agents: new Map(), activity: new Map(), connected: false, epoch: 0, authError: false };
+  private state: State = { agents: new Map(), activity: new Map(), plans: new Map(), questionSets: new Map(), connected: false, epoch: 0, authError: false };
   private readonly listeners = new Set<() => void>();
   private readonly liveListeners = new Set<(e: LiveEvent) => void>();
   private source: EventSource | null = null;
@@ -49,6 +52,18 @@ class ManagerStore {
     this.set({ agents });
   }
 
+  upsertPlan(plan: Plan): void {
+    const plans = new Map(this.state.plans);
+    plans.set(plan.id, plan);
+    this.set({ plans });
+  }
+
+  upsertQuestions(set: QuestionSet): void {
+    const questionSets = new Map(this.state.questionSets);
+    questionSets.set(set.id, set);
+    this.set({ questionSets });
+  }
+
   connect(): void {
     if (this.source) return;
     const es = new EventSource(eventsUrl());
@@ -57,6 +72,8 @@ class ManagerStore {
       const list = JSON.parse((e as MessageEvent).data) as AgentRecord[];
       this.set({
         agents: new Map(list.map((a) => [a.id, a])),
+        plans: new Map(),
+        questionSets: new Map(),
         connected: true,
         authError: false,
         epoch: this.state.epoch + 1,
@@ -67,6 +84,8 @@ class ManagerStore {
       if (rec.status !== 'running') this.setActivity(rec.id, { tool: null });
       this.upsert(rec);
     });
+    es.addEventListener('plan', (e) => this.upsertPlan(JSON.parse((e as MessageEvent).data) as Plan));
+    es.addEventListener('questions', (e) => this.upsertQuestions(JSON.parse((e as MessageEvent).data) as QuestionSet));
     es.addEventListener('message', (e) => {
       const d = JSON.parse((e as MessageEvent).data) as { agentId: string; message: LiveMessage };
       this.track(d.agentId, d.message);
@@ -198,3 +217,11 @@ export function isUnread(a: AgentRecord, seen: Record<string, string>): boolean 
 }
 /** View preferences: `verbose` (Ctrl+O, every work log open). */
 export const viewPrefs = new PersistedMap<boolean>('agent-manager-view');
+
+/** What an orchestrator is waiting on the user for: a plan to start and open questions. */
+export function pendingFor(agentId: string, state: Pick<State, 'plans' | 'questionSets'> = store.getState()) {
+  const plan = [...state.plans.values()].filter((p) => p.orchestratorId === agentId && p.status === 'waiting').at(-1) ?? null;
+  const sets = [...state.questionSets.values()].filter((q) => q.orchestratorId === agentId && q.status === 'open');
+  const questions = sets.reduce((n, q) => n + q.questions.filter((x) => !x.answer).length, 0);
+  return { plan, questions };
+}

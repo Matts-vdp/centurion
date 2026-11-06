@@ -13,7 +13,9 @@ export type RenderBlock =
   | { kind: 'work'; key: string; steps: Step[]; live: boolean }
   | { kind: 'event'; key: string; text: string; level: 'info' | 'error'; at?: number; notification?: Notification }
   | { kind: 'footer'; key: string; reply: Reply; tools: number; durationMs?: number }
-  | Delegation;
+  | Delegation
+  | { kind: 'plan'; key: string; planId: string; version: number }
+  | { kind: 'questions'; key: string; setId: string };
 
 type Turn = { prompt?: PromptItem; items: Item[]; reply?: Reply };
 
@@ -57,6 +59,19 @@ export function toBlocks(items: Item[], replies: Reply[], running: boolean): Ren
           if (d.expertId) latest.set(d.expertId, d);
           blocks.push(d);
           continue;
+        }
+        if ((name === 'propose_tracks' || name === 'ask_user') && item.result !== undefined && !item.isError) {
+          const parsed = parseJson(item.result);
+          if (name === 'propose_tracks' && typeof parsed.planId === 'string' && typeof parsed.version === 'number') {
+            flush(false);
+            blocks.push({ kind: 'plan', key: `plan-${item.id}`, planId: parsed.planId, version: parsed.version });
+            continue;
+          }
+          if (name === 'ask_user' && typeof parsed.questionSetId === 'string') {
+            flush(false);
+            blocks.push({ kind: 'questions', key: `questions-${item.id}`, setId: parsed.questionSetId });
+            continue;
+          }
         }
         if (name === 'get_expert_output' && typeof item.input.expert_id === 'string' && !item.isError) {
           const d = latest.get(item.input.expert_id);
@@ -219,4 +234,13 @@ export function workDuration(steps: Step[]): number | null {
   const ends = steps.map((s) => (s.kind === 'tool' ? (s.endedAt ?? s.startedAt) : s.at));
   const ms = Math.max(...ends) - Math.min(...starts);
   return Number.isFinite(ms) && ms >= 0 ? ms : null;
+}
+
+function parseJson(text: string): Record<string, unknown> {
+  try {
+    const v = JSON.parse(text) as unknown;
+    return v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
 }

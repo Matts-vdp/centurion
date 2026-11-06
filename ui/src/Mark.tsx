@@ -3,6 +3,7 @@ import { monogram, type StateKey } from './status';
 
 const STATE_LABEL: Record<StateKey, string> = {
   running: 'running',
+  needs: 'needs you',
   failed: 'failed',
   interrupted: 'interrupted',
   queued: 'queued',

@@ -1,12 +1,12 @@
 import type { AgentRecord } from './api';
-import { isUnread, type Activity } from './store';
+import { isUnread, pendingFor, type Activity } from './store';
 import { displayName } from './tools';
 
 /**
  * The one state an agent shows (docs/ui-design.md, section 4). The order matters: the first that
  * applies wins.
  */
-export type StateKey = 'running' | 'failed' | 'interrupted' | 'queued' | 'waiting' | 'unread' | 'stopped' | 'idle';
+export type StateKey = 'running' | 'needs' | 'failed' | 'interrupted' | 'queued' | 'waiting' | 'unread' | 'stopped' | 'idle';
 
 export type AgentState = {
   key: StateKey;
@@ -45,6 +45,18 @@ export function agentState(
     }
     const t = started ? ` · ${duration(now - started)}` : '';
     return make('running', `Working${t}`, `Working${t}`);
+  }
+  if (a.kind === 'orchestrator') {
+    const { plan, questions } = pendingFor(a.id);
+    if (plan) {
+      const v = plan.versions.at(-1)!;
+      const n = v.tracks.length;
+      return make('needs', `Plan ready · round ${plan.round}, ${n} track${n === 1 ? '' : 's'}`, `Plan ready for you · round ${plan.round}: ${v.title}`);
+    }
+    if (questions) {
+      const line = `${questions} question${questions === 1 ? '' : 's'} for you`;
+      return make('needs', line, `${line} · answer them in the question set`);
+    }
   }
   if (a.status === 'error') {
     const err = firstLine(a.lastError ?? '');
@@ -88,7 +100,7 @@ export function rollup(children: AgentRecord[], seen: Record<string, string>): s
  */
 export function needsYou(a: AgentRecord, state: AgentState): boolean {
   if (a.archived) return false;
-  if (state.key === 'failed' || state.key === 'interrupted') return true;
+  if (state.key === 'needs' || state.key === 'failed' || state.key === 'interrupted') return true;
   return a.kind === 'orchestrator' && state.key === 'unread';
 }
 

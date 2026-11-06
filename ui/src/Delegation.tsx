@@ -15,7 +15,7 @@ type Props = {
   onSelect: (id: string) => void;
 };
 
-type Status = { state?: StateKey; tone: 'running' | 'done' | 'waiting' | 'failed' | 'muted'; icon?: ReactNode; text: string; extra: string[] };
+export type Status = { state?: StateKey; tone: 'running' | 'done' | 'waiting' | 'failed' | 'muted'; icon?: ReactNode; text: string; extra: string[] };
 
 /**
  * The orchestrator asked an expert something. One object for the whole exchange: the request, the
@@ -83,12 +83,26 @@ function delegationStatus(
   }
   if (tool.result === undefined) return { tone: 'muted', text: 'Sending…', extra: [] };
   if (!expert) return { tone: 'muted', text: 'Sent', extra: [] };
+  return expertStatus(expert, tool.startedAt, isLatest, now, sentence, block.read, block.notification?.text);
+}
 
-  // The expert's reply to this message: its first reply after the message was sent.
-  const reply = expert.replies.find((r) => Date.parse(r.at) >= tool.startedAt);
-  const read = block.read ? ['Reply read'] : [];
+/**
+ * How an expert's work on a message sent at `since` is going: its first reply after that, or (for the
+ * latest message to it) its live state. Shared by delegations and the round tracker.
+ */
+export function expertStatus(
+  expert: AgentRecord,
+  since: number,
+  isLatest: boolean,
+  now: number,
+  sentence: (a: AgentRecord) => string,
+  wasRead = false,
+  notification?: string,
+): Status {
+  const reply = expert.replies.find((r) => Date.parse(r.at) >= since);
+  const read = wasRead ? ['Reply read'] : [];
   if (reply) {
-    const after = duration(Date.parse(reply.at) - tool.startedAt);
+    const after = duration(Date.parse(reply.at) - since);
     const cost = reply.costUsd !== undefined ? [money(reply.costUsd)] : [];
     if (reply.interrupted) return { state: 'interrupted', tone: 'waiting', text: `Interrupted after ${after}`, extra: read };
     if (reply.isError) {
@@ -96,14 +110,14 @@ function delegationStatus(
     }
     return { state: 'unread', tone: 'done', icon: <CheckIcon size={13} />, text: `Replied after ${after}`, extra: [...read, ...cost] };
   }
-  if (block.notification) {
+  if (notification) {
     // The reply has scrolled out of the record's last replies; the notification still says what happened.
-    const failed = /error|stopped/.test(block.notification.text);
-    return { state: failed ? 'failed' : undefined, tone: failed ? 'failed' : 'done', text: capitalise(block.notification.text.split('.')[0]), extra: read };
+    const failed = /error|stopped/.test(notification);
+    return { state: failed ? 'failed' : undefined, tone: failed ? 'failed' : 'done', text: capitalise(notification.split('.')[0]), extra: read };
   }
   if (!isLatest) return { tone: 'muted', text: 'Sent', extra: [] };
   if (expert.status === 'running') {
-    const started = expert.turnStartedAt ? Date.parse(expert.turnStartedAt) : tool.startedAt;
+    const started = expert.turnStartedAt ? Date.parse(expert.turnStartedAt) : since;
     const doing = sentence(expert).replace(/ · [^·]+$/, '');
     return { state: 'running', tone: 'running', text: `Working · ${duration(now - started)}`, extra: doing.startsWith('Working') ? [] : [doing] };
   }

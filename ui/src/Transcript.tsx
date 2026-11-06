@@ -26,6 +26,8 @@ import {
 } from './icons';
 import { DelegationView } from './Delegation';
 import { AgentMark } from './Mark';
+import { PlanView } from './Plan';
+import { QuestionSetView } from './Questions';
 import { clock, duration, money } from './status';
 import { viewPrefs } from './store';
 import { displayName, shortPath, summarize } from './tools';
@@ -38,9 +40,10 @@ type Props = {
   agent: AgentRecord;
   agents: Map<string, AgentRecord>;
   onSelect: (id: string) => void;
+  run: (a: () => Promise<unknown>) => Promise<void>;
 };
 
-export function Transcript({ transcript, loading, loadError, agent, agents, onSelect }: Props) {
+export function Transcript({ transcript, loading, loadError, agent, agents, onSelect, run }: Props) {
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const running = agent.status === 'running';
@@ -75,7 +78,7 @@ export function Transcript({ transcript, loading, loadError, agent, agents, onSe
   const watching = [...latest.keys()].some((id) => agents.get(id)?.status === 'running');
   const now = useNow(running || watching);
 
-  const ctx: Ctx = { agent, agents, onSelect, now, verbose, latest };
+  const ctx: Ctx = { agent, agents, onSelect, now, verbose, latest, run };
 
   return (
     <div
@@ -116,6 +119,7 @@ type Ctx = {
   now: number;
   verbose: boolean;
   latest: Map<string, string>;
+  run: (a: () => Promise<unknown>) => Promise<void>;
 };
 
 function BlockView({ block, ctx }: { block: RenderBlock; ctx: Ctx }) {
@@ -134,6 +138,20 @@ function BlockView({ block, ctx }: { block: RenderBlock; ctx: Ctx }) {
       return <EventLine block={block} ctx={ctx} />;
     case 'footer':
       return <TurnFooter block={block} />;
+    case 'plan':
+      return (
+        <PlanView
+          planId={block.planId}
+          version={block.version}
+          orchestrator={ctx.agent}
+          agents={ctx.agents}
+          now={ctx.now}
+          onSelect={ctx.onSelect}
+          run={ctx.run}
+        />
+      );
+    case 'questions':
+      return <QuestionSetView setId={block.setId} orchestrator={ctx.agent} agents={ctx.agents} now={ctx.now} onSelect={ctx.onSelect} run={ctx.run} />;
     case 'delegation':
       return (
         <DelegationView

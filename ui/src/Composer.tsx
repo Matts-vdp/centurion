@@ -3,7 +3,7 @@ import { commands, type AgentRecord, type QueuedMessage } from './api';
 import { useNow } from './hooks';
 import { CloseIcon, SendIcon } from './icons';
 import { agentState } from './status';
-import { lastSeen, useManager } from './store';
+import { lastSeen, pendingFor, useManager } from './store';
 import { parsePrompt } from './timeline';
 
 type Props = {
@@ -19,6 +19,14 @@ export function Composer({ agent, agents, run, onInterrupt }: Props) {
   const [sending, setSending] = useState(false);
   const box = useRef<HTMLTextAreaElement>(null);
   const running = agent.status === 'running';
+  const { plans, questionSets } = useManager();
+  // A plan or a question set waits for the user: the composer says it never carries their state.
+  const pending = agent.kind === 'orchestrator' ? pendingFor(agent.id, { plans, questionSets }) : { plan: null, questions: 0 };
+  const decision = pending.plan
+    ? { placeholder: 'Answer, add context, or ask for a different plan', hint: 'Enter sends just your message, never the checkboxes' }
+    : pending.questions
+      ? { placeholder: `Message ${agent.name}`, hint: 'Enter sends just your message, never the selected answers' }
+      : null;
 
   useEffect(() => writeDraft(agent.id, text), [agent.id, text]);
   useEffect(() => box.current?.focus(), [agent.id]);
@@ -69,7 +77,7 @@ export function Composer({ agent, agents, run, onInterrupt }: Props) {
               rows={2}
               value={text}
               aria-label={running ? `Queue a message for ${agent.name}` : `Message ${agent.name}`}
-              placeholder={running ? `Queue a message for ${agent.name}` : `Message ${agent.name}`}
+              placeholder={running ? `Queue a message for ${agent.name}` : (decision?.placeholder ?? `Message ${agent.name}`)}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -80,7 +88,7 @@ export function Composer({ agent, agents, run, onInterrupt }: Props) {
             />
             <div className="composer-foot">
               <span className="composer-hint">
-                {running ? 'Enter queues it for after this turn' : 'Enter to send · Shift+Enter for a new line'}
+                {running ? 'Enter queues it for after this turn' : (decision?.hint ?? 'Enter to send · Shift+Enter for a new line')}
               </span>
               {running && (
                 <button className="round-button stop" aria-label="Interrupt the turn (Esc). The queue stays." title="Interrupt the turn (Esc). The queue stays." onClick={onInterrupt}>
