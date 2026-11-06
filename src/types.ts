@@ -41,7 +41,18 @@ export type QueuedMessage = {
   question?: { setId: string; questionId: string };
   /** The uuid the session stores the prompt under, set on delivery. Fork and rewind cut at it. */
   uuid?: string;
+  /** Images sent with the text: files in the uploads folder while queued, deleted on delivery. */
+  images?: QueuedImage[];
 };
+
+export const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'] as const;
+export type ImageMediaType = (typeof IMAGE_TYPES)[number];
+
+/** An image of a queued message: its file name in the uploads folder. */
+export type QueuedImage = { file: string; mediaType: ImageMediaType };
+
+/** An image as the API takes it and the `delivered` event carries it. */
+export type ImageData = { mediaType: ImageMediaType; data: string };
 
 export type Reply = {
   /** Final text of the turn. */

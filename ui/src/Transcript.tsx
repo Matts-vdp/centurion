@@ -293,13 +293,46 @@ function Message({ item, ctx, after }: { item: PromptItem; ctx: Ctx; after: numb
           </button>
         </div>
       )}
-      <div className={`message-body${open ? ' open' : ''}`} ref={body} style={{ ['--fold-lines' as string]: FOLD_LINES }}>
-        {item.text}
-      </div>
+      {item.images && <ImageStrip images={item.images} />}
+      {item.text && (
+        <div className={`message-body${open ? ' open' : ''}`} ref={body} style={{ ['--fold-lines' as string]: FOLD_LINES }}>
+          {item.text}
+        </div>
+      )}
       {(long || open) && (
         <button className="fold-toggle" onClick={() => setOpen(!open)}>
           {open ? 'Show less' : 'Show all'}
         </button>
+      )}
+    </div>
+  );
+}
+
+/** Thumbnails of the images sent with a message; a click shows one full size. */
+function ImageStrip({ images }: { images: string[] }) {
+  const [shown, setShown] = useState<string | null>(null);
+  useEffect(() => {
+    if (!shown) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopPropagation();
+      setShown(null);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [shown]);
+  return (
+    <div className="message-images">
+      {images.map((src, n) => (
+        <button key={n} className="message-image" aria-label={`Show image ${n + 1}`} onClick={() => setShown(src)}>
+          <img src={src} alt={`Image ${n + 1}`} />
+        </button>
+      ))}
+      {shown && (
+        <div className="lightbox" role="dialog" aria-label="Image" onClick={() => setShown(null)}>
+          <img src={shown} alt="" />
+        </div>
       )}
     </div>
   );

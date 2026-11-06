@@ -83,7 +83,7 @@ Use `--config <path>` or `AGENT_MANAGER_CONFIG` to point at another config file.
 | POST | `/api/agents/:id/experts` | `{ name, cwd?, message? }` starts an expert under a chat for the user; the chat isn't notified |
 | POST | `/api/agents/:id/fork` | `{ promptUuid }` copies the conversation up to the end of that turn into a new agent (same kind, folder, parent, model) |
 | POST | `/api/agents/:id/rewind` | `{ promptUuid }` drops that turn and everything after it; only when idle with nothing queued. Files are not touched |
-| POST | `/api/agents/:id/messages` | `{ text, notify? }` |
+| POST | `/api/agents/:id/messages` | `{ text, images?, notify? }`. `images`: up to 10 of `{ mediaType: 'image/png' \| 'image/jpeg' \| 'image/gif' \| 'image/webp', data }` (base64, at most 5 MB each); `text` may be empty when there are images. Images of queued messages wait in `uploads/` next to the state file and are deleted on delivery |
 | POST | `/api/agents/:id/interrupt` | Cancels the current turn; keeps the queue and the process |
 | DELETE | `/api/agents/:id/queue/:messageId` | Removes a queued message |
 | POST | `/api/agents/:id/model` | `{ model?, effort? }`; a missing field stays, `null` goes back to the default. Applies from the next turn |

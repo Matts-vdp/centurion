@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { randomBytes } from 'node:crypto';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import {
   forkSession,
@@ -14,6 +14,7 @@ import {
   type PermissionUpdate,
   type Query,
   type SDKMessage,
+  type SDKUserMessage,
   type SessionMessage,
 } from '@anthropic-ai/claude-agent-sdk';
 import { AgentRuntime, InputChannel, type RunSettings } from './agent.js';
@@ -39,22 +40,29 @@ import {
   type AgentRecord,
   type CommandOption,
   type EffortLevel,
+  type ImageData,
   type MessageSource,
   type ModelOption,
   type PermissionDecision,
   type PermissionRequest,
   type Plan,
   type QuestionSet,
+  type QueuedImage,
   type QueuedMessage,
   type Reply,
 } from './types.js';
 
 const PREVIEW_CHARS = 300;
 
+type MessageContent = SDKUserMessage['message']['content'];
+
+const IMAGE_EXT: Record<ImageData['mediaType'], string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' };
+
 export type ManagerEvents = {
   agent: [AgentRecord];
   message: [{ agentId: string; message: SDKMessage }];
-  delivered: [{ agentId: string; message: QueuedMessage }];
+  /** `images`: the images sent with the message, once, so open transcripts can show them right away. */
+  delivered: [{ agentId: string; message: QueuedMessage; images?: ImageData[] }];
   plan: [Plan];
   questions: [QuestionSet];
   permission: [PermissionRequest];
@@ -88,13 +96,18 @@ export class Manager extends EventEmitter<ManagerEvents> {
   /** Agent / Task tool call id → the subagent's id, learned while reading subagent transcripts. */
   private readonly subagentIds = new Map<string, string>();
 
+  /** Images of queued messages, one folder per agent, next to the state file. */
+  private readonly uploadsDir: string;
+
   constructor(private readonly config: Config) {
     super();
     this.store = new StateStore(config.stateFile);
+    this.uploadsDir = path.join(path.dirname(config.stateFile), 'uploads');
     const state = this.store.load();
     this.plans = state.plans;
     this.questionSets = state.questionSets;
     const interrupted = state.agents.filter((rec) => this.recover(rec));
+    this.removeStrayUploads();
     // Parents are all loaded now, so their notifications have somewhere to go.
     for (const rec of interrupted) {
       this.notifyParent(rec, 'was interrupted because the manager restarted. Send it a message to continue.');
@@ -287,9 +300,16 @@ export class Manager extends EventEmitter<ManagerEvents> {
     return this.sendMessage(expertId, input.message, 'orchestrator', input.notify, { track, question });
   }
 
-  sendMessage(id: string, text: string, source: MessageSource, notify: boolean, links: MessageLinks = {}): QueuedMessage {
+  sendMessage(
+    id: string,
+    text: string,
+    source: MessageSource,
+    notify: boolean,
+    links: MessageLinks = {},
+    images: ImageData[] = [],
+  ): QueuedMessage {
     const rt = this.runtime(id);
-    if (!text.trim()) throw new Error('Message is empty');
+    if (!text.trim() && images.length === 0) throw new Error('Message is empty');
     let body = text;
     if (source === 'orchestrator' && rt.rec.parentId) {
       body = `[Message from orchestrator "${this.get(rt.rec.parentId).name}"]\n${text}`;
@@ -303,9 +323,78 @@ export class Manager extends EventEmitter<ManagerEvents> {
       ...(links.track ? { track: links.track } : {}),
       ...(links.question ? { question: links.question } : {}),
     };
+    if (images.length) message.images = this.saveImages(rt.rec.id, message.id, images);
     this.unarchive(rt.rec);
     rt.enqueue(message);
     return message;
+  }
+
+  /** Keep a queued message's images as files until it is delivered (the state file only names them). */
+  private saveImages(agentId: string, messageId: string, images: ImageData[]): QueuedImage[] {
+    mkdirSync(path.join(this.uploadsDir, agentId), { recursive: true });
+    return images.map((image, n) => {
+      const file = `${agentId}/${messageId}-${n + 1}.${IMAGE_EXT[image.mediaType]}`;
+      writeFileSync(path.join(this.uploadsDir, file), Buffer.from(image.data, 'base64'));
+      return { file, mediaType: image.mediaType };
+    });
+  }
+
+  /** What the agent gets: the text alone, or the images followed by the text. */
+  private messageContent(message: QueuedMessage): MessageContent {
+    if (!message.images?.length) return message.text;
+    const blocks: Exclude<MessageContent, string> = message.images.map((image) => ({
+      type: 'image' as const,
+      source: {
+        type: 'base64' as const,
+        media_type: image.mediaType,
+        data: readFileSync(path.join(this.uploadsDir, image.file)).toString('base64'),
+      },
+    }));
+    if (message.text.trim()) blocks.push({ type: 'text', text: message.text });
+    return blocks;
+  }
+
+  private onDeliver(rec: AgentRecord, message: QueuedMessage, content: MessageContent): void {
+    const images: ImageData[] = [];
+    if (Array.isArray(content)) {
+      for (const b of content) {
+        if (b.type === 'image' && b.source.type === 'base64') images.push({ mediaType: b.source.media_type, data: b.source.data });
+      }
+    }
+    this.emit('delivered', { agentId: rec.id, message, ...(images.length ? { images } : {}) });
+    // Claude Code keeps the images in its session file from here on.
+    this.discardImages([message]);
+  }
+
+  private discardImages(messages: QueuedMessage[]): void {
+    const dirs = new Set<string>();
+    for (const m of messages) {
+      for (const image of m.images ?? []) {
+        const file = path.join(this.uploadsDir, image.file);
+        rmSync(file, { force: true });
+        dirs.add(path.dirname(file));
+      }
+    }
+    for (const dir of dirs) {
+      if (existsSync(dir) && readdirSync(dir).length === 0) rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  /** On startup: remove files no queued message refers to (a crash between delivery and cleanup, a lost turn). */
+  private removeStrayUploads(): void {
+    if (!existsSync(this.uploadsDir)) return;
+    const used = new Set<string>();
+    for (const rt of this.runtimes.values()) {
+      for (const m of rt.rec.queue) for (const image of m.images ?? []) used.add(path.normalize(image.file));
+    }
+    for (const agent of readdirSync(this.uploadsDir)) {
+      const dir = path.join(this.uploadsDir, agent);
+      if (!statSync(dir).isDirectory()) continue;
+      for (const file of readdirSync(dir)) {
+        if (!used.has(path.normalize(`${agent}/${file}`))) rmSync(path.join(dir, file), { force: true });
+      }
+      if (readdirSync(dir).length === 0) rmSync(dir, { recursive: true, force: true });
+    }
   }
 
   /** Cancel the running turn but keep the queue; the next queued message is delivered afterwards. */
@@ -315,7 +404,10 @@ export class Manager extends EventEmitter<ManagerEvents> {
   }
 
   removeQueued(id: string, messageId: string): void {
-    if (!this.runtime(id).removeQueued(messageId)) throw new Error('That message is no longer queued');
+    const rt = this.runtime(id);
+    const message = rt.rec.queue.find((m) => m.id === messageId);
+    if (!message || !rt.removeQueued(messageId)) throw new Error('That message is no longer queued');
+    this.discardImages([message]);
   }
 
   /** Switch an agent's model and/or effort. A running turn finishes as it is; the next turn uses the new values. */
@@ -407,7 +499,9 @@ export class Manager extends EventEmitter<ManagerEvents> {
   async stop(id: string, by: MessageSource): Promise<void> {
     const rt = this.runtime(id);
     this.cancelPermissions(id, true);
+    const dropped = [...rt.rec.queue];
     const handled = await rt.stop();
+    this.discardImages(dropped);
     if (handled?.notify && by !== 'orchestrator') {
       this.notifyParent(rt.rec, `was stopped by the ${by} before finishing its turn.`);
     }
@@ -857,7 +951,8 @@ export class Manager extends EventEmitter<ManagerEvents> {
           if (message.type === 'system' && message.subtype === 'commands_changed') this.setCommands(r.cwd, message.commands);
           this.emit('message', { agentId: r.id, message });
         },
-        onDeliver: (r, message) => this.emit('delivered', { agentId: r.id, message }),
+        content: (_r, message) => this.messageContent(message),
+        onDeliver: (r, message, content) => this.onDeliver(r, message, content),
         onTurnEnd: (r, handled, reply) => this.onTurnEnd(r, handled, reply),
         onChange: (r) => this.changed(r),
       }, this.config.idleMinutes * 60_000),
@@ -1002,7 +1097,7 @@ function isPrompt(m: SessionMessage): boolean {
   else if (Array.isArray(content)) {
     if (content.some((b: { type?: string }) => b.type === 'tool_result')) return false;
     const first = content.find((b: { type?: string }) => b.type === 'text') as { text?: string } | undefined;
-    if (!first) return false;
+    if (!first) return content.some((b: { type?: string }) => b.type === 'image');
     text = String(first.text ?? '');
   } else return false;
   return !/^\s*(\[Request interrupted|<local-command-stdout>|<local-command-caveat>)/.test(text);

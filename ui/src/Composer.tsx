@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { commands, type AgentRecord, type CommandOption, type QueuedMessage } from './api';
+import { commands, type AgentRecord, type CommandOption, type ImageData, type QueuedMessage } from './api';
 import { useNow } from './hooks';
-import { CloseIcon, SendIcon } from './icons';
+import { AttachImageIcon, CloseIcon, SendIcon } from './icons';
 import { agentState } from './status';
 import { composerFill, lastSeen, pendingFor, useManager } from './store';
 import { parsePrompt } from './timeline';
@@ -20,6 +20,7 @@ export function Composer({ agent, agents, focused, run, onInterrupt }: Props) {
   const [text, setText] = useState(() => readDraft(agent.id));
   const [sending, setSending] = useState(false);
   const box = useRef<HTMLTextAreaElement>(null);
+  const images = useAttachments(agent.id);
   const running = agent.status === 'running';
   const { plans, questionSets } = useManager();
   // A plan or a question set waits for the user: the composer says it never carries their state.
@@ -58,12 +59,23 @@ export function Composer({ agent, agents, focused, run, onInterrupt }: Props) {
     if (focused && !document.activeElement?.closest('.pane.focused')) box.current?.focus();
   }, [agent.id, focused]);
 
-  // Grow with the text; CSS caps the height.
+  // Grow with the text; CSS caps the height. Measure again when the width changes (a pane opening or resizing).
   useLayoutEffect(() => {
     const el = box.current;
     if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${el.scrollHeight}px`;
+    const fit = () => {
+      el.style.height = 'auto';
+      el.style.height = `${el.scrollHeight}px`;
+    };
+    fit();
+    let width = el.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (el.clientWidth === width) return;
+      width = el.clientWidth;
+      fit();
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
   }, [text]);
 
   // Esc interrupts the running turn (the queue stays), unless something else handles it.
@@ -81,12 +93,14 @@ export function Composer({ agent, agents, focused, run, onInterrupt }: Props) {
 
   const send = async () => {
     const value = text.trim();
-    if (!value || sending) return;
+    const attached = images.list;
+    if ((!value && attached.length === 0) || sending || images.busy) return;
     setSending(true);
     await run(async () => {
-      await commands.send(agent.id, value);
-      // Keep anything typed while the request was in flight.
+      await commands.send(agent.id, value, attached.map(({ mediaType, data }) => ({ mediaType, data })));
+      // Keep anything typed or attached while the request was in flight.
       setText((current) => (current.trim() === value ? '' : current));
+      images.remove(attached.map((a) => a.id));
     });
     setSending(false);
     box.current?.focus();
@@ -96,12 +110,30 @@ export function Composer({ agent, agents, focused, run, onInterrupt }: Props) {
     <div className="composer-dock">
       <div className="composer-column">
         {running && <LiveStatus agent={agent} agents={agents} />}
-        <div className="composer">
+        <div
+          className={`composer${images.dropping ? ' dropping' : ''}`}
+          onDragEnter={images.onDragOver}
+          onDragOver={images.onDragOver}
+          onDragLeave={images.onDragLeave}
+          onDrop={images.onDrop}
+        >
           {menuOpen && (skills.list === null || matches.length > 0) && (
             <SlashMenu matches={matches} loading={skills.list === null} error={skills.error} active={active} onHover={setMenuIndex} onPick={fillCommand} />
           )}
           {agent.queue.length > 0 && <Queue agent={agent} run={run} />}
           <div className="composer-body">
+            {images.list.length > 0 && (
+              <div className="attachments" aria-label="Images to send">
+                {images.list.map((a) => (
+                  <div key={a.id} className="attachment" title={a.name}>
+                    <img src={a.url} alt={a.name} />
+                    <button className="attachment-remove" aria-label={`Remove ${a.name}`} title="Remove" onClick={() => images.remove([a.id])}>
+                      <CloseIcon size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
             <textarea
               ref={box}
               rows={2}
@@ -109,6 +141,7 @@ export function Composer({ agent, agents, focused, run, onInterrupt }: Props) {
               aria-label={running ? `Queue a message for ${agent.name}` : `Message ${agent.name}`}
               placeholder={running ? `Queue a message for ${agent.name}` : (decision?.placeholder ?? `Message ${agent.name}`)}
               onChange={(e) => setText(e.target.value)}
+              onPaste={images.onPaste}
               aria-autocomplete="list"
               aria-expanded={matches.length > 0}
               aria-controls={matches.length > 0 ? 'slash-menu' : undefined}
@@ -139,8 +172,18 @@ export function Composer({ agent, agents, focused, run, onInterrupt }: Props) {
               }}
             />
             <div className="composer-foot">
-              <span className="composer-hint">
-                {running ? 'Enter queues it for after this turn' : decision?.hint}
+              <button
+                className="icon-button"
+                aria-label="Attach images"
+                title="Attach images (or paste or drop them here)"
+                disabled={images.list.length >= MAX_IMAGES}
+                onClick={() => images.pick()}
+              >
+                <AttachImageIcon size={16} />
+              </button>
+              {images.input}
+              <span className={`composer-hint${images.error ? ' error' : ''}`}>
+                {images.error || (running ? 'Enter queues it for after this turn' : decision?.hint)}
               </span>
               {running && (
                 <button className="round-button stop" aria-label="Interrupt the turn (Esc). The queue stays." title="Interrupt the turn (Esc). The queue stays." onClick={onInterrupt}>
@@ -151,7 +194,7 @@ export function Composer({ agent, agents, focused, run, onInterrupt }: Props) {
               )}
               <button
                 className="round-button send"
-                disabled={!text.trim() || sending}
+                disabled={(!text.trim() && images.list.length === 0) || sending || images.busy}
                 aria-label={running ? 'Queue' : 'Send'}
                 title={running ? 'Queue (Enter)' : 'Send (Enter)'}
                 onClick={() => void send()}
@@ -164,6 +207,142 @@ export function Composer({ agent, agents, focused, run, onInterrupt }: Props) {
       </div>
     </div>
   );
+}
+
+// ---------- images ----------
+
+const MAX_IMAGES = 10;
+const IMAGE_TYPES: readonly string[] = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+/** The API scales larger images down to this anyway. */
+const MAX_EDGE = 1568;
+/** Under the API's 5 MB of base64 per image, with room to spare. */
+const MAX_BYTES = 3.5 * 1024 * 1024;
+
+type Attachment = ImageData & { id: string; url: string; name: string };
+
+let attachmentSeq = 0;
+
+function readDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error ?? new Error('Could not read the image'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function canvasBlob(canvas: HTMLCanvasElement, type: string, quality: number): Promise<Blob | null> {
+  return new Promise((resolve) => canvas.toBlob(resolve, type, quality));
+}
+
+/** Keep small images as they are; scale large ones (or other formats) down and re-encode them as WebP. */
+async function prepareImage(file: File): Promise<Attachment> {
+  let blob: Blob = file;
+  const bitmap = await createImageBitmap(file);
+  try {
+    const scale = Math.min(1, MAX_EDGE / Math.max(bitmap.width, bitmap.height));
+    if (!IMAGE_TYPES.includes(file.type) || scale < 1 || file.size > MAX_BYTES) {
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+      canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      const webp = await canvasBlob(canvas, 'image/webp', 0.9);
+      blob = webp?.type === 'image/webp' ? webp : ((await canvasBlob(canvas, 'image/jpeg', 0.88)) ?? file);
+    }
+  } finally {
+    bitmap.close();
+  }
+  if (blob.size > MAX_BYTES) throw new Error('it is too large even after scaling it down');
+  const url = await readDataUrl(blob);
+  return {
+    id: `img-${++attachmentSeq}`,
+    mediaType: blob.type as ImageData['mediaType'],
+    data: url.slice(url.indexOf(',') + 1),
+    url,
+    name: file.name || 'Pasted image',
+  };
+}
+
+/** Images waiting to be sent with the next message: added by paste, drop or the picker. */
+function useAttachments(agentId: string) {
+  const [list, setList] = useState<Attachment[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [dropping, setDropping] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    setList([]);
+    setError('');
+  }, [agentId]);
+
+  const add = async (files: File[]) => {
+    const wanted = files.filter((f) => f.type.startsWith('image/'));
+    if (wanted.length === 0) return;
+    setBusy(true);
+    setError('');
+    let room = MAX_IMAGES - list.length;
+    for (const file of wanted) {
+      if (room <= 0) {
+        setError(`At most ${MAX_IMAGES} images per message`);
+        break;
+      }
+      try {
+        const image = await prepareImage(file);
+        room--;
+        setList((current) => (current.length >= MAX_IMAGES ? current : [...current, image]));
+      } catch (err) {
+        setError(`Could not add ${file.name || 'the image'}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    setBusy(false);
+  };
+
+  const hasFiles = (e: React.DragEvent) => e.dataTransfer.types.includes('Files');
+  return {
+    list,
+    busy,
+    error,
+    dropping,
+    remove: (ids: string[]) => setList((current) => current.filter((a) => !ids.includes(a.id))),
+    pick: () => fileInput.current?.click(),
+    input: (
+      <input
+        ref={fileInput}
+        type="file"
+        accept={IMAGE_TYPES.join(',')}
+        multiple
+        hidden
+        onChange={(e) => {
+          void add([...(e.target.files ?? [])]);
+          e.target.value = '';
+        }}
+      />
+    ),
+    onPaste: (e: React.ClipboardEvent) => {
+      const files = [...e.clipboardData.files].filter((f) => f.type.startsWith('image/'));
+      if (files.length === 0) return;
+      // A copied image may come with text (its name or HTML): the image is what was meant.
+      if (!e.clipboardData.getData('text/plain')) e.preventDefault();
+      void add(files);
+    },
+    onDragOver: (e: React.DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = 'copy';
+      setDropping(true);
+    },
+    onDragLeave: (e: React.DragEvent) => {
+      if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropping(false);
+    },
+    onDrop: (e: React.DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setDropping(false);
+      void add([...e.dataTransfer.files]);
+    },
+  };
 }
 
 /** Skills by agent, fetched when the menu opens and reused for a minute. */
@@ -281,7 +460,10 @@ function Queue({ agent, run }: { agent: AgentRecord; run: (a: () => Promise<unkn
         return (
           <div key={m.id} className="queue-item" title={text}>
             <span className="queue-source">{from}</span>
-            <span className="queue-text">{text}</span>
+            <span className="queue-text">
+              {text}
+              {m.images?.length ? <span className="queue-images">{text ? ' · ' : ''}{m.images.length === 1 ? '1 image' : `${m.images.length} images`}</span> : null}
+            </span>
             <button className="icon-button" aria-label="Remove from the queue" title="Remove from the queue" onClick={() => void run(() => commands.removeQueued(agent.id, m.id))}>
               <CloseIcon size={14} />
             </button>

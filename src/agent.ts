@@ -69,8 +69,10 @@ export type RuntimeHooks = {
   /** A process started (used to learn the supported models and the folder's commands). */
   onStarted(rec: AgentRecord, q: Query): void;
   onMessage(rec: AgentRecord, message: SDKMessage): void;
+  /** What to send for a queued message: its text, or content blocks when it has images. */
+  content(rec: AgentRecord, message: QueuedMessage): SDKUserMessage['message']['content'];
   /** A queued message was handed to the agent and its turn starts now. */
-  onDeliver(rec: AgentRecord, message: QueuedMessage): void;
+  onDeliver(rec: AgentRecord, message: QueuedMessage, content: SDKUserMessage['message']['content']): void;
   /** Called once per handled queue message, also when the turn failed or was stopped. */
   onTurnEnd(rec: AgentRecord, handled: QueuedMessage, reply: Reply): void;
   onChange(rec: AgentRecord): void;
@@ -141,7 +143,15 @@ export class AgentRuntime {
     this.rec.status = 'running';
     this.rec.lastError = null;
     this.changed();
-    this.hooks.onDeliver(this.rec, next);
+    let content: SDKUserMessage['message']['content'];
+    try {
+      content = this.hooks.content(this.rec, next);
+    } catch (err) {
+      this.hooks.onDeliver(this.rec, next, next.text);
+      this.failTurn(err);
+      return;
+    }
+    this.hooks.onDeliver(this.rec, next, content);
     try {
       this.ensureStarted();
     } catch (err) {
@@ -152,7 +162,7 @@ export class AgentRuntime {
     const send = () =>
       input.push({
         type: 'user',
-        message: { role: 'user', content: next.text },
+        message: { role: 'user', content },
         parent_tool_use_id: null,
         uuid: next.uuid as `${string}-${string}-${string}-${string}-${string}`,
       });

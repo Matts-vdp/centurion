@@ -1,4 +1,4 @@
-import type { HistoryMessage, LiveMessage, QueuedMessage } from './api';
+import type { HistoryMessage, ImageData, LiveMessage, QueuedMessage } from './api';
 import { modelLabel } from './models';
 
 export type Source =
@@ -40,6 +40,8 @@ export type PromptItem = {
   notifications?: Notification[];
   /** The session's uuid for this prompt, where fork and rewind cut. */
   uuid?: string;
+  /** Images sent with the prompt, as data URLs. */
+  images?: string[];
 };
 
 export type Item =
@@ -153,8 +155,23 @@ const MODEL_SET = /^Set model to (\S+)(?: \(([^)]+)\))?/;
 /** A slash command the user typed (e.g. a skill: `/orchestrate …`), as Claude Code stores it. */
 const SLASH_COMMAND = /^<command-message>[\s\S]*?<\/command-message>\s*<command-name>([^<]*)<\/command-name>(?:\s*<command-args>([\s\S]*?)<\/command-args>)?/;
 
-function pushPrompt(t: Pick<Transcript, 'items'>, raw: string, fromHistory: boolean, at: number | undefined, uuid?: string): void {
-  if (INTERRUPT_MARKER.test(raw)) return;
+const dataUrl = (mediaType: string, data: string) => `data:${mediaType};base64,${data}`;
+
+/** A base64 image block from a session message, as a data URL. */
+function imageUrl(b: Block): string | null {
+  const source = b.source as { type?: string; media_type?: string; data?: string } | undefined;
+  return b.type === 'image' && source?.type === 'base64' && source.media_type && source.data ? dataUrl(source.media_type, source.data) : null;
+}
+
+function pushPrompt(
+  t: Pick<Transcript, 'items'>,
+  raw: string,
+  fromHistory: boolean,
+  at: number | undefined,
+  uuid?: string,
+  images?: string[],
+): void {
+  if (INTERRUPT_MARKER.test(raw) && !images?.length) return;
   const slash = SLASH_COMMAND.exec(raw.trim());
   if (slash) raw = [slash[1].trim(), slash[2]?.trim()].filter(Boolean).join(' ');
   // The command itself (`<command-name>/model</command-name>…`) stays hidden; its output becomes an event line.
@@ -168,7 +185,7 @@ function pushPrompt(t: Pick<Transcript, 'items'>, raw: string, fromHistory: bool
     return;
   }
   const { source, text, notifications } = parsePrompt(raw);
-  t.items.push({ kind: 'prompt', key: nextKey('prompt'), text, source, fromHistory, at, notifications, uuid });
+  t.items.push({ kind: 'prompt', key: nextKey('prompt'), text, source, fromHistory, at, notifications, uuid, ...(images?.length ? { images } : {}) });
 }
 
 /**
@@ -183,6 +200,9 @@ function addBody(t: Pick<Transcript, 'items' | 'tools'>, type: string, message: 
       if (fromHistory) pushPrompt(t, blocks, true, at, uuid);
       return;
     }
+    // Images go on the prompt they were sent with (the text after them), or on a prompt of their own.
+    const images = fromHistory ? blocks.map(imageUrl).filter((u): u is string => u !== null) : [];
+    let attached = images.length === 0;
     for (const b of blocks) {
       if (b.type === 'tool_result') {
         const index = t.tools.get(String(b.tool_use_id));
@@ -190,9 +210,11 @@ function addBody(t: Pick<Transcript, 'items' | 'tools'>, type: string, message: 
         const tool = t.items[index] as ToolItem;
         t.items[index] = { ...tool, result: toolResultText(b.content), isError: b.is_error === true || tool.isError, endedAt: at };
       } else if (b.type === 'text' && fromHistory) {
-        pushPrompt(t, String(b.text ?? ''), true, at, uuid);
+        pushPrompt(t, String(b.text ?? ''), true, at, uuid, attached ? undefined : images);
+        attached = true;
       }
     }
+    if (!attached) pushPrompt(t, '', true, at, uuid, images);
     return;
   }
   if (type !== 'assistant' || typeof blocks === 'string') return;
@@ -244,7 +266,7 @@ export function fromHistory(messages: HistoryMessage[]): Transcript {
 /** Apply a live event; returns a new transcript when something changed, else the same one. */
 export function applyLive(
   t: Transcript,
-  e: { kind: 'message'; message: LiveMessage } | { kind: 'delivered'; message: QueuedMessage },
+  e: { kind: 'message'; message: LiveMessage } | { kind: 'delivered'; message: QueuedMessage; images?: ImageData[] },
 ): Transcript {
   const next: Transcript = { items: [...t.items], seen: t.seen, tools: t.tools, subs: t.subs };
   if (e.kind === 'delivered') {
@@ -252,7 +274,7 @@ export function applyLive(
     const last = [...next.items].reverse().find((i) => i.kind === 'prompt');
     const { text } = parsePrompt(e.message.text);
     if (last?.kind === 'prompt' && last.fromHistory && last.text === text && next.items.at(-1) === last) return t;
-    pushPrompt(next, e.message.text, false, Date.now(), e.message.uuid);
+    pushPrompt(next, e.message.text, false, Date.now(), e.message.uuid, e.images?.map((i) => dataUrl(i.mediaType, i.data)));
     return next;
   }
   const m = e.message;

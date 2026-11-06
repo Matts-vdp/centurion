@@ -2,6 +2,7 @@ import type {
   AgentRecord,
   CommandOption,
   EffortLevel,
+  ImageData,
   ModelOption,
   PermissionDecision,
   PermissionRequest,
@@ -12,7 +13,7 @@ import type {
   UserQuestion,
 } from '../../src/types';
 
-export type { AgentRecord, CommandOption, EffortLevel, ModelOption, PermissionDecision, PermissionRequest, Plan, QuestionSet, QueuedMessage, Track, UserQuestion };
+export type { AgentRecord, CommandOption, EffortLevel, ImageData, ModelOption, PermissionDecision, PermissionRequest, Plan, QuestionSet, QueuedMessage, Track, UserQuestion };
 
 export const EFFORT_LEVELS: readonly EffortLevel[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 
@@ -80,7 +81,8 @@ export const commands = {
     api<AgentRecord>(`/api/agents/${chatId}/experts`, { method: 'POST', body: input }),
   fork: (id: string, promptUuid: string) => api<AgentRecord>(`/api/agents/${id}/fork`, { method: 'POST', body: { promptUuid } }),
   rewind: (id: string, promptUuid: string) => api<AgentRecord>(`/api/agents/${id}/rewind`, { method: 'POST', body: { promptUuid } }),
-  send: (id: string, text: string) => api<QueuedMessage>(`/api/agents/${id}/messages`, { method: 'POST', body: { text } }),
+  send: (id: string, text: string, images: ImageData[] = []) =>
+    api<QueuedMessage>(`/api/agents/${id}/messages`, { method: 'POST', body: images.length ? { text, images } : { text } }),
   interrupt: (id: string) => api<AgentRecord>(`/api/agents/${id}/interrupt`, { method: 'POST' }),
   stop: (id: string) => api<AgentRecord>(`/api/agents/${id}/stop`, { method: 'POST' }),
   removeQueued: (id: string, messageId: string) =>

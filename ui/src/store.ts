@@ -1,10 +1,11 @@
 import { useSyncExternalStore } from 'react';
-import { eventsUrl, type AgentRecord, type LiveMessage, type PermissionRequest, type Plan, type QuestionSet, type QueuedMessage } from './api';
+import { eventsUrl, type AgentRecord, type ImageData, type LiveMessage, type PermissionRequest, type Plan, type QuestionSet, type QueuedMessage } from './api';
 import { toolDetail } from './tools';
 
 export type LiveEvent =
   | { kind: 'message'; agentId: string; message: LiveMessage }
-  | { kind: 'delivered'; agentId: string; message: QueuedMessage };
+  /** `images`: sent with the message, carried once by the event (history has them afterwards). */
+  | { kind: 'delivered'; agentId: string; message: QueuedMessage; images?: ImageData[] };
 
 /** What a running agent is doing right now, from the live stream (not persisted). */
 export type Activity = {
@@ -102,7 +103,7 @@ class ManagerStore {
       this.emitLive({ kind: 'message', ...d });
     });
     es.addEventListener('delivered', (e) => {
-      const d = JSON.parse((e as MessageEvent).data) as { agentId: string; message: QueuedMessage };
+      const d = JSON.parse((e as MessageEvent).data) as { agentId: string; message: QueuedMessage; images?: ImageData[] };
       this.setActivity(d.agentId, { tool: null });
       this.emitLive({ kind: 'delivered', ...d });
     });

@@ -21,6 +21,7 @@ export {
   GitBranch as ForkIcon,
   FolderSearch as GlobIcon,
   Globe as WebIcon,
+  ImagePlus as AttachImageIcon,
   ListTodo as TodoIcon,
   Menu as MenuIcon,
   Plus as PlusIcon,

@@ -5,9 +5,13 @@ import { timingSafeEqual } from 'node:crypto';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { Config } from './config.js';
 import type { Manager } from './manager.js';
-import { EFFORT_LEVELS, type EffortLevel, type PermissionDecision } from './types.js';
+import { EFFORT_LEVELS, IMAGE_TYPES, type EffortLevel, type ImageData, type PermissionDecision } from './types.js';
 
 const MAX_BODY = 1024 * 1024;
+/** Messages can carry images: up to MAX_IMAGES of at most 5 MB of base64 each (the API's limit). */
+const MAX_IMAGES = 10;
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_MESSAGE_BODY = MAX_IMAGES * MAX_IMAGE_BYTES + MAX_BODY;
 
 class HttpError extends Error {
   constructor(
@@ -154,8 +158,10 @@ async function route(manager: Manager, config: Config, req: http.IncomingMessage
   if (parts[2] === 'commands' && method === 'GET') return manager.commands(id);
   if (parts[2] === 'subagents' && parts.length === 4 && method === 'GET') return manager.subagentHistory(id, parts[3]);
   if (parts[2] === 'messages' && method === 'POST') {
-    const body = await readJson(req);
-    return manager.sendMessage(id, str(body.text, 'text'), 'user', body.notify === true);
+    const body = await readJson(req, MAX_MESSAGE_BODY);
+    const images = imagesOf(body.images);
+    const text = images.length ? (typeof body.text === 'string' ? body.text : '') : str(body.text, 'text');
+    return manager.sendMessage(id, text, 'user', body.notify === true, {}, images);
   }
   if (parts[2] === 'experts' && method === 'POST') {
     const body = await readJson(req);
@@ -261,12 +267,24 @@ function list(value: unknown, field: string): Record<string, any>[] {
   return value;
 }
 
-async function readJson(req: http.IncomingMessage): Promise<Record<string, any>> {
+function imagesOf(value: unknown): ImageData[] {
+  if (value === undefined) return [];
+  const images = list(value, 'images');
+  if (images.length > MAX_IMAGES) throw new HttpError(400, `At most ${MAX_IMAGES} images per message`);
+  return images.map((image) => {
+    if (!IMAGE_TYPES.includes(image.mediaType)) throw new HttpError(400, `Images must be one of ${IMAGE_TYPES.join(', ')}`);
+    if (typeof image.data !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(image.data)) throw new HttpError(400, 'Image data must be base64');
+    if (image.data.length > MAX_IMAGE_BYTES) throw new HttpError(400, 'An image is larger than the API allows (5 MB, base64 encoded)');
+    return { mediaType: image.mediaType, data: image.data };
+  });
+}
+
+async function readJson(req: http.IncomingMessage, max = MAX_BODY): Promise<Record<string, any>> {
   let size = 0;
   const chunks: Buffer[] = [];
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > MAX_BODY) throw new HttpError(413, 'Body too large');
+    if (size > max) throw new HttpError(413, 'Body too large');
     chunks.push(chunk);
   }
   if (chunks.length === 0) return {};
