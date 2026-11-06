@@ -1,8 +1,8 @@
 # Agent manager
 
-A local manager for Claude agents, replacing a terminal "herder". The user runs **orchestrator** agents in a central project. They start **expert** agents in other repositories to research or implement things, collect the results, and plan features that span several repos. The user wants a VS Code-like UI instead of a TUI.
+A local manager for Claude agents, replacing a terminal "herder". The user runs **orchestrator** agents in a central project. They start **expert** agents in other repositories to research or implement things, collect the results, and plan features that span several repos. The user wants a modern, visually pleasing UI instead of a TUI. The usual flow: the user explains a problem to an orchestrator, it proposes rounds of parallel **tracks** (experts in other repos, an expert in the central folder, subagents), the user approves or adjusts them in the chat, and the orchestrator collects the results.
 
-**Status:** the backend and the UI v1 (`docs/ui-v1-plan.md`, VS Code-style layout from `docs/ui-research.md`) are done and tested end to end on Windows. Next candidates are the *soon* items in `docs/ui-research.md`. Later: dev container support (`docs/add-devcontainer-support.md`), repo names instead of absolute paths, configurable notifications, file views, and a link to the user's own agentic dev system (running, blocked and queued tasks).
+**Status:** the backend and the UI v1 (`docs/ui-v1-plan.md`, layout from `docs/ui-research.md`) are done and tested end to end on Windows. The v1 look is being replaced by the design in **`docs/ui-design.md`**, which also adds model and effort switching and track plans; its section 10 lists the steps and their status. After that: the *soon* items in `docs/ui-research.md`. Later: dev container support (`docs/add-devcontainer-support.md`), repo names instead of absolute paths, configurable notifications, file views, and a link to the user's own agentic dev system (running, blocked and queued tasks).
 
 ## Layout
 
@@ -28,6 +28,7 @@ A local manager for Claude agents, replacing a terminal "herder". The user runs 
 
 ## Working here
 
+- **UI work follows `docs/ui-design.md`**: colour only for state, the transcript as a document, no coloured left borders, tinted role boxes, cards around everything, gradients, emoji or uppercase labels. Theme values live in `ui/src/styles.css`. When a change alters a rule or pattern there, update the guide in the same commit.
 - Backend: TypeScript ESM run with `tsx`, no build step. UI: `npm run build` (or `npm run dev` for the Vite dev server with `/api` proxied). Check both with `npm run typecheck`. Line endings are LF (`.gitattributes`).
 - Commit each finished part with a short message.
 - **Test with a separate config, port and state file** (e.g. in a scratch folder: `npx tsx src/index.ts --config <file>`). Real agents use the user's Claude usage, so keep test prompts tiny.
