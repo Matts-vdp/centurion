@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { commands, type AgentRecord } from './api';
 import { Composer } from './Composer';
+import { FilesPanel } from './Files';
+import { fileLinks, panels, usePanel, type OpenRequest } from './fileStore';
 import { Header } from './Header';
 import { CloseIcon } from './icons';
 import { lastSeen, store, type LiveEvent } from './store';
@@ -11,6 +13,8 @@ type Props = {
   agent: AgentRecord;
   agents: Map<string, AgentRecord>;
   epoch: number;
+  /** Which pane of the main area this is (0 = left); the Files panel's state is per pane. */
+  pane: number;
   /** The focused pane: keyboard shortcuts act here only. */
   focused: boolean;
   onSelect: (id: string) => void;
@@ -19,7 +23,7 @@ type Props = {
   onOpenDrawer?: () => void;
 };
 
-export function AgentView({ agent, agents, epoch, focused, onSelect, onClose, onOpenDrawer }: Props) {
+export function AgentView({ agent, agents, epoch, pane, focused, onSelect, onClose, onOpenDrawer }: Props) {
   // A rewind switches the agent to another session: load its history again.
   const [generation, setGeneration] = useState(0);
   const sessionRef = useRef(agent.sessionId);
@@ -46,6 +50,33 @@ export function AgentView({ agent, agents, epoch, focused, onSelect, onClose, on
     }
   }, []);
 
+  // Files: the panel's open state is per pane; transcript links open it at a file.
+  const files = usePanel(pane);
+  const [fileRequest, setFileRequest] = useState<OpenRequest | null>(null);
+  useEffect(
+    () =>
+      fileLinks.on((r) => {
+        if (r.agentId !== agent.id) return;
+        panels.set(pane, { open: true });
+        setFileRequest(r);
+      }),
+    [agent.id, pane],
+  );
+  const doneRequest = useCallback(() => setFileRequest(null), []);
+
+  // Ctrl+B opens and closes the Files panel of the focused pane.
+  useEffect(() => {
+    if (!focused) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        panels.toggle(pane);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [focused, pane]);
+
   const interrupt = useCallback(() => run(() => commands.interrupt(agent.id)), [run, agent.id]);
 
   // Alt+← goes to the parent orchestrator.
@@ -63,7 +94,17 @@ export function AgentView({ agent, agents, epoch, focused, onSelect, onClose, on
 
   return (
     <div className="agent-view">
-      <Header agent={agent} parent={parent} agents={agents} run={run} onSelect={onSelect} onClose={onClose} onOpenDrawer={onOpenDrawer} />
+      <Header
+        agent={agent}
+        parent={parent}
+        agents={agents}
+        run={run}
+        onSelect={onSelect}
+        onClose={onClose}
+        onOpenDrawer={onOpenDrawer}
+        filesOpen={files.open}
+        onToggleFiles={() => panels.toggle(pane)}
+      />
       {error && (
         <div className="banner error">
           {error}
@@ -72,6 +113,8 @@ export function AgentView({ agent, agents, epoch, focused, onSelect, onClose, on
           </button>
         </div>
       )}
+      <div className="agent-main">
+      <div className="agent-body">
       <Transcript
         transcript={transcript}
         loading={loading}
@@ -83,6 +126,9 @@ export function AgentView({ agent, agents, epoch, focused, onSelect, onClose, on
         run={run}
       />
       <Composer agent={agent} agents={agents} focused={focused} run={run} onInterrupt={interrupt} />
+      </div>
+      {files.open && <FilesPanel key={agent.id} agent={agent} pane={pane} request={fileRequest} onRequestDone={doneRequest} />}
+      </div>
     </div>
   );
 }

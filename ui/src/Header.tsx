@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { commands, type AgentRecord } from './api';
 import { useNow } from './hooks';
-import { CheckIcon, CloseIcon, FolderIcon, MenuIcon, MoreIcon } from './icons';
+import { CloseIcon, FolderIcon, MenuIcon, MoreIcon } from './icons';
 import { AgentMark, StateDot } from './Mark';
 import { ModelPicker } from './ModelPicker';
 import { agentState, archiveBlocker, folderName, money } from './status';
@@ -16,14 +16,15 @@ type Props = {
   /** Close this pane of a split. */
   onClose?: () => void;
   onOpenDrawer?: () => void;
+  filesOpen: boolean;
+  onToggleFiles: () => void;
 };
 
 /** Two lines: the breadcrumb as the title with the agent's tools, then its status as a sentence. */
-export function Header({ agent, parent, agents, run, onSelect, onClose, onOpenDrawer }: Props) {
+export function Header({ agent, parent, agents, run, onSelect, onClose, onOpenDrawer, filesOpen, onToggleFiles }: Props) {
   const { activity } = useManager();
   const seen = lastSeen.use();
   const [menu, setMenu] = useState(false);
-  const [copied, setCopied] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const blocker = archiveBlocker(agent, agents);
   const now = useNow(true, agent.status === 'running' ? 1000 : 30_000);
@@ -47,10 +48,7 @@ export function Header({ agent, parent, agents, run, onSelect, onClose, onOpenDr
   }, [menu]);
 
   const copyPath = () => {
-    void navigator.clipboard?.writeText(agent.cwd).then(() => {
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1200);
-    });
+    void navigator.clipboard?.writeText(agent.cwd);
   };
 
   return (
@@ -81,9 +79,14 @@ export function Header({ agent, parent, agents, run, onSelect, onClose, onOpenDr
         </nav>
         <div className="header-tools">
           <ModelPicker agent={agent} run={run} />
-          <button className="chip mono" title={`${agent.cwd}\nClick to copy the path`} onClick={copyPath}>
-            {copied ? <CheckIcon size={13} /> : <FolderIcon size={13} />}
-            <span className="chip-label">{copied ? 'Copied' : folderName(agent.cwd)}</span>
+          <button
+            className={`chip mono files-chip${filesOpen ? ' on' : ''}`}
+            title={`${agent.cwd}\n${filesOpen ? 'Close' : 'Show'} the files (Ctrl+B)`}
+            aria-pressed={filesOpen}
+            onClick={onToggleFiles}
+          >
+            <FolderIcon size={13} />
+            <span className="chip-label">{folderName(agent.cwd)}</span>
           </button>
           <span className="mono header-cost" title="Total cost of this agent">
             {money(agent.costUsd)}
@@ -109,6 +112,16 @@ export function Header({ agent, parent, agents, run, onSelect, onClose, onOpenDr
                     <span className="menu-hint">Starts an expert under this chat without telling it</span>
                   </button>
                 )}
+                <button
+                  role="menuitem"
+                  onClick={() => {
+                    setMenu(false);
+                    copyPath();
+                  }}
+                >
+                  Copy folder path
+                  <span className="menu-hint mono">{agent.cwd}</span>
+                </button>
                 <button
                   role="menuitem"
                   disabled={blocker !== null}

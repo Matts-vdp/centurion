@@ -3466,7 +3466,10 @@ body.resizing .pane {
   }
   .header-cost,
   button.crumb .crumb-name,
-  .header-tools > .chip.mono:not(.model-chip) {
+  .header-tools > .chip.mono:not(.model-chip):not(.files-chip) {
+    display: none;
+  }
+  .files-chip .chip-label {
     display: none;
   }
   .context-ring {
@@ -3666,4 +3669,510 @@ body.resizing .pane {
   max-height: 100%;
   border-radius: 8px;
   box-shadow: var(--shadow-float);
+}
+
+/* ---------- files panel ---------- */
+
+/* The agent view's body: the transcript with its composer, and the Files panel on the right. */
+.agent-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  position: relative;
+}
+
+.agent-body {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.chip.files-chip {
+  cursor: pointer;
+}
+
+.chip.files-chip:hover {
+  color: var(--text);
+}
+
+.chip.files-chip.on {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+/* Recedes like the sidebar: one step darker than the transcript. */
+.files-panel {
+  flex: none;
+  position: relative;
+  min-width: 220px;
+  max-width: calc(100% - 320px);
+  display: flex;
+  background: var(--sunken);
+  box-shadow: inset 1px 0 0 var(--line);
+  --ring: var(--sunken);
+}
+
+.files-panel.compact {
+  position: absolute;
+  inset: 0;
+  max-width: none;
+  min-width: 0;
+  z-index: 20;
+  box-shadow: none;
+}
+
+.files-divider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  width: 9px;
+  cursor: col-resize;
+  z-index: 5;
+  touch-action: none;
+}
+
+.files-divider::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3.5px;
+  width: 2px;
+  transition: background 120ms ease-out;
+}
+
+.files-divider:hover::after,
+.files-divider:focus-visible::after {
+  background: var(--accent-line);
+}
+
+.files-divider:focus-visible {
+  outline: none;
+}
+
+.files-side {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* With a file open, the tree narrows to a column beside it. */
+.files-panel.viewing:not(.compact) .files-side {
+  flex: 0 0 240px;
+  box-shadow: inset -1px 0 0 var(--line);
+}
+
+.files-top {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 8px 6px;
+}
+
+.files-tabs {
+  flex: 1;
+  margin: 0 4px 0 0;
+  background: var(--fill);
+}
+
+.files-tabs button {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.files-title {
+  flex: 1;
+  padding-left: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.files-filter {
+  flex: none;
+  padding: 0 8px 6px;
+}
+
+.files-filter input {
+  width: 100%;
+  height: 30px;
+  border: 0;
+  border-radius: 7px;
+  padding: 0 10px;
+  background: var(--fill);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.files-filter input::placeholder {
+  color: var(--text-3);
+}
+
+.files-note {
+  margin: 0;
+  padding: 10px 14px;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+.files-note.error {
+  color: var(--failed);
+}
+
+.file-tree {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 6px 12px;
+  display: flex;
+  flex-direction: column;
+}
+
+.file-row {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 26px;
+  padding-right: 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-2);
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.file-row.flat {
+  padding-left: 8px;
+}
+
+.file-row:hover {
+  background: color-mix(in srgb, var(--fill) 70%, transparent);
+  color: var(--text);
+}
+
+.file-row.selected {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.file-row:focus-visible {
+  outline-offset: -2px;
+}
+
+.file-row svg {
+  flex: none;
+  color: var(--text-3);
+}
+
+.file-row.root {
+  height: 28px;
+  margin-top: 4px;
+  padding-left: 8px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.chevron-space {
+  width: 14px;
+  flex: none;
+}
+
+.file-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-row.ignored .file-name {
+  color: var(--text-3);
+}
+
+.file-row.deleted .file-name {
+  text-decoration: line-through;
+  color: var(--text-3);
+}
+
+.file-dir,
+.file-hint {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.git-letter,
+.git-count {
+  margin-left: auto;
+  flex: none;
+  font-size: 11.5px;
+  color: var(--text-2);
+  padding-left: 6px;
+}
+
+.git-count {
+  color: var(--text-3);
+}
+
+.git-letter.lead {
+  margin-left: 0;
+  padding-left: 0;
+  width: 14px;
+  text-align: center;
+}
+
+/* A file the agent is editing in the running turn. */
+.git-letter.touched {
+  color: var(--running);
+  font-weight: 600;
+}
+
+.git-lines {
+  flex: none;
+  margin-left: auto;
+  padding-left: 6px;
+  font-size: 11.5px;
+}
+
+.git-lines .add {
+  color: var(--done);
+}
+
+.git-lines .del {
+  color: var(--failed);
+}
+
+.git-branch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 8px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.git-branch svg {
+  color: var(--text-3);
+}
+
+.git-ab {
+  color: var(--text-3);
+}
+
+.file-note {
+  flex: none;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-right: 8px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--text-3);
+}
+
+.file-note.error {
+  color: var(--failed);
+}
+
+/* ---------- file viewer ---------- */
+
+.files-view {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  background: var(--canvas);
+  --ring: var(--canvas);
+}
+
+.viewer {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.viewer-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 8px 0;
+}
+
+/* The crumbs are right-aligned and clipped on the left, so a long path keeps the file name. */
+.viewer-path {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  justify-content: flex-end;
+  overflow: hidden;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.viewer-crumb {
+  flex: none;
+}
+
+.viewer-crumb button {
+  border: 0;
+  background: none;
+  padding: 2px;
+  border-radius: 4px;
+  color: var(--text-3);
+  font: inherit;
+}
+
+.viewer-crumb button:hover {
+  color: var(--accent-text);
+  background: var(--fill);
+}
+
+.viewer-sep {
+  color: var(--text-3);
+  padding: 0 1px;
+}
+
+.viewer-file {
+  color: var(--text);
+  font-weight: 500;
+  padding: 2px;
+}
+
+.viewer-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 4px 12px 8px 44px;
+  box-shadow: inset 0 -1px 0 var(--line);
+}
+
+.viewer-toggle {
+  margin: 0;
+  flex: none;
+  width: 150px;
+}
+
+.viewer-toggle button {
+  height: 24px;
+}
+
+.viewer-meta {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.viewer-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.code-view {
+  display: flex;
+  min-width: max-content;
+  padding: 10px 0 24px;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.code-view pre {
+  margin: 0;
+  font: inherit;
+  font-family: var(--mono);
+  background: none;
+}
+
+.code-gutter {
+  flex: none;
+  position: sticky;
+  left: 0;
+  min-width: 48px;
+  padding: 0 12px 0 10px;
+  text-align: right;
+  color: var(--text-3);
+  background: var(--canvas);
+  user-select: none;
+}
+
+.code-text {
+  padding-right: 24px;
+  white-space: pre;
+  color: var(--text);
+}
+
+.viewer-prose {
+  max-width: 760px;
+  padding: 18px 24px 32px;
+}
+
+.viewer-image {
+  padding: 16px;
+  display: grid;
+  place-items: center;
+}
+
+.viewer-image img {
+  max-width: 100%;
+  max-height: 70vh;
+  border-radius: 6px;
+  background: var(--sunken);
+}
+
+.viewer-diff {
+  max-height: none;
+  border-radius: 0;
+  background: none;
+  padding: 8px 0 24px;
+}
+
+.viewer-diff .diff-num {
+  width: 40px;
+}
+
+.diff-line.hunk {
+  color: var(--text-3);
+  background: var(--sunken);
+  margin: 6px 0 2px;
+}
+
+.diff-line.hunk:first-child {
+  margin-top: 0;
+}
+
+/* Tool file paths in the transcript open the Files panel. */
+.file-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--text-3);
+  text-align: left;
+  cursor: pointer;
+}
+
+.file-link:hover {
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }

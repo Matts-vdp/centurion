@@ -44,12 +44,12 @@ What it deliberately avoids: coloured left borders, a tinted box per role, cards
 └──────────────────────┴───────────┴──────────────────────────────────┴────────┘
 ```
 
-- **No activity bar** until there is a second view. When Files or Tasks arrive, they become a small segmented control at the top of the sidebar.
+- **No activity bar.** Files are a panel inside each pane (section 6a), since they belong to an agent's folder and a split shows two. A Tasks view, when it comes, may still become a segmented control at the top of the sidebar.
 - **Sidebar (264 px)**, one step darker than the main area, so it recedes. From top to bottom: app name and **+**, a search field that opens the Ctrl+K switcher, a **Needs you** group (only when non-empty), then the orchestrators with their experts indented beneath on a hairline, and a footer with global counts and spend. **Needs you** holds what is waiting on you: failed or interrupted agents, orchestrators whose last reply you haven't read (it is your turn; an expert's reply goes to its orchestrator, not to you), and later plans and question sets. Rows there repeat the tree's rows with the time on the right. The search field opens a switcher (`Ctrl+K` from anywhere) that finds agents by name, folder or orchestrator.
 - **New expert.** A chat row's right-click menu and the chat header's `⋯` menu have **New expert**: a form under the chat in the sidebar with name, folder (typed, or picked from recent folders: every folder an expert has used, newest first) and an optional first message. The chat isn't told.
 - **Archiving.** Hovering a row shows an archive button next to its expander; right-clicking a row opens a small menu (Open, Open in split, Archive). Archived experts of a live chat sit in a folded `Archived · n` row under the chat. Archived chats go to one folded `Archived · n chats` group at the bottom of the tree, below a hairline, each folded with its experts; their rows are dimmed. The switcher still finds them.
 - **Main area**: a two-line header, the transcript in a centred column (max 760 px of prose), and a floating composer.
-- **Split view**: the main area holds one or two panes, each a full agent view. Drag a sidebar row onto the main area (the outer thirds split, the middle replaces; when already split, each half replaces its pane), use **Open in split** in the row menu, or Shift+Enter in the switcher. While dragging, an `--accent-soft` zone with a hairline shows where it lands. The focused pane gets the keyboard (Esc, Alt+←, Ctrl+O) and the sidebar's selected wash; the other pane's agent gets a fainter wash, and that pane's title and status step back to `--text-3`. A divider between the panes resizes them (double-click resets it), and each header gets a close button. Panes narrower than 620 px get the narrow header (no cost, folder chip or context number). The layout is per browser.
+- **Split view**: the main area holds one or two panes, each a full agent view. Drag a sidebar row onto the main area (the outer thirds split, the middle replaces; when already split, each half replaces its pane), use **Open in split** in the row menu, or Shift+Enter in the switcher. While dragging, an `--accent-soft` zone with a hairline shows where it lands. The focused pane gets the keyboard (Esc, Alt+←, Ctrl+O) and the sidebar's selected wash; the other pane's agent gets a fainter wash, and that pane's title and status step back to `--text-3`. A divider between the panes resizes them (double-click resets it), and each header gets a close button. Panes narrower than 620 px get the narrow header (no cost, context number or folder name; the folder chip keeps its icon). The layout is per browser.
 - **Narrow (< 900 px)**: the sidebar becomes a drawer opened from a menu button in the header; the composer spans the width. A split shows one pane at a time, with a switch between the two above it.
 - **No agent selected**: an **Overview** instead of the empty welcome text (section 6).
 
@@ -149,7 +149,7 @@ When auto mode can't decide on a tool call, the turn pauses and a **permission b
 
 ## 6. Header, composer and overview
 
-**Header (two lines).** Line one: the breadcrumb as the title (`[TS] test2 / [RS] restaurant-summary`; the parent part is a link and `Alt+←` goes there), then on the right the repo as a mono chip (`restaurant`, full path on hover, click copies), cost, a context ring with the percentage (amber from 70 %, coral from 85 %), and the `⋯` menu. Line two: the status as a sentence (`Running Bash · 1m 12s`, `Idle · replied 4 min ago`).
+**Header (two lines).** Line one: the breadcrumb as the title (`[TS] test2 / [RS] restaurant-summary`; the parent part is a link and `Alt+←` goes there), then on the right the repo as a mono chip (`restaurant`, full path on hover; a click toggles the Files panel and it shows the accent wash while open; **Copy folder path** is in the `⋯` menu), cost, a context ring with the percentage (amber from 70 %, coral from 85 %), and the `⋯` menu. Line two: the status as a sentence (`Running Bash · 1m 12s`, `Idle · replied 4 min ago`).
 
 **Composer.** A floating `--raised` surface with a 14 px radius and a shadow, two lines tall by default and growing to 40 % of the height.
 - Footer row inside it: a hint on the left only when it says something (`Enter queues it for after this turn`, or that Enter never sends a plan's checkboxes), buttons on the right: a round inverted send button (↑), and while running a stop button (■) next to it; the send button then reads as **Queue**.
@@ -162,6 +162,17 @@ When auto mode can't decide on a tool call, the turn pauses and a **permission b
 - A summary row of four numbers that act as filters: Running, Needs you, Queued, Spend today.
 - One section per orchestrator: its name, status and last activity, then its experts as a compact table (mark, name, repo, status sentence, last reply preview, time).
 - A "Recent replies" list across all agents on the right (on wide screens).
+
+## 6a. Files
+
+A read-only view of the agent's folder, so you can see what an expert touched without leaving the manager. Plan and API: `docs/files-plan.md`.
+
+- **Where:** a panel on the right of the pane, between the transcript and the pane's edge, opened by the folder chip or `Ctrl+B` (focused pane). It sits on `--sunken` with a hairline, like the sidebar, so it recedes. 300 px by default; its left edge resizes it (double-click resets). Open state and widths are per pane, per browser.
+- **Top:** a segmented `Files | Changes · n` on `--fill` (just `Files` outside git), refresh and close. A filter field below (`Ctrl+P` in the panel), flat results with the folder in `--text-3`.
+- **Tree:** 26 px rows, monochrome Lucide icons (folder, file, code, image); no per-language colours. Git letters on the right in mono `--text-2` (`M A D R U C`), a folder's changed-file count in `--text-3` while it is folded. Git-ignored entries come last with `--text-3` names; deleted files are struck through. A file the agent edits in the running turn gets its letter in `--running`. A second root (an expert's orchestrator folder) is a bold row with `shared folder` in `--text-3`. Arrow keys move, → opens and ← closes a folder. The selected file has the `--accent-soft` wash.
+- **Viewer:** opening a file widens the panel to 60 % of the pane (resizable on its own) with the tree as a 240 px column. On `--canvas`: a back button, the path as mono crumbs (folders are links into the tree; long paths clip on the left), copy path; a bar with `File | Changes` when git has changes, `Preview | Source` for Markdown, and the git state, lines and size on the right. Code has a sticky line-number gutter and the transcript's highlight colours; Markdown renders as prose; images fit; binary files are one line. Diffs use the transcript's diff rows with old and new numbers and a `--sunken` hunk header.
+- **Narrow panes** (< 620 px): the panel covers the transcript, and the viewer replaces the tree (back returns).
+- **Links:** file paths in Read, Edit and Write step bodies are quiet links (`--text-3`, accent and underline on hover) that open the file, or for edits its diff, in that pane's panel.
 
 ## 7. Model and effort
 

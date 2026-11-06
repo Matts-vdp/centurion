@@ -83,7 +83,7 @@ export function Composer({ agent, agents, focused, run, onInterrupt }: Props) {
     if (!running || !focused) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented) return;
-      if ((e.target as HTMLElement | null)?.closest('.sidebar, .menu, .switcher')) return;
+      if ((e.target as HTMLElement | null)?.closest('.sidebar, .menu, .switcher, .files-panel')) return;
       e.preventDefault();
       onInterrupt();
     };

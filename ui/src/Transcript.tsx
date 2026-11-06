@@ -1,5 +1,6 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { fileLinks } from './fileStore';
 import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
 import { commands, type AgentRecord, type PermissionDecision, type PermissionRequest } from './api';
@@ -340,7 +341,7 @@ function ImageStrip({ images }: { images: string[] }) {
 
 // ---------- prose ----------
 
-const Markdown = memo(function Markdown({ text }: { text: string }) {
+export const Markdown = memo(function Markdown({ text }: { text: string }) {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
@@ -600,7 +601,7 @@ function StepRow({ step, ctx, running }: { step: Step; ctx: Ctx; running: boolea
         {unfinished && <span className="step-meta">no result</span>}
         {ms !== null && ms >= 1000 && <span className="step-time mono">{duration(ms)}</span>}
       </button>
-      {isOpen && <StepBody step={step} />}
+      {isOpen && <StepBody step={step} agentId={ctx.agent.id} />}
     </li>
   );
 }
@@ -788,7 +789,7 @@ function PermissionView({ request, ctx, autoFocus }: { request: PermissionReques
   );
 }
 
-function StepBody({ step }: { step: Step }) {
+function StepBody({ step, agentId }: { step: Step; agentId?: string }) {
   if (step.kind === 'thinking') return <div className="step-body thinking">{step.text}</div>;
   const i = step.input;
   const name = displayName(step.name);
@@ -811,9 +812,7 @@ function StepBody({ step }: { step: Step }) {
       name === 'Write' ? [{ old_string: '', new_string: i.content }] : Array.isArray(i.edits) ? (i.edits as Record<string, unknown>[]) : [i];
     return (
       <div className="step-body">
-        <div className="diff-path mono" title={String(i.file_path ?? '')}>
-          {shortPath(i.file_path)}
-        </div>
+        <FilePath path={i.file_path} agentId={agentId} mode="diff" />
         {edits.map((e, n) => (
           <Diff key={n} before={String(e.old_string ?? '')} after={String(e.new_string ?? '')} />
         ))}
@@ -825,9 +824,7 @@ function StepBody({ step }: { step: Step }) {
   if (name === 'Read') {
     return (
       <div className="step-body">
-        <div className="diff-path mono" title={String(i.file_path ?? '')}>
-          {shortPath(i.file_path)}
-        </div>
+        <FilePath path={i.file_path} agentId={agentId} mode="file" />
         {denied}
         {output}
       </div>
@@ -849,6 +846,26 @@ function Output({ text: raw, error }: { text: string; error?: boolean }) {
 }
 
 const MAX_DIFF_LINES = 400;
+
+/** A tool's file path; in an agent's own transcript it opens the file (or its changes) in the Files panel. */
+function FilePath({ path, agentId, mode }: { path: unknown; agentId?: string; mode: 'file' | 'diff' }) {
+  const full = String(path ?? '');
+  if (!agentId || !full) {
+    return (
+      <div className="diff-path mono" title={full}>
+        {shortPath(path)}
+      </div>
+    );
+  }
+  return (
+    <div className="diff-path mono">
+      <button className="file-link" title={`${full}
+${mode === 'diff' ? 'Show the changes' : 'Open the file'} in the Files panel`} onClick={() => fileLinks.open({ agentId, path: full, mode })}>
+        {shortPath(path)}
+      </button>
+    </div>
+  );
+}
 
 function Diff({ before, after }: { before: string; after: string }) {
   const del = before ? before.split('\n') : [];

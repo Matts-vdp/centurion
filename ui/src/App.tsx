@@ -115,6 +115,7 @@ export function App() {
                       agent={a}
                       agents={agents}
                       epoch={epoch}
+                      pane={i}
                       focused={i === focus}
                       onSelect={select}
                       onClose={split ? () => layout.close(i) : undefined}
