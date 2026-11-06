@@ -343,11 +343,10 @@ export class Manager extends EventEmitter<ManagerEvents> {
     plan.held = [];
     const v = currentVersion(plan);
     const n = Object.keys(plan.experts).length;
-    this.enqueueNotification(
-      plan.orchestratorId,
-      `[Manager notification] Round ${plan.round} of "${v.title}": all ${n} started track${n === 1 ? '' : 's'} replied.`,
-    );
-    for (const text of held) this.enqueueNotification(plan.orchestratorId, text);
+    const header = `[Manager notification] Round ${plan.round} of "${v.title}": all ${n} started track${n === 1 ? '' : 's'} replied.`;
+    // One message: enqueueing them one by one would wake an idle orchestrator on the header alone,
+    // and the track replies would follow as a second turn.
+    this.enqueueNotification(plan.orchestratorId, [header, ...held].join('\n\n'));
     this.planChanged(plan);
   }
 
