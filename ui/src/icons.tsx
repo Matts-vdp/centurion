@@ -16,6 +16,7 @@ export {
   FilePen as EditIcon,
   FilePlus as WriteIcon,
   FileText as FileIcon,
+  Folder as FolderIcon,
   FolderSearch as GlobIcon,
   Globe as WebIcon,
   ListTodo as TodoIcon,

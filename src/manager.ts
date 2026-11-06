@@ -141,6 +141,7 @@ export class Manager extends EventEmitter<ManagerEvents> {
       queue: [],
       replies: [],
       current: null,
+      turnStartedAt: null,
       costUsd: 0,
       archived: false,
       lastActivityAt: now,
@@ -163,6 +164,7 @@ export class Manager extends EventEmitter<ManagerEvents> {
     if (wasRunning) {
       rec.status = 'interrupted';
       rec.current = null;
+      rec.turnStartedAt = null;
     }
     this.addRuntime(rec);
     return wasRunning && handled?.notify === true;

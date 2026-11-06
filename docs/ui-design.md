@@ -40,7 +40,7 @@ What it deliberately avoids: coloured left borders, a tinted box per role, cards
 ```
 
 - **No activity bar** until there is a second view. When Files or Tasks arrive, they become a small segmented control at the top of the sidebar.
-- **Sidebar (264 px)**, one step darker than the main area, so it recedes. From top to bottom: app name and **+**, a search field that opens the Ctrl+K switcher, a **Needs you** group (only when non-empty), then one group per orchestrator with its experts, and a footer with global counts and spend.
+- **Sidebar (264 px)**, one step darker than the main area, so it recedes. From top to bottom: app name and **+**, a search field that opens the Ctrl+K switcher, a **Needs you** group (only when non-empty), then the orchestrators with their experts indented beneath on a hairline, and a footer with global counts and spend. **Needs you** holds what is waiting on you: failed or interrupted agents, orchestrators whose last reply you haven't read (it is your turn; an expert's reply goes to its orchestrator, not to you), and later plans and question sets. Rows there repeat the tree's rows with the time on the right. The search field opens a switcher (`Ctrl+K` from anywhere) that finds agents by name, folder or orchestrator.
 - **Main area**: a two-line header, the transcript in a centred column (max 760 px of prose), and a floating composer.
 - **Narrow (< 900 px)**: the sidebar becomes a drawer opened from a menu button in the header; the composer spans the width.
 - **No agent selected**: an **Overview** instead of the empty welcome text (section 6).
@@ -253,10 +253,10 @@ Like `propose_tracks`, it stores the set and returns at once, and the orchestrat
 
 Each step is shippable on its own and gets its own commit. Check every step in the browser against a test manager, in light, dark and a narrow width, and compare it with the canvas. Mark a step done here when it lands.
 
-Status: step 1 done.
+Status: steps 1–2 done.
 
 1. **Foundations.** *(done)* New tokens in `styles.css` (both themes), Plex fonts, Lucide icons, button / input / menu restyle. Drop the activity bar.
-2. **Sidebar and header.** Agent marks with status, two-line rows with the folder name, Needs you group, footer counts, search field (opens a basic switcher), the two-line header with repo chip and context ring.
+2. **Sidebar and header.** *(done)* Agent marks with status, two-line rows with the folder name, Needs you group, footer counts, search field (opens a basic switcher), the two-line header with repo chip and context ring.
 3. **Composer.** Floating composer, live status line, queue list.
 4. **Transcript.** Message blocks with speaker lines, prose typography, work-log grouping (`timeline.ts` groups consecutive tool items), turn footers, event lines.
 5. **Delegations.** The delegation object, folding notifications and `get_expert_output` into it (client-side, matched by expert id and order).

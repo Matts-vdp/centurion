@@ -22,6 +22,36 @@ export function shortPath(p: unknown): string {
   return parts.length > 3 ? `…/${parts.slice(-3).join('/')}` : p;
 }
 
+const baseName = (p: unknown): string => (typeof p === 'string' ? (p.split(/[\\/]/).filter(Boolean).at(-1) ?? p) : '');
+
+/** A short human detail for a running tool: Bash's description, a file name, a pattern. */
+export function toolDetail(name: string, i: Record<string, unknown>): string {
+  switch (displayName(name)) {
+    case 'Bash':
+      return firstLine(i.description ?? i.command, 80);
+    case 'Read':
+    case 'Write':
+    case 'Edit':
+    case 'NotebookEdit':
+      return baseName(i.file_path ?? i.notebook_path);
+    case 'Grep':
+      return `"${firstLine(i.pattern, 60)}"`;
+    case 'Glob':
+      return firstLine(i.pattern, 60);
+    case 'WebFetch':
+      return firstLine(i.url, 80);
+    case 'WebSearch':
+      return firstLine(i.query, 80);
+    case 'Task':
+    case 'Agent':
+      return firstLine(i.description, 80);
+    case 'create_expert':
+      return firstLine(i.name, 60);
+    default:
+      return '';
+  }
+}
+
 /** One-line summary shown on a collapsed tool card. */
 export function summarize(tool: ToolItem, agents: Map<string, AgentRecord>): string {
   const i = tool.input;

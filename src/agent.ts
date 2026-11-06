@@ -106,6 +106,7 @@ export class AgentRuntime {
     this.interrupting = false;
     this.lastCallInput = null;
     this.rec.current = next;
+    this.rec.turnStartedAt = new Date().toISOString();
     this.rec.status = 'running';
     this.rec.lastError = null;
     this.changed();
@@ -240,11 +241,13 @@ export class AgentRuntime {
         ? result.result
         : `Turn ended with ${result.subtype}${'errors' in result && result.errors?.length ? `: ${result.errors.join('; ')}` : ''}`;
     const total = result.total_cost_usd ?? this.lastTotalCost;
-    this.rec.costUsd += Math.max(0, total - this.lastTotalCost);
+    const turnCost = Math.max(0, total - this.lastTotalCost);
+    this.rec.costUsd += turnCost;
     this.lastTotalCost = total;
     this.rec.context = this.contextUsage(result) ?? this.rec.context;
-    const reply: Reply = { text, at: new Date().toISOString(), isError };
+    const reply: Reply = { text, at: new Date().toISOString(), isError, costUsd: turnCost };
     if (interrupted) reply.interrupted = true;
+    if (typeof result.duration_ms === 'number') reply.durationMs = result.duration_ms;
     this.endTurn(reply, isError ? 'error' : 'idle');
     this.pump();
     if (!this.busy) this.scheduleIdleClose();
@@ -273,7 +276,11 @@ export class AgentRuntime {
 
   private endTurn(reply: Reply, status: 'idle' | 'error' | 'stopped'): void {
     const handled = this.rec.current;
+    if (reply.durationMs === undefined && this.rec.turnStartedAt) {
+      reply.durationMs = Date.now() - Date.parse(this.rec.turnStartedAt);
+    }
     this.rec.current = null;
+    this.rec.turnStartedAt = null;
     this.busy = false;
     this.rec.status = status;
     this.rec.lastError = reply.isError ? reply.text : null;

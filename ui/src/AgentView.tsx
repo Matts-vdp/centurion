@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { commands, type AgentRecord, type QueuedMessage } from './api';
-import { BackIcon, CloseIcon, MoreIcon, SendIcon, StopIcon } from './icons';
-import { STATUS_LABEL, StatusDot } from './StatusDot';
+import { Header } from './Header';
+import { CloseIcon, SendIcon, StopIcon } from './icons';
 import { lastSeen, store, type LiveEvent } from './store';
 import { Transcript } from './Transcript';
 import { addNote, applyLive, emptyTranscript, fromHistory, parsePrompt, type Transcript as T } from './timeline';
@@ -11,9 +11,10 @@ type Props = {
   agents: Map<string, AgentRecord>;
   epoch: number;
   onSelect: (id: string) => void;
+  onOpenDrawer?: () => void;
 };
 
-export function AgentView({ agent, agents, epoch, onSelect }: Props) {
+export function AgentView({ agent, agents, epoch, onSelect, onOpenDrawer }: Props) {
   const { transcript, loading, loadError } = useTranscript(agent, epoch);
   const [error, setError] = useState('');
   const parent = agent.parentId ? agents.get(agent.parentId) : undefined;
@@ -35,27 +36,22 @@ export function AgentView({ agent, agents, epoch, onSelect }: Props) {
 
   const interrupt = useCallback(() => run(() => commands.interrupt(agent.id)), [run, agent.id]);
 
+  // Alt+← goes to the parent orchestrator.
+  useEffect(() => {
+    if (!parent) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.altKey && e.key === 'ArrowLeft' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        onSelect(parent.id);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [parent, onSelect]);
+
   return (
     <div className="agent-view">
-      <div className="breadcrumb-bar">
-        <nav className="breadcrumb" aria-label="Breadcrumb">
-          {parent && (
-            <>
-              <button className="crumb" onClick={() => onSelect(parent.id)}>
-                {parent.name}
-              </button>
-              <span className="crumb-sep">▸</span>
-            </>
-          )}
-          <span className="crumb current">{agent.name}</span>
-        </nav>
-        {parent && (
-          <button className="button secondary small" onClick={() => onSelect(parent.id)}>
-            <BackIcon size={14} /> Back to orchestrator
-          </button>
-        )}
-      </div>
-      <Header agent={agent} run={run} />
+      <Header agent={agent} parent={parent} agents={agents} run={run} onSelect={onSelect} onOpenDrawer={onOpenDrawer} />
       {error && (
         <div className="banner error">
           {error}
@@ -74,91 +70,6 @@ export function AgentView({ agent, agents, epoch, onSelect }: Props) {
       />
       <Composer agent={agent} run={run} onInterrupt={interrupt} />
     </div>
-  );
-}
-
-// ---------- header ----------
-
-function Header({ agent, run }: { agent: AgentRecord; run: (a: () => Promise<unknown>) => Promise<void> }) {
-  const [menu, setMenu] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const busy = agent.status === 'running' || agent.queue.length > 0;
-
-  useEffect(() => {
-    if (!menu) return;
-    const close = (e: MouseEvent | KeyboardEvent) => {
-      if (e instanceof KeyboardEvent ? e.key === 'Escape' : !menuRef.current?.contains(e.target as Node)) {
-        e.stopPropagation();
-        setMenu(false);
-      }
-    };
-    window.addEventListener('mousedown', close);
-    window.addEventListener('keydown', close, true);
-    return () => {
-      window.removeEventListener('mousedown', close);
-      window.removeEventListener('keydown', close, true);
-    };
-  }, [menu]);
-
-  const ctx = agent.context;
-  const ctxPct = ctx && ctx.windowTokens ? Math.round((ctx.usedTokens / ctx.windowTokens) * 100) : null;
-
-  return (
-    <header className="agent-header">
-      <div className="agent-title">
-        <StatusDot status={agent.status} />
-        <h2>{agent.name}</h2>
-        <span className="pill">{agent.kind}</span>
-        {agent.archived && <span className="pill">archived</span>}
-      </div>
-      <div className="agent-meta">
-        <span className={`meta-status ${agent.status}`}>{STATUS_LABEL[agent.status]}</span>
-        <span className="meta-folder" title={agent.cwd}>
-          {/* rtl container + bdi keeps the path readable but puts the ellipsis at the start */}
-          <bdi>{agent.cwd}</bdi>
-        </span>
-        <span title="Total cost of this agent">${agent.costUsd.toFixed(agent.costUsd < 1 ? 3 : 2)}</span>
-        <span
-          className={`meta-context${ctxPct !== null && ctxPct >= 80 ? ' warn' : ''}`}
-          title={ctx ? `${ctx.usedTokens.toLocaleString()} of ${ctx.windowTokens.toLocaleString()} tokens after the last turn` : 'Known after the first turn'}
-        >
-          ctx {ctxPct === null ? '–' : `${ctxPct}%`}
-        </span>
-      </div>
-      <div className="agent-actions" ref={menuRef}>
-        <button className="icon-button" title="More actions" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)}>
-          <MoreIcon />
-        </button>
-        {menu && (
-          <div className="menu" role="menu">
-            {agent.kind === 'expert' && (
-              <button
-                role="menuitem"
-                disabled={!agent.archived && busy}
-                title={!agent.archived && busy ? 'Only an idle or stopped agent can be archived' : undefined}
-                onClick={() => {
-                  setMenu(false);
-                  void run(() => commands.setArchived(agent.id, !agent.archived));
-                }}
-              >
-                {agent.archived ? 'Unarchive' : 'Archive'}
-              </button>
-            )}
-            <button
-              role="menuitem"
-              className="danger"
-              onClick={() => {
-                setMenu(false);
-                void run(() => commands.stop(agent.id));
-              }}
-            >
-              Stop agent
-              <span className="menu-hint">Cancels the turn, clears the queue and closes the process</span>
-            </button>
-          </div>
-        )}
-      </div>
-    </header>
   );
 }
 

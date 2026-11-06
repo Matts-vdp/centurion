@@ -20,6 +20,7 @@ export class StateStore {
       archived: rec.archived ?? false,
       lastActivityAt: rec.lastActivityAt ?? rec.updatedAt,
       context: rec.context ?? null,
+      turnStartedAt: rec.turnStartedAt ?? null,
     }));
   }
 

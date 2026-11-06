@@ -77,4 +77,4 @@ Use `--config <path>` or `AGENT_MANAGER_CONFIG` to point at another config file.
 | POST | `/api/agents/:id/stop` | Cancels the turn, clears the queue and closes the process |
 | GET | `/api/events` | Server-sent events: `snapshot`, `agent`, `delivered`, `message` |
 
-Agent records carry `archived`, `lastActivityAt` (when a turn last ended or failed) and `context: { usedTokens, windowTokens } | null`, besides the queue, replies, status and cost.
+Agent records carry `archived`, `lastActivityAt` (when a turn last ended or failed), `turnStartedAt` (while a turn runs) and `context: { usedTokens, windowTokens } | null`, besides the queue, replies, status and cost. Each reply has `durationMs` and `costUsd` for its turn.

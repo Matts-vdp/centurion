@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AgentView } from './AgentView';
+import { useMedia } from './hooks';
 import { MenuIcon } from './icons';
 import { Sidebar } from './Sidebar';
 import { store, useManager } from './store';
+import { Switcher } from './Switcher';
 
 const NARROW = '(max-width: 899px)';
 
@@ -11,28 +13,30 @@ function readHash(): string | null {
   return m ? decodeURIComponent(m[1]) : null;
 }
 
-function useMedia(query: string): boolean {
-  const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
-  useEffect(() => {
-    const mq = window.matchMedia(query);
-    const on = () => setMatches(mq.matches);
-    mq.addEventListener('change', on);
-    return () => mq.removeEventListener('change', on);
-  }, [query]);
-  return matches;
-}
-
 export function App() {
   const { agents, connected, authError, epoch } = useManager();
   const [selected, setSelected] = useState<string | null>(readHash);
   const narrow = useMedia(NARROW);
   const [sidebarOpen, setSidebarOpen] = useState(() => !window.matchMedia(NARROW).matches || !readHash());
+  const [switcher, setSwitcher] = useState(false);
 
   useEffect(() => store.connect(), []);
   useEffect(() => {
     const on = () => setSelected(readHash());
     window.addEventListener('hashchange', on);
     return () => window.removeEventListener('hashchange', on);
+  }, []);
+
+  // Ctrl+K (or Cmd+K) opens the switcher from anywhere.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setSwitcher((open) => !open);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, []);
 
   const select = useCallback(
@@ -54,29 +58,30 @@ export function App() {
     // Only when the width class changes, not on every selection.
   }, [narrow]);
   const showSidebar = sidebarOpen || (narrow && !agent);
+  const openDrawer = narrow ? () => setSidebarOpen(true) : undefined;
 
   return (
     <div className={`app${narrow ? ' narrow' : ''}`}>
       {showSidebar && (
         <>
           {narrow && agent && <div className="scrim" onClick={() => setSidebarOpen(false)} />}
-          <aside className="sidebar">
-            <Sidebar agents={agents} selected={selected} onSelect={select} />
+          <aside className="sidebar" aria-label="Agents">
+            <Sidebar agents={agents} selected={selected} onSelect={select} onSearch={() => setSwitcher(true)} />
           </aside>
         </>
       )}
       <main className="main">
-        {narrow && !showSidebar && (
-          <button className="icon-button drawer-button" title="Agents" aria-label="Open the agent list" onClick={() => setSidebarOpen(true)}>
-            <MenuIcon size={16} />
-          </button>
-        )}
         {!connected && epoch > 0 && <div className="banner">Connection lost. Reconnecting…</div>}
         {authError && <div className="banner error">The manager refused the token. Open the URL the manager printed (it ends in ?token=…).</div>}
         {agent ? (
-          <AgentView key={agent.id} agent={agent} agents={agents} epoch={epoch} onSelect={select} />
+          <AgentView key={agent.id} agent={agent} agents={agents} epoch={epoch} onSelect={select} onOpenDrawer={showSidebar ? undefined : openDrawer} />
         ) : (
           <div className="welcome">
+            {narrow && !showSidebar && (
+              <button className="icon-button drawer-button" aria-label="Open the agent list" onClick={() => setSidebarOpen(true)}>
+                <MenuIcon size={16} />
+              </button>
+            )}
             {epoch === 0 && !authError ? (
               <p>Connecting to the agent manager…</p>
             ) : selected ? (
@@ -90,6 +95,7 @@ export function App() {
           </div>
         )}
       </main>
+      {switcher && <Switcher agents={agents} onSelect={select} onClose={() => setSwitcher(false)} />}
     </div>
   );
 }

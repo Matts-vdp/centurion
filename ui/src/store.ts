@@ -1,12 +1,20 @@
 import { useSyncExternalStore } from 'react';
 import { eventsUrl, type AgentRecord, type LiveMessage, type QueuedMessage } from './api';
+import { toolDetail } from './tools';
 
 export type LiveEvent =
   | { kind: 'message'; agentId: string; message: LiveMessage }
   | { kind: 'delivered'; agentId: string; message: QueuedMessage };
 
+/** What a running agent is doing right now, from the live stream (not persisted). */
+export type Activity = {
+  tool: { id: string; name: string; detail: string; since: number } | null;
+};
+
 type State = {
   agents: Map<string, AgentRecord>;
+  /** agentId → live activity, for status lines everywhere. */
+  activity: Map<string, Activity>;
   connected: boolean;
   /** Bumped on every snapshot, i.e. on every (re)connect. The open transcript reloads its history then. */
   epoch: number;
@@ -16,7 +24,7 @@ type State = {
 
 /** The agent registry fed by the manager's SSE stream, plus a channel for transcript events. */
 class ManagerStore {
-  private state: State = { agents: new Map(), connected: false, epoch: 0, authError: false };
+  private state: State = { agents: new Map(), activity: new Map(), connected: false, epoch: 0, authError: false };
   private readonly listeners = new Set<() => void>();
   private readonly liveListeners = new Set<(e: LiveEvent) => void>();
   private source: EventSource | null = null;
@@ -54,13 +62,19 @@ class ManagerStore {
         epoch: this.state.epoch + 1,
       });
     });
-    es.addEventListener('agent', (e) => this.upsert(JSON.parse((e as MessageEvent).data) as AgentRecord));
+    es.addEventListener('agent', (e) => {
+      const rec = JSON.parse((e as MessageEvent).data) as AgentRecord;
+      if (rec.status !== 'running') this.setActivity(rec.id, { tool: null });
+      this.upsert(rec);
+    });
     es.addEventListener('message', (e) => {
       const d = JSON.parse((e as MessageEvent).data) as { agentId: string; message: LiveMessage };
+      this.track(d.agentId, d.message);
       this.emitLive({ kind: 'message', ...d });
     });
     es.addEventListener('delivered', (e) => {
       const d = JSON.parse((e as MessageEvent).data) as { agentId: string; message: QueuedMessage };
+      this.setActivity(d.agentId, { tool: null });
       this.emitLive({ kind: 'delivered', ...d });
     });
     es.onerror = () => {
@@ -79,6 +93,35 @@ class ManagerStore {
         }
       }
     };
+  }
+
+  /** Follow the running tool of each agent: set on tool_use, cleared by its tool_result. */
+  private track(agentId: string, m: LiveMessage): void {
+    if (m.parent_tool_use_id) return;
+    const content = (m.message as { content?: unknown } | undefined)?.content;
+    if (!Array.isArray(content)) return;
+    const blocks = content as { type: string; id?: string; name?: string; input?: unknown; tool_use_id?: string }[];
+    if (m.type === 'assistant') {
+      const use = blocks.filter((b) => b.type === 'tool_use').at(-1);
+      if (use) {
+        const input = (use.input ?? {}) as Record<string, unknown>;
+        const name = String(use.name);
+        this.setActivity(agentId, { tool: { id: String(use.id), name, detail: toolDetail(name, input), since: Date.now() } });
+      }
+    } else if (m.type === 'user') {
+      const current = this.state.activity.get(agentId)?.tool;
+      if (current && blocks.some((b) => b.type === 'tool_result' && b.tool_use_id === current.id)) {
+        this.setActivity(agentId, { tool: null });
+      }
+    }
+  }
+
+  private setActivity(agentId: string, a: Activity): void {
+    const prev = this.state.activity.get(agentId);
+    if (!prev?.tool && !a.tool) return;
+    const activity = new Map(this.state.activity);
+    activity.set(agentId, a);
+    this.set({ activity });
   }
 
   private emitLive(e: LiveEvent): void {

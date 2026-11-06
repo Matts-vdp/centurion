@@ -25,6 +25,10 @@ export type Reply = {
   isError: boolean;
   /** The user interrupted the turn (Esc). Not an error. */
   interrupted?: boolean;
+  /** How long the turn took, from delivery to its result. */
+  durationMs?: number;
+  /** What this turn cost. */
+  costUsd?: number;
 };
 
 /** Context window use after the last turn. */
@@ -50,6 +54,8 @@ export type AgentRecord = {
   replies: Reply[];
   /** Message currently being handled (removed from queue when delivered). */
   current: QueuedMessage | null;
+  /** When the current turn started (the message was delivered); null between turns. */
+  turnStartedAt: string | null;
   costUsd: number;
   /** Hidden in the tree's "Archived" group. Only experts can be archived. */
   archived: boolean;
