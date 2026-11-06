@@ -196,3 +196,5 @@ export function isUnread(a: AgentRecord, seen: Record<string, string>): boolean 
   const since = seen[a.id] ?? a.createdAt;
   return a.status !== 'running' && Date.parse(a.lastActivityAt) > Date.parse(since);
 }
+/** View preferences: `verbose` (Ctrl+O, every work log open). */
+export const viewPrefs = new PersistedMap<boolean>('agent-manager-view');

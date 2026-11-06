@@ -5,7 +5,7 @@ import { Header } from './Header';
 import { CloseIcon } from './icons';
 import { lastSeen, store, type LiveEvent } from './store';
 import { Transcript } from './Transcript';
-import { addNote, applyLive, emptyTranscript, fromHistory, parsePrompt, type Transcript as T } from './timeline';
+import { applyLive, emptyTranscript, fromHistory, parsePrompt, type Transcript as T } from './timeline';
 
 type Props = {
   agent: AgentRecord;
@@ -88,13 +88,10 @@ function useTranscript(agent: AgentRecord, epoch: number) {
   const [loadError, setLoadError] = useState('');
   const agentRef = useRef(agent);
   agentRef.current = agent;
-  const lastReplyAt = useRef<string | null>(null);
-  const loaded = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
     let buffer: LiveEvent[] | null = [];
-    loaded.current = false;
     setLoading(true);
     setLoadError('');
     const off = store.onLive((e) => {
@@ -126,8 +123,6 @@ function useTranscript(agent: AgentRecord, epoch: number) {
       })
       .finally(() => {
         if (cancelled) return;
-        lastReplyAt.current = agentRef.current.replies.at(-1)?.at ?? null;
-        loaded.current = true;
         setLoading(false);
       });
     return () => {
@@ -135,15 +130,6 @@ function useTranscript(agent: AgentRecord, epoch: number) {
       off();
     };
   }, [agent.id, epoch]);
-
-  // Turn-end notes come from the record: interrupts are not errors, failures are highlighted.
-  const lastReply = agent.replies.at(-1);
-  useEffect(() => {
-    if (!loaded.current || !lastReply || lastReply.at === lastReplyAt.current) return;
-    lastReplyAt.current = lastReply.at;
-    if (lastReply.interrupted) setTranscript((t) => addNote(t, 'Interrupted', 'info'));
-    else if (lastReply.isError) setTranscript((t) => addNote(t, lastReply.text, 'error'));
-  }, [lastReply]);
 
   return { transcript, loading, loadError };
 }
