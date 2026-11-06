@@ -118,8 +118,13 @@ export function folderName(p: string): string {
 
 /** A repo's identity hue (0–5), stable per folder name, so every expert in one repo shares a colour. */
 export function repoHue(cwd: string): number {
+  return nameHue(folderName(cwd));
+}
+
+/** An identity hue (0–5) from a name. Chats all share one folder, so theirs comes from the chat's name. */
+export function nameHue(name: string): number {
   let h = 0;
-  for (const c of folderName(cwd).toLowerCase()) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  for (const c of name.toLowerCase()) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   return h % 6;
 }
 

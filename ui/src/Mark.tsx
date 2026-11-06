@@ -1,5 +1,5 @@
 import type { AgentRecord } from './api';
-import { monogram, repoHue, type StateKey } from './status';
+import { monogram, nameHue, repoHue, type StateKey } from './status';
 
 const STATE_LABEL: Record<StateKey, string> = {
   running: 'running',
@@ -14,8 +14,8 @@ const STATE_LABEL: Record<StateKey, string> = {
 };
 
 /**
- * An agent's mark: a monogram (filled for orchestrators, tinted in its repo's hue for experts) with its
- * state in the bottom-right corner. The tint says which repo; only the corner says state.
+ * An agent's mark: a monogram, filled in the chat's own hue for orchestrators and tinted in its repo's hue
+ * for experts, with its state in the bottom-right corner. The hue says who; only the corner says state.
  */
 export function AgentMark({
   agent,
@@ -26,7 +26,7 @@ export function AgentMark({
   state?: StateKey;
   size?: number;
 }) {
-  const hue = agent.kind === 'expert' && agent.cwd ? repoHue(agent.cwd) : undefined;
+  const hue = agent.kind === 'orchestrator' ? nameHue(agent.name) : agent.cwd ? repoHue(agent.cwd) : undefined;
   return (
     <span
       className={`mark ${agent.kind}`}

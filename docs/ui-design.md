@@ -16,7 +16,7 @@ Three ideas carry the design:
 1. **Colour always means something.** The chrome is warm graphite (dark) or warm paper (light). Colour comes in three kinds, and each says one thing:
    - **State**: blue, green, amber and coral, only for running, done, waiting and failed.
    - **Action**: one aqua accent for what you can act on: the selected row, focus rings, the send button, primary buttons, links and checkboxes. Never for state, never as decoration.
-   - **Identity**: soft repo hues on expert marks (and the repo name on delegations), so experts in one repo share a colour and you recognise them without reading. Always a tint with coloured letters, never a dot, since dots are state.
+   - **Identity**: the same six hues tell agents apart. An expert's mark is tinted in its repo's hue (and so is the repo name on delegations), so experts in one repo share a colour; a chat's mark is filled in a hue from its name. You recognise agents without reading. Never a dot, since dots are state.
 
    The first version had state colour only, and with nothing running the whole app read as gray. Purple may appear among the identity hues, but it is not the app's theme colour.
 2. **The transcript is a document, not a chat log.** Agent prose sits in a centred reading column with no container. Tool calls collapse into one "worked for 18s" line per run of steps. Only messages *into* the agent and links to other agents get a surface.
@@ -71,7 +71,7 @@ Warm neutrals; avoid blue-grey. The values below are the starting point for step
 | `--waiting` | `#E8B04A` | `#9A6200` | Queued, interrupted, a plan waiting for you |
 | `--failed` | `#FF7A6B` | `#C2392A` | Failed, denied, errors |
 | `--accent` (+ `-text`, `-soft`, `-line`, `--on-accent`) | aqua | deep teal | What you can act on: selection, focus, send, primary buttons, links |
-| `--id-0` … `--id-5` (`-bg` / `-fg`) | rose, plum, clay, steel, lavender, sand | same, light tints | Expert marks by repo (`repoHue()` in `status.ts`) |
+| `--id-0` … `--id-5` (`-bg` / `-fg`) | rose, plum, clay, steel, lavender, sand | same, light tints | Expert marks by repo (`repoHue()`), chat marks by name (`nameHue()`), both in `status.ts`; `--id-on` is the text on a filled chat mark |
 
 The dark surfaces step further apart than the first values above (see `styles.css`), so the sidebar, your messages and raised objects separate by tone alone. Keep identity hues away from the state hues (no green, blue, amber or coral, and no teal next to the accent).
 
@@ -98,7 +98,7 @@ Primary buttons and the send button are the accent with `--on-accent` text. An e
 
 ## 4. Agents and status
 
-**Agent mark.** Every agent has a 22 px mark with a two-letter monogram from its name. Orchestrators (chats) are filled (inverted). Experts are tinted in their repo's identity hue with letters in the same hue, so every expert in `restaurant` looks alike; an expert without a known folder is sunken with a hairline. The selected sidebar row is an `--accent-soft` wash.
+**Agent mark.** Every agent has a 22 px mark with a two-letter monogram from its name. Orchestrators (chats) are filled in their own hue (from the chat's name, since they all share one folder) with `--id-on` letters. Experts are tinted in their repo's identity hue with letters in the same hue, so every expert in `restaurant` looks alike; an expert without a known folder is sunken with a hairline. The selected sidebar row is an `--accent-soft` wash.
 
 **Status on the mark.** A 8 px dot on the mark's bottom-right corner, with a ring in the background colour so it reads on any surface. Status never relies on colour alone: each one also has a shape or a word.
 

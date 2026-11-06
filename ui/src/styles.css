@@ -37,6 +37,7 @@
   --id-3-bg: #e1e9f2; --id-3-fg: #33597e;
   --id-4-bg: #ebe7fa; --id-4-fg: #5b47a8;
   --id-5-bg: #f2ebd9; --id-5-fg: #7a6020;
+  --id-on: #ffffff;
   --diff-add: rgb(30 138 76 / 0.12);
   --diff-del: rgb(194 57 42 / 0.1);
   --shadow-float: 0 8px 24px rgb(0 0 0 / 0.1), 0 1px 3px rgb(0 0 0 / 0.06);
@@ -81,6 +82,7 @@
     --id-3-bg: #24303d; --id-3-fg: #9fbad6;
     --id-4-bg: #322b45; --id-4-fg: #c4b8f5;
     --id-5-bg: #3a3324; --id-5-fg: #dcc794;
+    --id-on: #1b1a18;
     --diff-add: rgb(99 201 138 / 0.12);
     --diff-del: rgb(255 122 107 / 0.12);
     --shadow-float: inset 0 1px 0 rgb(255 255 255 / 0.04), 0 0 0 1px var(--line), 0 12px 32px rgb(0 0 0 / 0.45);
@@ -125,6 +127,7 @@
   --id-3-bg: #24303d; --id-3-fg: #9fbad6;
   --id-4-bg: #322b45; --id-4-fg: #c4b8f5;
   --id-5-bg: #3a3324; --id-5-fg: #dcc794;
+  --id-on: #1b1a18;
   --diff-add: rgb(99 201 138 / 0.12);
   --diff-del: rgb(255 122 107 / 0.12);
   --shadow-float: inset 0 1px 0 rgb(255 255 255 / 0.04), 0 0 0 1px var(--line), 0 12px 32px rgb(0 0 0 / 0.45);
@@ -453,6 +456,12 @@ textarea:focus {
 .mark.orchestrator {
   background: var(--text);
   color: var(--canvas);
+}
+
+/* A chat's own hue, filled: solid where an expert's is a tint, so kind still reads at a glance. */
+.mark.orchestrator[data-hue] {
+  background: var(--hue-fg);
+  color: var(--id-on);
 }
 
 .mark.expert {
