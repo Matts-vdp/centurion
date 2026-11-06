@@ -2,7 +2,7 @@
 
 Four additions after archiving, split view and permission prompts (`docs/next-plan.md`). Each part ships on its own with its own commit, in the order below. Check each in the browser against a test manager, in light, dark and a narrow width.
 
-Status: planned.
+Status: all four parts done.
 
 ## 1. Start an expert from the UI
 

@@ -78,6 +78,10 @@ Use `--config <path>` or `AGENT_MANAGER_CONFIG` to point at another config file.
 | POST | `/api/agents` | `{ name, message? }` creates a chat in `orchestratorFolder` |
 | GET | `/api/agents/:id` | |
 | GET | `/api/agents/:id/history` | Transcript from Claude's session file |
+| GET | `/api/agents/:id/subagents/:toolUseId` | The transcript of the subagent started by that Agent / Task call |
+| POST | `/api/agents/:id/experts` | `{ name, cwd?, message? }` starts an expert under a chat for the user; the chat isn't notified |
+| POST | `/api/agents/:id/fork` | `{ promptUuid }` copies the conversation up to the end of that turn into a new agent (same kind, folder, parent, model) |
+| POST | `/api/agents/:id/rewind` | `{ promptUuid }` drops that turn and everything after it; only when idle with nothing queued. Files are not touched |
 | POST | `/api/agents/:id/messages` | `{ text, notify? }` |
 | POST | `/api/agents/:id/interrupt` | Cancels the current turn; keeps the queue and the process |
 | DELETE | `/api/agents/:id/queue/:messageId` | Removes a queued message |
@@ -90,7 +94,7 @@ Use `--config <path>` or `AGENT_MANAGER_CONFIG` to point at another config file.
 | POST | `/api/plans/:id/notify` | `{ mode: 'round' \| 'each' }` |
 | GET | `/api/questions` | Question sets |
 | POST | `/api/questions/:id/answer` | `{ answers: [{ questionId, choices?, text? }], corrections?: [{ questionId, text }] }` |
-| GET | `/api/events` | Server-sent events: `snapshot`, `agent`, `delivered`, `message`, `plan`, `questions`, `permission` (all plans, question sets and permission requests follow each snapshot) |
+| GET | `/api/events` | Server-sent events: `snapshot`, `agent`, `delivered`, `message` (including `task_started`, `task_progress` and `task_notification`), `plan`, `questions`, `permission` (all plans, question sets and permission requests follow each snapshot) |
 
 Agent records carry `model` and `effort` (set, or `null`), `activeModel` and `activeEffort` (what the process last reported; effort is only known when Claude Code reports it), `archived` and `archivedWith` (the chat an expert was archived with), `lastActivityAt` (when a turn last ended or failed), `turnStartedAt` (while a turn runs) and `context: { usedTokens, windowTokens } | null`, besides the queue, replies, status and cost. Each reply has `durationMs` and `costUsd` for its turn.
 
