@@ -151,6 +151,7 @@ async function route(manager: Manager, config: Config, req: http.IncomingMessage
   const id = parts[1];
   if (parts.length === 2 && method === 'GET') return manager.get(id);
   if (parts[2] === 'history' && method === 'GET') return manager.history(id);
+  if (parts[2] === 'commands' && method === 'GET') return manager.commands(id);
   if (parts[2] === 'subagents' && parts.length === 4 && method === 'GET') return manager.subagentHistory(id, parts[3]);
   if (parts[2] === 'messages' && method === 'POST') {
     const body = await readJson(req);

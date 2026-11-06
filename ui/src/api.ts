@@ -1,5 +1,6 @@
 import type {
   AgentRecord,
+  CommandOption,
   EffortLevel,
   ModelOption,
   PermissionDecision,
@@ -11,7 +12,7 @@ import type {
   UserQuestion,
 } from '../../src/types';
 
-export type { AgentRecord, EffortLevel, ModelOption, PermissionDecision, PermissionRequest, Plan, QuestionSet, QueuedMessage, Track, UserQuestion };
+export type { AgentRecord, CommandOption, EffortLevel, ModelOption, PermissionDecision, PermissionRequest, Plan, QuestionSet, QueuedMessage, Track, UserQuestion };
 
 export const EFFORT_LEVELS: readonly EffortLevel[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 
@@ -89,6 +90,7 @@ export const commands = {
   setModel: (id: string, change: { model?: string | null; effort?: EffortLevel | null }) =>
     api<AgentRecord>(`/api/agents/${id}/model`, { method: 'POST', body: change }),
   models: () => api<ModelOption[]>('/api/models'),
+  commands: (id: string) => api<CommandOption[]>(`/api/agents/${id}/commands`),
   history: (id: string) => api<HistoryMessage[]>(`/api/agents/${id}/history`),
   subagent: (id: string, toolUseId: string) => api<HistoryMessage[]>(`/api/agents/${id}/subagents/${toolUseId}`),
   startPlan: (id: string, start: string[], skip: string[]) => api<Plan>(`/api/plans/${id}/start`, { method: 'POST', body: { start, skip } }),

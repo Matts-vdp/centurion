@@ -15,7 +15,15 @@ type InputUsage = {
   input_tokens: number;
   cache_read_input_tokens?: number | null;
   cache_creation_input_tokens?: number | null;
+  cache_creation?: { ephemeral_5m_input_tokens?: number | null; ephemeral_1h_input_tokens?: number | null } | null;
 };
+
+/** The cache TTL a call wrote with, or null when it wrote nothing (a pure read keeps the entry's TTL). */
+function cacheTtl(u: InputUsage): number | null {
+  if ((u.cache_creation?.ephemeral_1h_input_tokens ?? 0) > 0) return 3600;
+  if ((u.cache_creation?.ephemeral_5m_input_tokens ?? 0) > 0) return 300;
+  return null;
+}
 
 function inputTokens(u: InputUsage): number {
   return u.input_tokens + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
@@ -58,8 +66,8 @@ export type RuntimeHooks = {
   buildOptions(rec: AgentRecord): Options;
   /** What `model` and `effort` resolve to for this agent; applied to a live process before its next turn. */
   runSettings(rec: AgentRecord): RunSettings;
-  /** A process started (used to learn the supported models). */
-  onStarted(q: Query): void;
+  /** A process started (used to learn the supported models and the folder's commands). */
+  onStarted(rec: AgentRecord, q: Query): void;
   onMessage(rec: AgentRecord, message: SDKMessage): void;
   /** A queued message was handed to the agent and its turn starts now. */
   onDeliver(rec: AgentRecord, message: QueuedMessage): void;
@@ -87,6 +95,10 @@ export class AgentRuntime {
   /** Main model (from the init message) and the input size of the turn's last main-loop model call. */
   private model: string | null = null;
   private lastCallInput: number | null = null;
+  /** When the next main-loop request started (delivery, then each tool result), and the last call's start. */
+  private requestAt: number | null = null;
+  private lastCallAt: number | null = null;
+  private turnTtl: number | null = null;
   /** The record's model or effort changed while the process was alive; apply before the next turn. */
   private settingsChanged = false;
 
@@ -121,6 +133,9 @@ export class AgentRuntime {
     this.busy = true;
     this.interrupting = false;
     this.lastCallInput = null;
+    this.requestAt = Date.now();
+    this.lastCallAt = null;
+    this.turnTtl = null;
     this.rec.current = next;
     this.rec.turnStartedAt = new Date().toISOString();
     this.rec.status = 'running';
@@ -250,7 +265,7 @@ export class AgentRuntime {
     this.lastTotalCost = 0;
     this.settingsChanged = false; // the options carry the current values
     this.q = query({ prompt: this.input, options: this.hooks.buildOptions(this.rec) });
-    this.hooks.onStarted(this.q);
+    this.hooks.onStarted(this.rec, this.q);
     void this.consume(this.q);
   }
 
@@ -266,8 +281,13 @@ export class AgentRuntime {
           this.model = message.model;
           this.reportActive(message.model, 'effort' in message ? (message.effort ?? null) : undefined);
         }
+        if (message.type === 'user' && message.parent_tool_use_id === null) this.requestAt = Date.now();
         if (message.type === 'assistant' && message.parent_tool_use_id === null) {
-          if (message.message.usage) this.lastCallInput = inputTokens(message.message.usage);
+          if (message.message.usage) {
+            this.lastCallInput = inputTokens(message.message.usage);
+            this.turnTtl = cacheTtl(message.message.usage) ?? this.turnTtl;
+          }
+          this.lastCallAt = this.requestAt;
           if (message.message.model) this.reportActive(message.message.model, undefined);
         }
         this.hooks.onMessage(this.rec, message);
@@ -307,6 +327,10 @@ export class AgentRuntime {
     this.rec.costUsd += turnCost;
     this.lastTotalCost = total;
     this.rec.context = this.contextUsage(result) ?? this.rec.context;
+    if (this.lastCallAt !== null) {
+      const ttlSeconds = this.turnTtl ?? this.rec.cache?.ttlSeconds ?? 300;
+      this.rec.cache = { at: new Date(this.lastCallAt).toISOString(), ttlSeconds };
+    }
     const reply: Reply = { text, at: new Date().toISOString(), isError, costUsd: turnCost };
     if (interrupted) reply.interrupted = true;
     if (typeof result.duration_ms === 'number') reply.durationMs = result.duration_ms;

@@ -23,6 +23,9 @@ export type ModelOption = {
   supportedEffortLevels?: EffortLevel[];
 };
 
+/** A skill or custom command an agent's folder offers, from the SDK's `supportedCommands()`. */
+export type CommandOption = { name: string; description: string; argumentHint: string };
+
 export type MessageSource = 'user' | 'orchestrator' | 'manager';
 
 export type QueuedMessage = {
@@ -60,6 +63,8 @@ export type ContextUsage = {
   windowTokens: number;
 };
 
+export type CacheState = { at: string; ttlSeconds: number };
+
 export type AgentRecord = {
   id: string;
   name: string;
@@ -86,6 +91,11 @@ export type AgentRecord = {
   /** When a turn last ended or failed. The UI compares it with its own "last seen" time. */
   lastActivityAt: string;
   context: ContextUsage | null;
+  /**
+   * The prompt cache after the last turn (an estimate): when its last main-loop request started and the
+   * cache's time to live. Every request that reads the cache restarts the timer. Null: unknown or reset.
+   */
+  cache?: CacheState | null;
   /** Model chosen for this agent (alias or id); null uses `config.model` or Claude Code's default. */
   model: string | null;
   /** Effort chosen for this agent; null uses the model's default. */

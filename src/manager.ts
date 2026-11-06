@@ -37,6 +37,7 @@ import {
   EFFORT_LEVELS,
   type AgentKind,
   type AgentRecord,
+  type CommandOption,
   type EffortLevel,
   type MessageSource,
   type ModelOption,
@@ -79,6 +80,9 @@ export class Manager extends EventEmitter<ManagerEvents> {
   /** The supported models, learned from the first process that starts (or a probe). */
   private modelList: ModelOption[] | null = null;
   private modelProbe: Promise<ModelOption[]> | null = null;
+  /** Skills and custom commands per folder, learned from processes that start there (or a probe). */
+  private readonly commandLists = new Map<string, CommandOption[]>();
+  private readonly commandProbes = new Map<string, Promise<CommandOption[]>>();
   /** Permission requests by id: pending ones, then the last few answered (for the UI). */
   private readonly permissions = new Map<string, PendingPermission | { request: PermissionRequest }>();
   /** Agent / Task tool call id → the subagent's id, learned while reading subagent transcripts. */
@@ -180,6 +184,8 @@ export class Manager extends EventEmitter<ManagerEvents> {
     copy.activeEffort = rec.activeEffort;
     copy.replies = rec.replies.filter((r) => Date.parse(r.at) < until).map((r) => ({ ...r }));
     copy.context = next < 0 ? rec.context : null;
+    // Cut at the end, the fork sends the same prefix, so the original's cache serves it too.
+    copy.cache = next < 0 ? (rec.cache ?? null) : null;
     copy.lastActivityAt = copy.replies.at(-1)?.at ?? copy.createdAt;
     this.changed(copy);
     return copy;
@@ -206,6 +212,7 @@ export class Manager extends EventEmitter<ManagerEvents> {
     rec.sessionId = sessionId;
     rec.replies = rec.replies.filter((r) => Date.parse(r.at) < from);
     rec.context = null;
+    rec.cache = null;
     rec.status = 'idle';
     rec.lastError = null;
     // A plan or question set from the dropped turns would keep the chat in Needs you.
@@ -322,6 +329,8 @@ export class Manager extends EventEmitter<ManagerEvents> {
     // Switching only the model: an effort the new model can't run goes back to its default.
     if (change.effort === undefined && effort && info && !supportsEffort(info, effort)) effort = null;
     if (effort && info && !supportsEffort(info, effort)) throw new Error(effortError(info, effort));
+    // The cache belongs to a model: the next turn on another one starts a new cache.
+    if (model !== rec.model) rec.cache = null;
     rec.model = model;
     rec.effort = effort;
     rt.updateSettings();
@@ -332,8 +341,25 @@ export class Manager extends EventEmitter<ManagerEvents> {
   /** The supported models (aliases and ids), cached for the manager's lifetime. */
   async models(): Promise<ModelOption[]> {
     if (this.modelList) return this.modelList;
-    this.modelProbe ??= this.probeModels().finally(() => (this.modelProbe = null));
+    this.modelProbe ??= this.probe(this.config.orchestratorFolder)
+      .then(() => this.modelList ?? [])
+      .finally(() => (this.modelProbe = null));
     return this.modelProbe;
+  }
+
+  /** The skills and custom commands an agent can run, per folder (Claude Code's own commands left out). */
+  async commands(id: string): Promise<CommandOption[]> {
+    const cwd = this.get(id).cwd;
+    const known = this.commandLists.get(cwd);
+    if (known) return known;
+    let probe = this.commandProbes.get(cwd);
+    if (!probe) {
+      probe = this.probe(cwd)
+        .then(() => this.commandLists.get(cwd) ?? [])
+        .finally(() => this.commandProbes.delete(cwd));
+      this.commandProbes.set(cwd, probe);
+    }
+    return probe;
   }
 
   /**
@@ -725,26 +751,38 @@ export class Manager extends EventEmitter<ManagerEvents> {
     return { ...(model ? { model } : {}), ...(rec.effort ? { effort: rec.effort } : {}) };
   }
 
-  private learnModels(q: Query): void {
-    if (this.modelList) return;
-    q.supportedModels().then(
-      (list) => (this.modelList ??= list.map(toModelOption)),
-      () => {}, // the process may have closed; the next one tries again
-    );
+  /** Learn the models and the folder's commands from a process that just started. */
+  private learnFrom(cwd: string, q: Query): Promise<void> {
+    const models = this.modelList
+      ? Promise.resolve()
+      : q.supportedModels().then((list) => void (this.modelList ??= list.map(toModelOption)));
+    const commands = q.supportedCommands().then((list) => this.setCommands(cwd, list));
+    // The process may have closed; the next one tries again.
+    return Promise.all([models.catch(() => {}), commands.catch(() => {})]).then(() => {});
   }
 
-  /** Start a process without a prompt just to ask for the models. It sends nothing to the API. */
-  private async probeModels(): Promise<ModelOption[]> {
+  private setCommands(cwd: string, list: { name: string; description: string; argumentHint: string; builtin?: boolean }[]): void {
+    const seen = new Set<string>();
+    const commands = list
+      .filter((c) => !c.builtin && !seen.has(c.name) && seen.add(c.name))
+      .map((c) => ({ name: c.name, description: c.description, argumentHint: c.argumentHint }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    this.commandLists.set(cwd, commands);
+  }
+
+  /**
+   * Start a process without a prompt just to ask for the models and the folder's commands. It sends
+   * nothing to the API. It loads the same settings and skills as an agent in that folder.
+   */
+  private async probe(cwd: string): Promise<void> {
     const input = new InputChannel();
     const q = query({
       prompt: input,
-      options: { cwd: this.config.orchestratorFolder, env: this.agentEnv(), persistSession: false, stderr: () => {} },
+      options: { cwd, env: this.agentEnv(), persistSession: false, settingSources: ['user', 'project', 'local'], skills: 'all', stderr: () => {} },
     });
     try {
-      const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Timed out asking for the models')), 60_000).unref());
-      const list = await Promise.race([q.supportedModels(), timeout]);
-      this.modelList ??= list.map(toModelOption);
-      return this.modelList;
+      const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Timed out asking Claude Code')), 60_000).unref());
+      await Promise.race([this.learnFrom(cwd, q), timeout]);
     } finally {
       input.close();
       q.close();
@@ -814,8 +852,11 @@ export class Manager extends EventEmitter<ManagerEvents> {
       new AgentRuntime(rec, {
         buildOptions: (r) => this.buildOptions(r),
         runSettings: (r) => this.runSettings(r),
-        onStarted: (q) => this.learnModels(q),
-        onMessage: (r, message) => this.emit('message', { agentId: r.id, message }),
+        onStarted: (r, q) => void this.learnFrom(r.cwd, q),
+        onMessage: (r, message) => {
+          if (message.type === 'system' && message.subtype === 'commands_changed') this.setCommands(r.cwd, message.commands);
+          this.emit('message', { agentId: r.id, message });
+        },
         onDeliver: (r, message) => this.emit('delivered', { agentId: r.id, message }),
         onTurnEnd: (r, handled, reply) => this.onTurnEnd(r, handled, reply),
         onChange: (r) => this.changed(r),

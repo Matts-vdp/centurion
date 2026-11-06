@@ -78,6 +78,7 @@ Use `--config <path>` or `AGENT_MANAGER_CONFIG` to point at another config file.
 | POST | `/api/agents` | `{ name, message? }` creates a chat in `orchestratorFolder` |
 | GET | `/api/agents/:id` | |
 | GET | `/api/agents/:id/history` | Transcript from Claude's session file |
+| GET | `/api/agents/:id/commands` | The skills and custom commands the agent's folder offers: `{ name, description, argumentHint }[]` (Claude Code's own commands left out; cached per folder, learned from the agent processes or a process started just to ask) |
 | GET | `/api/agents/:id/subagents/:toolUseId` | The transcript of the subagent started by that Agent / Task call |
 | POST | `/api/agents/:id/experts` | `{ name, cwd?, message? }` starts an expert under a chat for the user; the chat isn't notified |
 | POST | `/api/agents/:id/fork` | `{ promptUuid }` copies the conversation up to the end of that turn into a new agent (same kind, folder, parent, model) |

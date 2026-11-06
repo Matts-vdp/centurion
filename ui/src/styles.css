@@ -1199,6 +1199,19 @@ button.crumb:hover {
   color: var(--failed);
 }
 
+.cache-tag {
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.cache-tag.warn {
+  color: var(--waiting);
+}
+
+.cache-tag.cold {
+  color: var(--text-3);
+}
+
 .menu-anchor {
   position: relative;
 }
@@ -3028,9 +3041,67 @@ kbd.key {
 }
 
 .composer {
+  position: relative;
   background: var(--raised);
   border-radius: 14px;
   box-shadow: var(--shadow-float);
+}
+
+/* Skill autocomplete: a list above the composer while the message starts with `/`. */
+.slash-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 30;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--raised);
+  border-radius: 10px;
+  box-shadow: var(--shadow-float);
+}
+
+.slash-item {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.slash-item.active {
+  background: var(--fill);
+}
+
+.slash-name {
+  flex: none;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.slash-args {
+  color: var(--text-3);
+}
+
+.slash-description,
+.slash-note {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+
+.slash-note {
+  padding: 6px 10px;
+  color: var(--text-3);
 }
 
 .composer:focus-within {
@@ -3401,6 +3472,9 @@ body.resizing .pane {
   .context-ring {
     font-size: 0;
     gap: 0;
+  }
+  .cache-word {
+    display: none;
   }
   .transcript {
     padding: 20px 16px 16px;

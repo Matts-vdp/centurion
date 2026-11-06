@@ -89,6 +89,7 @@ export function Header({ agent, parent, agents, run, onSelect, onClose, onOpenDr
             {money(agent.costUsd)}
           </span>
           <ContextRing agent={agent} />
+          <CacheTag agent={agent} />
           <div className="menu-anchor" ref={menuRef}>
             <button className="icon-button" title="More actions" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)}>
               <MoreIcon size={16} />
@@ -146,6 +147,31 @@ export function Header({ agent, parent, agents, run, onSelect, onClose, onOpenDr
         <span>{state.sentence}</span>
       </div>
     </header>
+  );
+}
+
+/**
+ * How long the prompt cache stays warm (an estimate from the last turn's last request). A message sent
+ * before it runs out reads the context from the cache; after, the next turn writes all of it again.
+ */
+function CacheTag({ agent }: { agent: AgentRecord }) {
+  const cache = agent.cache;
+  const visible = !!cache && agent.status !== 'running';
+  const expires = cache ? Date.parse(cache.at) + cache.ttlSeconds * 1000 : 0;
+  const now = useNow(visible && expires > Date.now(), expires - Date.now() < 120_000 ? 1000 : 10_000);
+  if (!visible || !cache) return null;
+  const left = Math.max(0, Math.round((expires - now) / 1000));
+  const ttl = cache.ttlSeconds >= 3600 ? '1 hour' : `${Math.round(cache.ttlSeconds / 60)} minute`;
+  const label = left <= 0 ? 'cold' : left <= 60 ? `0:${String(left).padStart(2, '0')}` : `${Math.ceil(left / 60)}m`;
+  const title =
+    left <= 0
+      ? `The prompt cache has probably expired (${ttl} cache). The next turn writes the whole context to the cache again, which costs more.`
+      : `The prompt cache stays warm for about ${left > 60 ? `${Math.ceil(left / 60)} more minutes` : `${left} more seconds`} (${ttl} cache, estimated from the last request). A message sent before then reads the context from the cache.`;
+  return (
+    <span className={`cache-tag mono${left <= 0 ? ' cold' : left <= 60 ? ' warn' : ''}`} title={title}>
+      <span className="cache-word">cache </span>
+      {label}
+    </span>
   );
 }
 

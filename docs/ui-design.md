@@ -152,8 +152,9 @@ When auto mode can't decide on a tool call, the turn pauses and a **permission b
 **Header (two lines).** Line one: the breadcrumb as the title (`[TS] test2 / [RS] restaurant-summary`; the parent part is a link and `Alt+←` goes there), then on the right the repo as a mono chip (`restaurant`, full path on hover, click copies), cost, a context ring with the percentage (amber from 70 %, coral from 85 %), and the `⋯` menu. Line two: the status as a sentence (`Running Bash · 1m 12s`, `Idle · replied 4 min ago`).
 
 **Composer.** A floating `--raised` surface with a 14 px radius and a shadow, two lines tall by default and growing to 40 % of the height.
-- Footer row inside it: hints on the left (`Enter to send · Shift+Enter for a new line`), buttons on the right: a round inverted send button (↑), and while running a stop button (■) next to it; the send button then reads as **Queue**.
+- Footer row inside it: a hint on the left only when it says something (`Enter queues it for after this turn`, or that Enter never sends a plan's checkboxes), buttons on the right: a round inverted send button (↑), and while running a stop button (■) next to it; the send button then reads as **Queue**.
 - While running, a status line sits just above the composer: a rotating arc, `Running Bash: Count tracked files · 12s` with a soft shimmer, and `Esc to interrupt` on the right.
+- **Skills.** Typing `/` as the first character opens a list above the composer (a `--raised` menu): `/name` in mono with its argument hint in `--text-3`, then the description in `--text-2` on one line. Prefix matches first. ↑/↓ move the `--fill` row, Tab or Enter fill in `/name `, Esc closes it.
 - Queued messages stack directly above the composer as a compact list (`Queued · 2`), one line each, with the sender, the text and a remove button on hover. Later: drag to reorder and "send now".
 
 **Overview (no agent selected).**
@@ -162,6 +163,8 @@ When auto mode can't decide on a tool call, the turn pauses and a **permission b
 - A "Recent replies" list across all agents on the right (on wide screens).
 
 ## 7. Model and effort
+
+**Cache tag.** Right of the context ring, a mono tag shows how long the prompt cache stays warm: `cache 42m` in `--text-2`, `cache 0:42` in `--waiting` for the last minute, `cache cold` in `--text-3`. Hidden while a turn runs and before the first turn; narrow headers drop the word `cache`. It is an estimate (start of the last request plus the TTL the API reported), and the tooltip says so.
 
 **Seeing it.** The header has a chip before the repo chip: `Sonnet 5.5 ▂▄▆ medium ⌄`. Five bars of rising height, filled up to the level (low = 1 … max = 5), show the effort at a glance; the word says it (`default` when none is set). The bars stay neutral: colour is for state. A model without effort levels shows only its name. On narrow screens the chip shows only the model name, and the repo chip only its icon. Delegations, the round tracker and the track plan show the same `model · effort` in mono, with the values the expert actually runs on (inherited ones included). A switch shows in the transcript as an event line, `Model switched to Haiku 5.5`, where the next turn starts (Claude Code writes it into the session as command output).
 
