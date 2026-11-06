@@ -3166,3 +3166,72 @@ body.resizing .pane {
     padding-right: 12px;
   }
 }
+
+/* ---------- permission prompts ---------- */
+
+.permission {
+  background: var(--raised);
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 1px var(--line), 0 6px 20px rgb(0 0 0 / 0.06);
+  --ring: var(--raised);
+  overflow: hidden;
+}
+
+.permission-body {
+  padding: 0 16px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.permission-call {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  min-width: 0;
+}
+
+/* The input view is the step body's, without its indent. */
+.permission-body .step-body {
+  padding: 0;
+}
+
+.permission-body .code-plain {
+  max-height: 240px;
+  overflow: auto;
+}
+
+.permission-reason {
+  font-size: 13px;
+  color: var(--text-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.permission-note {
+  width: 100%;
+  resize: vertical;
+}
+
+.button.danger {
+  color: var(--failed);
+}
+
+.live-status.waiting .live-text {
+  color: var(--waiting);
+  -webkit-text-fill-color: currentColor;
+  background: none;
+  animation: none;
+}
+
+.waiting-dot {
+  width: 8px;
+  height: 8px;
+  margin: 0 2px;
+  border-radius: 50%;
+  background: var(--waiting);
+  flex: none;
+}

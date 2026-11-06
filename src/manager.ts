@@ -2,7 +2,17 @@ import { EventEmitter } from 'node:events';
 import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { getSessionMessages, query, type Options, type Query, type SDKMessage, type SessionMessage } from '@anthropic-ai/claude-agent-sdk';
+import {
+  getSessionMessages,
+  query,
+  type CanUseTool,
+  type Options,
+  type PermissionResult,
+  type PermissionUpdate,
+  type Query,
+  type SDKMessage,
+  type SessionMessage,
+} from '@anthropic-ai/claude-agent-sdk';
 import { AgentRuntime, InputChannel, type RunSettings } from './agent.js';
 import type { Config } from './config.js';
 import {
@@ -27,6 +37,8 @@ import {
   type EffortLevel,
   type MessageSource,
   type ModelOption,
+  type PermissionDecision,
+  type PermissionRequest,
   type Plan,
   type QuestionSet,
   type QueuedMessage,
@@ -41,7 +53,14 @@ export type ManagerEvents = {
   delivered: [{ agentId: string; message: QueuedMessage }];
   plan: [Plan];
   questions: [QuestionSet];
+  permission: [PermissionRequest];
 };
+
+/** A pending request and how to answer the SDK's callback. */
+type PendingPermission = { request: PermissionRequest; suggestions: PermissionUpdate[]; resolve: (r: PermissionResult) => void };
+
+/** How many answered requests stay in memory, so a reloaded UI can still show their outcome. */
+const ANSWERED_KEEP = 200;
 
 /** Extra links a message can carry: the plan track or the routed question it belongs to. */
 type MessageLinks = Pick<QueuedMessage, 'track' | 'question'>;
@@ -57,6 +76,8 @@ export class Manager extends EventEmitter<ManagerEvents> {
   /** The supported models, learned from the first process that starts (or a probe). */
   private modelList: ModelOption[] | null = null;
   private modelProbe: Promise<ModelOption[]> | null = null;
+  /** Permission requests by id: pending ones, then the last few answered (for the UI). */
+  private readonly permissions = new Map<string, PendingPermission | { request: PermissionRequest }>();
 
   constructor(private readonly config: Config) {
     super();
@@ -92,6 +113,10 @@ export class Manager extends EventEmitter<ManagerEvents> {
 
   listQuestionSets(): QuestionSet[] {
     return this.questionSets;
+  }
+
+  listPermissions(): PermissionRequest[] {
+    return [...this.permissions.values()].map((p) => p.request);
   }
 
   /** Full transcript from Claude's own session files. */
@@ -167,6 +192,7 @@ export class Manager extends EventEmitter<ManagerEvents> {
 
   /** Cancel the running turn but keep the queue; the next queued message is delivered afterwards. */
   async interrupt(id: string): Promise<void> {
+    this.cancelPermissions(id, true);
     if (!(await this.runtime(id).interrupt())) throw new Error('The agent is not running');
   }
 
@@ -243,6 +269,7 @@ export class Manager extends EventEmitter<ManagerEvents> {
 
   async stop(id: string, by: MessageSource): Promise<void> {
     const rt = this.runtime(id);
+    this.cancelPermissions(id, true);
     const handled = await rt.stop();
     if (handled?.notify && by !== 'orchestrator') {
       this.notifyParent(rt.rec, `was stopped by the ${by} before finishing its turn.`);
@@ -252,6 +279,98 @@ export class Manager extends EventEmitter<ManagerEvents> {
   shutdown(): void {
     for (const rt of this.runtimes.values()) rt.dispose();
     this.store.writeNow(this.state());
+  }
+
+  // ---------- permission prompts ----------
+
+  /**
+   * canUseTool: auto mode's classifier couldn't decide, so the user does. The call waits as long as it
+   * takes; interrupt, stop or the end of the turn cancel it.
+   */
+  private askPermission(agentId: string, ...[toolName, input, opts]: Parameters<CanUseTool>): Promise<PermissionResult> {
+    // Claude's own ask-the-user tool has no surface here: questions go through ask_user or the reply.
+    if (toolName === 'AskUserQuestion') {
+      const rec = this.runtimes.get(agentId)?.rec;
+      const how =
+        rec?.kind === 'orchestrator'
+          ? 'Use the ask_user tool from the manager instead.'
+          : 'Ask your question in your reply instead; your orchestrator reads it.';
+      return Promise.resolve({ behavior: 'deny', message: `AskUserQuestion is not available in this manager. ${how}` });
+    }
+    if (toolName === 'ExitPlanMode') return Promise.resolve({ behavior: 'allow', updatedInput: input });
+    const suggestions = opts.suggestions ?? [];
+    const request: PermissionRequest = {
+      id: newId('perm'),
+      agentId,
+      toolName,
+      toolUseId: opts.toolUseID,
+      input,
+      ...(opts.title ? { title: opts.title } : {}),
+      ...(opts.description ? { description: opts.description } : {}),
+      ...(opts.decisionReason ? { reason: opts.decisionReason } : {}),
+      ...(opts.blockedPath ? { blockedPath: opts.blockedPath } : {}),
+      canAllowSession: suggestions.length > 0 && !opts.suppressAlwaysAllowRule,
+      defaultToNo: opts.defaultToNo === true,
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+    };
+    return new Promise<PermissionResult>((resolve) => {
+      this.permissions.set(request.id, { request, suggestions, resolve });
+      opts.signal.addEventListener(
+        'abort',
+        () => this.settlePermission(request.id, 'cancelled', { behavior: 'deny', message: 'Cancelled.', interrupt: true }),
+        { once: true },
+      );
+      this.emit('permission', request);
+      const rec = this.runtimes.get(agentId)?.rec;
+      if (rec) this.changed(rec);
+    });
+  }
+
+  /** The user's answer. Allow for this session adds the SDK's suggested rules to this session only. */
+  answerPermission(agentId: string, requestId: string, decision: PermissionDecision, message?: string): PermissionRequest {
+    const entry = this.permissions.get(requestId);
+    if (!entry || entry.request.agentId !== agentId) throw new Error('Unknown permission request');
+    if (!('resolve' in entry)) throw new Error('This request was already answered');
+    if (decision === 'allowSession' && !entry.request.canAllowSession) throw new Error('This request can only be allowed once');
+    const note = message?.trim();
+    let result: PermissionResult;
+    if (decision === 'deny') {
+      result = { behavior: 'deny', message: note ? `The user denied this: ${note}` : 'The user denied this.' };
+    } else {
+      result = { behavior: 'allow', updatedInput: entry.request.input };
+      if (decision === 'allowSession') {
+        result.updatedPermissions = entry.suggestions.map((s) => ('destination' in s ? { ...s, destination: 'session' as const } : s));
+      }
+    }
+    const status = decision === 'allow' ? 'allowed' : decision === 'allowSession' ? 'allowedSession' : 'denied';
+    this.settlePermission(requestId, status, result, note);
+    return entry.request;
+  }
+
+  /** Answer a pending request and keep it, answered, for a while so the UI can show the outcome. */
+  private settlePermission(requestId: string, status: PermissionRequest['status'], result: PermissionResult, message?: string): void {
+    const entry = this.permissions.get(requestId);
+    if (!entry || !('resolve' in entry)) return;
+    entry.request.status = status;
+    entry.request.answeredAt = new Date().toISOString();
+    if (message) entry.request.message = message;
+    this.permissions.set(requestId, { request: entry.request });
+    entry.resolve(result);
+    const answered = [...this.permissions.values()].filter((p) => !('resolve' in p));
+    for (const old of answered.slice(0, Math.max(0, answered.length - ANSWERED_KEEP))) this.permissions.delete(old.request.id);
+    this.emit('permission', entry.request);
+    const rec = this.runtimes.get(entry.request.agentId)?.rec;
+    if (rec) this.changed(rec);
+  }
+
+  /** Cancel an agent's pending requests (interrupt, stop, or the turn ended). */
+  private cancelPermissions(agentId: string, interrupt: boolean): void {
+    for (const p of [...this.permissions.values()]) {
+      if (p.request.agentId === agentId && 'resolve' in p) {
+        this.settlePermission(p.request.id, 'cancelled', { behavior: 'deny', message: 'Cancelled.', interrupt });
+      }
+    }
   }
 
   // ---------- track plans ----------
@@ -594,6 +713,7 @@ export class Manager extends EventEmitter<ManagerEvents> {
   }
 
   private onTurnEnd(rec: AgentRecord, handled: QueuedMessage, reply: Reply): void {
+    this.cancelPermissions(rec.id, false);
     // A routed question: the expert's reply is its answer.
     if (handled.question && !reply.interrupted) {
       const set = this.questionSets.find((s) => s.id === handled.question!.setId);
@@ -668,8 +788,9 @@ export class Manager extends EventEmitter<ManagerEvents> {
       env: this.agentEnv(),
       permissionMode: this.config.permissionMode,
       allowDangerouslySkipPermissions: this.config.permissionMode === 'bypassPermissions',
-      // Nobody sits behind a prompt: anything auto mode can't decide is denied and the agent adapts.
-      permissionPrompts: 'none',
+      // What auto mode can't decide comes to the user (canUseTool) and waits for an answer.
+      permissionPrompts: 'host',
+      canUseTool: (...args) => this.askPermission(rec.id, ...args),
       // Every agent gets what its own folder (and the user's ~/.claude) sets up: CLAUDE.md, skills,
       // settings. Top-level chats get the orchestrate skill from the managing folder's .claude/skills.
       settingSources: ['user', 'project', 'local'],

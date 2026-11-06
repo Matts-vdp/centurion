@@ -1,6 +1,6 @@
 import type { AgentRecord } from './api';
-import { isUnread, pendingFor, type Activity } from './store';
-import { displayName } from './tools';
+import { isUnread, pendingFor, pendingPermissions, type Activity } from './store';
+import { displayName, toolDetail } from './tools';
 
 /**
  * The one state an agent shows (docs/ui-design.md, section 4). The order matters: the first that
@@ -35,6 +35,16 @@ export function agentState(
   const ago = relativeTime(a.lastActivityAt, now);
   const make = (key: StateKey, line: string, sentence = line): AgentState => ({ key, line, sentence, busyChildren });
 
+  // A tool call waits for the user's permission: the turn is paused on it.
+  const asks = a.status === 'running' ? pendingPermissions(a.id) : [];
+  if (asks.length > 0) {
+    const first = asks[0];
+    const label = displayName(first.toolName);
+    const detail = toolDetail(first.toolName, first.input);
+    const since = duration(now - Date.parse(first.createdAt));
+    const more = asks.length > 1 ? ` (+${asks.length - 1})` : '';
+    return make('needs', `Needs permission · ${label}${more}`, `Waiting for permission: ${label}${detail ? `: ${detail}` : ''}${more} · ${since}`);
+  }
   if (a.status === 'running') {
     const started = a.turnStartedAt ? Date.parse(a.turnStartedAt) : null;
     const tool = activity?.tool;

@@ -43,7 +43,7 @@ Auth comes from your normal Claude Code login (`claude` → `/login`), a `CLAUDE
 | `token` | Required on every API call (`Authorization: Bearer` or `?token=`). Empty disables the check, so don't do that with `bypassPermissions`. |
 | `stateFile` | JSON state, relative to the config file. Keep one per environment: session IDs only exist on the machine that created them. |
 | `orchestratorFolder` | Folder every top-level chat runs in, relative to the config file or absolute. Default (`null` or missing): the folder the manager was started from. Checked at startup. |
-| `permissionMode` | `auto` (classifier decides; what it can't decide is denied, not asked) or `bypassPermissions` (dev containers). |
+| `permissionMode` | `auto` (the classifier decides; what it can't decide is asked in the UI and waits for your answer) or `bypassPermissions` (dev containers). |
 | `model` | Default model for agents that have none set (see *Model and effort*), or `null` for the Claude Code default. |
 | `env` / `removeEnv` | Environment variables to add to or remove from agent processes. |
 | `idleMinutes` | Close an agent's process after this many idle minutes (default 10, `0` = never). The next message resumes the session. |
@@ -83,12 +83,15 @@ Use `--config <path>` or `AGENT_MANAGER_CONFIG` to point at another config file.
 | DELETE | `/api/agents/:id/queue/:messageId` | Removes a queued message |
 | POST | `/api/agents/:id/model` | `{ model?, effort? }`; a missing field stays, `null` goes back to the default. Applies from the next turn |
 | POST | `/api/agents/:id/archive` | `{ archived }`; refused while running. A chat takes its idle experts with it, and unarchiving it brings those back. Archiving closes the process; a new message unarchives |
+| POST | `/api/agents/:id/permission` | `{ requestId, decision: 'allow' \| 'allowSession' \| 'deny', message? }` answers a waiting permission request. `allowSession` adds the SDK's suggested rules to this session only; `message` goes to the agent with a denial |
 | POST | `/api/agents/:id/stop` | Cancels the turn, clears the queue and closes the process |
 | GET | `/api/plans` | Track plans |
 | POST | `/api/plans/:id/start` | `{ start: trackIds, skip?: trackIds }`; sends the orchestrator only these ids |
 | POST | `/api/plans/:id/notify` | `{ mode: 'round' \| 'each' }` |
 | GET | `/api/questions` | Question sets |
 | POST | `/api/questions/:id/answer` | `{ answers: [{ questionId, choices?, text? }], corrections?: [{ questionId, text }] }` |
-| GET | `/api/events` | Server-sent events: `snapshot`, `agent`, `delivered`, `message`, `plan`, `questions` (all plans and question sets follow each snapshot) |
+| GET | `/api/events` | Server-sent events: `snapshot`, `agent`, `delivered`, `message`, `plan`, `questions`, `permission` (all plans, question sets and permission requests follow each snapshot) |
 
 Agent records carry `model` and `effort` (set, or `null`), `activeModel` and `activeEffort` (what the process last reported; effort is only known when Claude Code reports it), `archived` and `archivedWith` (the chat an expert was archived with), `lastActivityAt` (when a turn last ended or failed), `turnStartedAt` (while a turn runs) and `context: { usedTokens, windowTokens } | null`, besides the queue, replies, status and cost. Each reply has `durationMs` and `costUsd` for its turn.
+
+Permission requests (`permission` events) carry `id`, `agentId`, `toolName`, `toolUseId`, `input`, the SDK's `title`, `description`, `reason` and `blockedPath` when given, `canAllowSession`, `defaultToNo`, `status` (`pending`, `allowed`, `allowedSession`, `denied`, `cancelled`) and the times. They live in memory only: a waiting request is cancelled when the turn is interrupted, stopped or ends, and after a restart the turn is interrupted as usual. `AskUserQuestion` is always denied with a pointer to `ask_user` (chats) or the reply (experts), and `ExitPlanMode` is always allowed.

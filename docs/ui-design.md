@@ -117,6 +117,7 @@ Primary buttons and the send button are the accent with `--on-accent` text. An e
 
 | Plan waiting for you (orchestrator) | Amber dot, row in Needs you | `Plan ready · round 1, 4 tracks` |
 | Questions waiting for you (orchestrator) | Amber dot, row in Needs you | `3 questions for you` |
+| Permission waiting for you (any agent) | Amber dot, row in Needs you | `Needs permission · Bash` |
 
 Orchestrator rows add a roll-up of their experts on the second line when collapsed (`2 running · 1 failed`), so trouble shows with the tree closed.
 
@@ -138,6 +139,10 @@ The transcript column is centred, 760 px max, with prose at 15 px. Item by item:
 - **Manager notifications** that don't match a delegation are a single quiet event line with an icon: `restaurant-summary finished its turn · 11:21`.
 - **Turn footer.** After each turn, a mono line in `--text-3`: `✓ Done in 42s · 3 tools · $0.004`, the check in `--done`. Interrupted turns say `Interrupted by you`; failed turns put the error text there in coral. Footers come from the record's last replies (each has `durationMs` and `costUsd`), tied to turns by time: a reply belongs to the last turn that started before it. Older turns, beyond the last 20 replies, have no footer. Claude Code's own `[Request interrupted by user]` marker is hidden, since the footer says it.
 - **Thinking** is a step in the work log (`Thought` and its first line); the full text opens on click.
+
+## 5a. Permission requests
+
+When auto mode can't decide on a tool call, the turn pauses and a **permission block** appears at the end of the transcript, built like a question set (raised surface, hairline, plan head and foot): the SDK's sentence as the title (`Perm test wants to use Bash` when it gives none) with `Waiting for you · 29s` in amber, the call as a step line (icon, label, detail), its input as the step body (command, diff or path, capped in height), and the reason in `--text-2`. The foot says `Auto mode couldn't decide on this. The agent waits until you answer.` with **Deny…**, **Allow for this session** (only when offered) and **Allow** (primary). Deny opens a note field (Enter denies, Esc goes back). The first waiting block takes the focus on Allow, or on Deny when the SDK asks for that. The status line above the composer turns amber with a dot instead of the spinner: `Waiting for permission: Bash: Print hello · 29s`; Esc still interrupts, which cancels the request. Once answered, the block goes away and the tool's step line in the work log says `allowed by you`, `allowed for this session`, `denied by you` or `permission cancelled`.
 
 ## 6. Header, composer and overview
 

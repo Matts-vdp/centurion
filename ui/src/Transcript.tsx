@@ -2,7 +2,7 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type React
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
-import type { AgentRecord } from './api';
+import { commands, type AgentRecord, type PermissionDecision, type PermissionRequest } from './api';
 import { toBlocks, workDuration, workSummary, type RenderBlock, type Step } from './blocks';
 import { useNow } from './hooks';
 import {
@@ -29,9 +29,9 @@ import { AgentMark } from './Mark';
 import { PlanView } from './Plan';
 import { QuestionSetView } from './Questions';
 import { clock, duration, money } from './status';
-import { viewPrefs } from './store';
+import { pendingPermissions, permissionFor, store, useManager, viewPrefs } from './store';
 import { displayName, shortPath, summarize } from './tools';
-import type { PromptItem, Transcript as T } from './timeline';
+import type { PromptItem, ToolItem, Transcript as T } from './timeline';
 
 type Props = {
   transcript: T;
@@ -81,6 +81,8 @@ export function Transcript({ transcript, loading, loadError, agent, agents, focu
   const watching = [...latest.keys()].some((id) => agents.get(id)?.status === 'running');
   const now = useNow(running || watching);
 
+  const { permissions } = useManager();
+  const asks = pendingPermissions(agent.id, { permissions });
   const ctx: Ctx = { agent, agents, onSelect, now, verbose, latest, run };
 
   return (
@@ -109,6 +111,9 @@ export function Transcript({ transcript, loading, loadError, agent, agents, focu
         )}
         {blocks.map((b) => (
           <BlockView key={b.key} block={b} ctx={ctx} />
+        ))}
+        {asks.map((p, i) => (
+          <PermissionView key={p.id} request={p} ctx={ctx} autoFocus={focused && i === 0} />
         ))}
       </div>
     </div>
@@ -325,6 +330,9 @@ function StepRow({ step, ctx, running }: { step: Step; ctx: Ctx; running: boolea
           : null
       : null;
   const unfinished = step.kind === 'tool' && step.result === undefined && !step.denied && !running;
+  const { permissions } = useManager();
+  const asked = step.kind === 'tool' ? permissionFor(step.id, { permissions }) : undefined;
+  const outcome = asked && asked.status !== 'pending' ? PERMISSION_OUTCOME[asked.status] : null;
 
   return (
     <li className={`step${error ? ' error' : ''}${running ? ' running' : ''}`}>
@@ -335,6 +343,7 @@ function StepRow({ step, ctx, running }: { step: Step; ctx: Ctx; running: boolea
           {view.detail && <span className="step-detail mono"> {view.detail}</span>}
         </span>
         {view.meta && <span className="step-meta mono">{view.meta}</span>}
+        {outcome && <span className="step-meta">{outcome}</span>}
         {unfinished && <span className="step-meta">no result</span>}
         {ms !== null && ms >= 1000 && <span className="step-time mono">{duration(ms)}</span>}
       </button>
@@ -403,6 +412,127 @@ function stepView(step: Step, agents: Map<string, AgentRecord>): StepView {
     default:
       return { icon: <ToolIcon size={14} />, label: name, detail: summarize(step, agents) };
   }
+}
+
+const PERMISSION_OUTCOME: Record<Exclude<PermissionRequest['status'], 'pending'>, string> = {
+  allowed: 'allowed by you',
+  allowedSession: 'allowed for this session',
+  denied: 'denied by you',
+  cancelled: 'permission cancelled',
+};
+
+/**
+ * A tool call auto mode couldn't decide on. The turn is paused until the user answers, interrupts or
+ * stops the agent. Deny can carry a note for the agent.
+ */
+function PermissionView({ request, ctx, autoFocus }: { request: PermissionRequest; ctx: Ctx; autoFocus: boolean }) {
+  const [note, setNote] = useState('');
+  const [noting, setNoting] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const denyRef = useRef<HTMLButtonElement>(null);
+  const allowRef = useRef<HTMLButtonElement>(null);
+  const step: ToolItem = { kind: 'tool', key: request.id, id: request.toolUseId, name: request.toolName, input: request.input, startedAt: Date.parse(request.createdAt) };
+  const view = stepView(step, ctx.agents);
+  const since = duration(ctx.now - Date.parse(request.createdAt));
+  // The SDK's description often repeats the call's own description, which the step line already shows.
+  const description = request.description && request.description !== request.input.description && request.description !== view.label ? request.description : '';
+
+  // The first waiting request takes the focus, on Deny when the SDK says it must not be one keystroke away.
+  useEffect(() => {
+    if (autoFocus) (request.defaultToNo ? denyRef : allowRef).current?.focus({ preventScroll: true });
+  }, [autoFocus, request.defaultToNo]);
+
+  const answer = async (decision: PermissionDecision) => {
+    if (busy) return;
+    setBusy(true);
+    await ctx.run(async () => {
+      store.upsertPermission(await commands.answerPermission(request.agentId, request.id, decision, decision === 'deny' ? note : undefined));
+    });
+    setBusy(false);
+  };
+
+  return (
+    <section className="permission" aria-label="Permission needed">
+      <div className="plan-head">
+        <h3 className="plan-title">{request.title ?? `${ctx.agent.name} wants to use ${displayName(request.toolName)}`}</h3>
+        <span className="plan-state waiting">Waiting for you · {since}</span>
+      </div>
+      <div className="permission-body">
+        <div className="permission-call">
+          <span className="step-icon">{view.icon}</span>
+          <span className="step-label">
+            {view.label}
+            {view.detail && <span className="step-detail mono"> {view.detail}</span>}
+          </span>
+          {view.meta && <span className="step-meta mono">{view.meta}</span>}
+        </div>
+        <StepBody step={step} />
+        {(request.reason || description || request.blockedPath) && (
+          <div className="permission-reason">
+            {description && <div>{description}</div>}
+            {request.reason && <div>{request.reason}</div>}
+            {request.blockedPath && (
+              <div>
+                Outside the allowed folders: <span className="mono">{request.blockedPath}</span>
+              </div>
+            )}
+          </div>
+        )}
+        {noting && (
+          <textarea
+            className="permission-note"
+            rows={2}
+            autoFocus
+            placeholder="Tell the agent why, or what to do instead (optional)"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                void answer('deny');
+              } else if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                setNoting(false);
+              }
+            }}
+          />
+        )}
+      </div>
+      <div className="plan-foot">
+        <span className="plan-foot-text">Auto mode couldn't decide on this. The agent waits until you answer.</span>
+        {noting ? (
+          <>
+            <button className="button secondary small" disabled={busy} onClick={() => setNoting(false)}>
+              Back
+            </button>
+            <button className="button secondary small danger" ref={denyRef} disabled={busy} onClick={() => void answer('deny')}>
+              Deny
+            </button>
+          </>
+        ) : (
+          <>
+            <button className="button secondary small" ref={denyRef} disabled={busy} onClick={() => setNoting(true)} title="Deny, with an optional note for the agent">
+              Deny…
+            </button>
+            {request.canAllowSession && (
+              <button
+                className="button secondary small"
+                disabled={busy}
+                onClick={() => void answer('allowSession')}
+                title="Allow this and similar calls until the agent's process closes"
+              >
+                Allow for this session
+              </button>
+            )}
+            <button className="button primary small" ref={allowRef} disabled={busy} onClick={() => void answer('allow')}>
+              Allow
+            </button>
+          </>
+        )}
+      </div>
+    </section>
+  );
 }
 
 function StepBody({ step }: { step: Step }) {

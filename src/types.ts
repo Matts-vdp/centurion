@@ -95,6 +95,34 @@ export type AgentRecord = {
   updatedAt: string;
 };
 
+// ---------- permission prompts (docs/next-plan.md, part 3) ----------
+
+/** A tool call auto mode couldn't decide on, waiting for the user. Kept in memory only. */
+export type PermissionRequest = {
+  id: string;
+  agentId: string;
+  toolName: string;
+  toolUseId: string;
+  input: Record<string, unknown>;
+  /** The SDK's prompt sentence, e.g. "Claude wants to read foo.txt". */
+  title?: string;
+  description?: string;
+  /** Why it was asked. */
+  reason?: string;
+  blockedPath?: string;
+  /** "Allow for this session" is offered (the SDK suggested rules and didn't forbid it). */
+  canAllowSession: boolean;
+  /** Start on Deny; no one-key approve. */
+  defaultToNo: boolean;
+  status: 'pending' | 'allowed' | 'allowedSession' | 'denied' | 'cancelled';
+  /** The user's note with a denial. */
+  message?: string;
+  createdAt: string;
+  answeredAt?: string;
+};
+
+export type PermissionDecision = 'allow' | 'allowSession' | 'deny';
+
 // ---------- track plans (docs/ui-design.md, section 8) ----------
 
 export type TrackTarget =

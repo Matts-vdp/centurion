@@ -5,7 +5,7 @@ import { timingSafeEqual } from 'node:crypto';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { Config } from './config.js';
 import type { Manager } from './manager.js';
-import { EFFORT_LEVELS, type EffortLevel } from './types.js';
+import { EFFORT_LEVELS, type EffortLevel, type PermissionDecision } from './types.js';
 
 const MAX_BODY = 1024 * 1024;
 
@@ -38,6 +38,7 @@ export function startServer(manager: Manager, config: Config): http.Server {
   manager.on('delivered', (data) => broadcast('delivered', data));
   manager.on('plan', (plan) => broadcast('plan', plan));
   manager.on('questions', (set) => broadcast('questions', set));
+  manager.on('permission', (request) => broadcast('permission', request));
   manager.on('message', (data) => {
     if (forward(data.message)) broadcast('message', data);
   });
@@ -69,6 +70,7 @@ export function startServer(manager: Manager, config: Config): http.Server {
         res.write(`event: snapshot\ndata: ${JSON.stringify(manager.list())}\n\n`);
         for (const plan of manager.listPlans()) res.write(`event: plan\ndata: ${JSON.stringify(plan)}\n\n`);
         for (const set of manager.listQuestionSets()) res.write(`event: questions\ndata: ${JSON.stringify(set)}\n\n`);
+        for (const request of manager.listPermissions()) res.write(`event: permission\ndata: ${JSON.stringify(request)}\n\n`);
         clients.add(res);
         const ping = setInterval(() => res.write(': ping\n\n'), 25_000);
         req.on('close', () => {
@@ -177,6 +179,13 @@ async function route(manager: Manager, config: Config, req: http.IncomingMessage
       change.effort = body.effort;
     }
     return manager.setModel(id, change);
+  }
+  if (parts[2] === 'permission' && method === 'POST') {
+    const body = await readJson(req);
+    const decisions: PermissionDecision[] = ['allow', 'allowSession', 'deny'];
+    if (!decisions.includes(body.decision)) throw new HttpError(400, `"decision" must be one of ${decisions.join(', ')}`);
+    if (body.message !== undefined && typeof body.message !== 'string') throw new HttpError(400, '"message" must be a string');
+    return manager.answerPermission(id, str(body.requestId, 'requestId'), body.decision, body.message);
   }
   if (parts[2] === 'archive' && method === 'POST') {
     const body = await readJson(req);

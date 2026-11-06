@@ -1,6 +1,17 @@
-import type { AgentRecord, EffortLevel, ModelOption, Plan, QuestionSet, QueuedMessage, Track, UserQuestion } from '../../src/types';
+import type {
+  AgentRecord,
+  EffortLevel,
+  ModelOption,
+  PermissionDecision,
+  PermissionRequest,
+  Plan,
+  QuestionSet,
+  QueuedMessage,
+  Track,
+  UserQuestion,
+} from '../../src/types';
 
-export type { AgentRecord, EffortLevel, ModelOption, Plan, QuestionSet, QueuedMessage, Track, UserQuestion };
+export type { AgentRecord, EffortLevel, ModelOption, PermissionDecision, PermissionRequest, Plan, QuestionSet, QueuedMessage, Track, UserQuestion };
 
 export const EFFORT_LEVELS: readonly EffortLevel[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 
@@ -79,5 +90,7 @@ export const commands = {
   setPlanNotify: (id: string, mode: 'round' | 'each') => api<Plan>(`/api/plans/${id}/notify`, { method: 'POST', body: { mode } }),
   answerQuestions: (id: string, answers: AnswerPayload[], corrections: { questionId: string; text: string }[]) =>
     api<QuestionSet>(`/api/questions/${id}/answer`, { method: 'POST', body: { answers, corrections } }),
+  answerPermission: (agentId: string, requestId: string, decision: PermissionDecision, message?: string) =>
+    api<PermissionRequest>(`/api/agents/${agentId}/permission`, { method: 'POST', body: { requestId, decision, message } }),
   info: () => api<{ orchestratorFolder: string; permissionMode: string; platform: string; defaultModel: string | null }>('/api/info'),
 };

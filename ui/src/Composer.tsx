@@ -125,8 +125,8 @@ function LiveStatus({ agent, agents }: { agent: AgentRecord; agents: Map<string,
   const now = useNow(true);
   const state = agentState(agent, agents, seen, activity.get(agent.id), now);
   return (
-    <div className="live-status" role="status">
-      <span className="spinner" aria-hidden="true" />
+    <div className={`live-status${state.key === 'needs' ? ' waiting' : ''}`} role="status">
+      {state.key === 'needs' ? <span className="waiting-dot" aria-hidden="true" /> : <span className="spinner" aria-hidden="true" />}
       <span className="live-text">{state.sentence}</span>
       <span className="live-hint">
         <kbd className="key">Esc</kbd> to interrupt

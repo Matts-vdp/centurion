@@ -2,7 +2,7 @@
 
 Three additions after the redesign (`docs/ui-design.md`). Each part ships on its own with its own commit, in the order below. Check each in the browser against a test manager, in light, dark and a narrow width.
 
-Status: parts 1 (archiving) and 2 (split view) done.
+Status: all three parts done.
 
 ## 1. Archiving chats and experts
 

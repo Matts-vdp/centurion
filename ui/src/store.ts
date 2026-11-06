@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { eventsUrl, type AgentRecord, type LiveMessage, type Plan, type QuestionSet, type QueuedMessage } from './api';
+import { eventsUrl, type AgentRecord, type LiveMessage, type PermissionRequest, type Plan, type QuestionSet, type QueuedMessage } from './api';
 import { toolDetail } from './tools';
 
 export type LiveEvent =
@@ -18,6 +18,8 @@ type State = {
   /** Track plans and question sets by id (sent after the snapshot, then on every change). */
   plans: Map<string, Plan>;
   questionSets: Map<string, QuestionSet>;
+  /** Permission requests by id: pending ones and recently answered ones (for the outcome line). */
+  permissions: Map<string, PermissionRequest>;
   connected: boolean;
   /** Bumped on every snapshot, i.e. on every (re)connect. The open transcript reloads its history then. */
   epoch: number;
@@ -27,7 +29,7 @@ type State = {
 
 /** The agent registry fed by the manager's SSE stream, plus a channel for transcript events. */
 class ManagerStore {
-  private state: State = { agents: new Map(), activity: new Map(), plans: new Map(), questionSets: new Map(), connected: false, epoch: 0, authError: false };
+  private state: State = { agents: new Map(), activity: new Map(), plans: new Map(), questionSets: new Map(), permissions: new Map(), connected: false, epoch: 0, authError: false };
   private readonly listeners = new Set<() => void>();
   private readonly liveListeners = new Set<(e: LiveEvent) => void>();
   private source: EventSource | null = null;
@@ -64,6 +66,12 @@ class ManagerStore {
     this.set({ questionSets });
   }
 
+  upsertPermission(request: PermissionRequest): void {
+    const permissions = new Map(this.state.permissions);
+    permissions.set(request.id, request);
+    this.set({ permissions });
+  }
+
   connect(): void {
     if (this.source) return;
     const es = new EventSource(eventsUrl());
@@ -74,6 +82,7 @@ class ManagerStore {
         agents: new Map(list.map((a) => [a.id, a])),
         plans: new Map(),
         questionSets: new Map(),
+        permissions: new Map(),
         connected: true,
         authError: false,
         epoch: this.state.epoch + 1,
@@ -86,6 +95,7 @@ class ManagerStore {
     });
     es.addEventListener('plan', (e) => this.upsertPlan(JSON.parse((e as MessageEvent).data) as Plan));
     es.addEventListener('questions', (e) => this.upsertQuestions(JSON.parse((e as MessageEvent).data) as QuestionSet));
+    es.addEventListener('permission', (e) => this.upsertPermission(JSON.parse((e as MessageEvent).data) as PermissionRequest));
     es.addEventListener('message', (e) => {
       const d = JSON.parse((e as MessageEvent).data) as { agentId: string; message: LiveMessage };
       this.track(d.agentId, d.message);
@@ -217,6 +227,17 @@ export function isUnread(a: AgentRecord, seen: Record<string, string>): boolean 
 }
 /** View preferences: `verbose` (Ctrl+O, every work log open). */
 export const viewPrefs = new PersistedMap<boolean>('agent-manager-view');
+
+/** An agent's permission requests that wait for the user, oldest first. */
+export function pendingPermissions(agentId: string, state: Pick<State, 'permissions'> = store.getState()): PermissionRequest[] {
+  return [...state.permissions.values()].filter((p) => p.agentId === agentId && p.status === 'pending').sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
+/** The answered request for a tool call, if the user was asked about it. */
+export function permissionFor(toolUseId: string, state: Pick<State, 'permissions'> = store.getState()): PermissionRequest | undefined {
+  for (const p of state.permissions.values()) if (p.toolUseId === toolUseId) return p;
+  return undefined;
+}
 
 /** What an orchestrator is waiting on the user for: a plan to start and open questions. */
 export function pendingFor(agentId: string, state: Pick<State, 'plans' | 'questionSets'> = store.getState()) {
