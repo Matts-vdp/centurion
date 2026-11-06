@@ -25,9 +25,12 @@ export function agentState(
   activity: Activity | undefined,
   now: number,
 ): AgentState {
+  // Only work that will report back to this orchestrator counts (messages with `notify`).
   const busyChildren =
     a.kind === 'orchestrator'
-      ? [...agents.values()].filter((c) => c.parentId === a.id && !c.archived && (c.status === 'running' || c.queue.length > 0))
+      ? [...agents.values()].filter(
+          (c) => c.parentId === a.id && !c.archived && ((c.status === 'running' && c.current?.notify === true) || c.queue.some((m) => m.notify)),
+        )
       : [];
   const ago = relativeTime(a.lastActivityAt, now);
   const make = (key: StateKey, line: string, sentence = line): AgentState => ({ key, line, sentence, busyChildren });

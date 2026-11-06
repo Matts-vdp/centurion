@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { commands, type AgentRecord, type QueuedMessage } from './api';
+import { commands, type AgentRecord } from './api';
+import { Composer } from './Composer';
 import { Header } from './Header';
-import { CloseIcon, SendIcon, StopIcon } from './icons';
+import { CloseIcon } from './icons';
 import { lastSeen, store, type LiveEvent } from './store';
 import { Transcript } from './Transcript';
 import { addNote, applyLive, emptyTranscript, fromHistory, parsePrompt, type Transcript as T } from './timeline';
@@ -68,129 +69,12 @@ export function AgentView({ agent, agents, epoch, onSelect, onOpenDrawer }: Prop
         agents={agents}
         onSelect={onSelect}
       />
-      <Composer agent={agent} run={run} onInterrupt={interrupt} />
+      <Composer agent={agent} agents={agents} run={run} onInterrupt={interrupt} />
     </div>
   );
 }
 
-// ---------- composer ----------
 
-function Composer({
-  agent,
-  run,
-  onInterrupt,
-}: {
-  agent: AgentRecord;
-  run: (a: () => Promise<unknown>) => Promise<void>;
-  onInterrupt: () => void;
-}) {
-  const [text, setText] = useState(() => readDraft(agent.id));
-  const [sending, setSending] = useState(false);
-  const box = useRef<HTMLTextAreaElement>(null);
-  const running = agent.status === 'running';
-
-  useEffect(() => writeDraft(agent.id, text), [agent.id, text]);
-  useEffect(() => box.current?.focus(), [agent.id]);
-
-  // Esc interrupts the running turn (the queue stays), unless something else handles it.
-  useEffect(() => {
-    if (!running) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || e.defaultPrevented) return;
-      if ((e.target as HTMLElement | null)?.closest('.sidebar, .menu')) return;
-      e.preventDefault();
-      onInterrupt();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [running, onInterrupt]);
-
-  const send = async () => {
-    const value = text.trim();
-    if (!value || sending) return;
-    setSending(true);
-    await run(async () => {
-      await commands.send(agent.id, value);
-      // Keep anything typed while the request was in flight.
-      setText((current) => (current.trim() === value ? '' : current));
-    });
-    setSending(false);
-    box.current?.focus();
-  };
-
-  return (
-    <div className="composer">
-      {agent.queue.length > 0 && <Queue agent={agent} run={run} />}
-      <div className="composer-box">
-        <textarea
-          ref={box}
-          rows={1}
-          value={text}
-          placeholder={
-            running
-              ? `Queue a message for ${agent.name} (Esc interrupts the current turn)`
-              : `Message ${agent.name} (Enter to send, Shift+Enter for a new line)`
-          }
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-              e.preventDefault();
-              void send();
-            }
-          }}
-        />
-        <div className="composer-buttons">
-          {running && (
-            <button className="button secondary" title="Interrupt the current turn (Esc). The queue stays." onClick={onInterrupt}>
-              <StopIcon size={14} /> Stop
-            </button>
-          )}
-          <button className="button primary" disabled={!text.trim() || sending} onClick={() => void send()} title={running ? 'Queue' : 'Send'}>
-            <SendIcon size={14} /> {running ? 'Queue' : 'Send'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Queue({ agent, run }: { agent: AgentRecord; run: (a: () => Promise<unknown>) => Promise<void> }) {
-  return (
-    <div className="queue" aria-label="Queued messages">
-      <div className="queue-title">Queued ({agent.queue.length})</div>
-      {agent.queue.map((m: QueuedMessage) => {
-        const { source, text } = parsePrompt(m.text);
-        const from = source.kind === 'user' ? 'You' : source.kind === 'manager' ? 'Manager' : 'Orchestrator';
-        return (
-          <div key={m.id} className="queue-item" title={text}>
-            <span className="queue-source">{from}</span>
-            <span className="queue-text">{text}</span>
-            <button className="icon-button" title="Remove from the queue" onClick={() => void run(() => commands.removeQueued(agent.id, m.id))}>
-              <CloseIcon size={14} />
-            </button>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function readDraft(id: string): string {
-  try {
-    return sessionStorage.getItem(`agent-manager-draft:${id}`) ?? '';
-  } catch {
-    return '';
-  }
-}
-
-function writeDraft(id: string, text: string): void {
-  try {
-    if (text) sessionStorage.setItem(`agent-manager-draft:${id}`, text);
-    else sessionStorage.removeItem(`agent-manager-draft:${id}`);
-  } catch {
-    // drafts are a convenience only
-  }
-}
 
 // ---------- transcript loading ----------
 

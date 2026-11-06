@@ -48,14 +48,6 @@ export function Transcript({ transcript, loading, loadError, agent, agents, onSe
         {transcript.items.map((item) => (
           <ItemView key={item.key} item={item} agents={agents} onSelect={onSelect} now={now} running={running} />
         ))}
-        {running && !loading && (
-          <div className="activity-indicator">
-            <span className="spinner" />
-            {pending
-              ? `Running ${displayName(pending.name)} for ${elapsed(now - pending.startedAt)}…`
-              : 'Thinking…'}
-          </div>
-        )}
       </div>
     </div>
   );

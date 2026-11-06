@@ -1450,111 +1450,200 @@ button.crumb:hover {
 
 /* ---------- composer ---------- */
 
-.composer {
+.composer-dock {
   flex: none;
-  border-top: 1px solid var(--line);
-  background: var(--canvas);
-  padding: 8px 16px 12px;
+  padding: 0 28px 20px;
 }
 
-.composer > * {
-  max-width: 900px;
-  margin-left: auto;
-  margin-right: auto;
+.composer-column {
+  max-width: 760px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.live-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 4px;
+  font-size: 13px;
+  min-width: 0;
+}
+
+.live-text {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-2);
+  background: linear-gradient(90deg, var(--text-2) 0%, var(--text-2) 40%, var(--text) 50%, var(--text-2) 60%, var(--text-2) 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer 2.4s linear infinite;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-text {
+    -webkit-text-fill-color: currentColor;
+    background: none;
+  }
+}
+
+.live-hint {
+  flex: none;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+kbd.key {
+  padding: 1px 5px;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.composer {
+  background: var(--raised);
+  border-radius: 14px;
+  box-shadow: var(--shadow-float);
+}
+
+.composer-body {
+  padding: 14px 12px 10px 16px;
+}
+
+.composer textarea,
+.composer textarea:focus {
+  display: block;
+  width: 100%;
+  resize: none;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  padding: 0;
+  font-size: 15px;
+  line-height: 1.5;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.composer-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.composer-hint {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.round-button {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 0;
+  display: grid;
+  place-items: center;
+  flex: none;
+  transition: opacity 120ms ease-out, background 120ms ease-out;
+}
+
+.round-button.send {
+  background: var(--text);
+  color: var(--canvas);
+}
+
+.round-button.send:disabled {
+  opacity: 0.3;
+}
+
+.round-button.stop {
+  background: var(--fill);
+  color: var(--text);
+}
+
+.round-button.stop:hover {
+  background: var(--fill-2);
 }
 
 .queue {
-  margin-bottom: 8px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  background: var(--canvas);
-  padding: 4px 4px 4px 10px;
+  padding: 10px 12px 10px 16px;
+  box-shadow: inset 0 -1px 0 var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .queue-title {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-3);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  color: var(--waiting);
+  font-weight: 500;
+  padding-bottom: 4px;
 }
 
 .queue-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-width: 0;
+  gap: 10px;
+  min-height: 28px;
 }
 
 .queue-source {
-  font-size: 11px;
+  font-size: 12.5px;
   color: var(--text-3);
   flex: none;
-  width: 80px;
 }
 
 .queue-text {
   flex: 1;
   min-width: 0;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.composer-box {
-  display: flex;
-  gap: 8px;
-  align-items: flex-end;
+.queue-item .icon-button {
+  width: 24px;
+  height: 24px;
+  opacity: 0;
 }
 
-.composer-box textarea {
-  flex: 1;
-  min-width: 0;
-  resize: none;
-  /* grows with the text, between min and max height */
-  field-sizing: content;
-  min-height: 32px;
-  max-height: 240px;
-  overflow-y: auto;
-  line-height: 20px;
+.queue-item:hover .icon-button,
+.queue-item .icon-button:focus-visible {
+  opacity: 1;
 }
 
-.composer-buttons {
-  display: flex;
-  gap: 6px;
-  flex: none;
-  padding-bottom: 2px;
+@media (hover: none) {
+  .queue-item .icon-button {
+    opacity: 1;
+  }
 }
 
-@media (max-width: 720px) {
-  .transcript-inner {
-    padding: 12px;
-  }
+.narrow .composer-dock {
+  padding: 0 10px 10px;
+}
 
-  .composer {
-    padding: 8px 12px 10px;
-  }
-
-  .agent-header {
-    padding: 8px 8px 8px 12px;
-  }
-
-  .breadcrumb-bar {
-    padding: 0 8px 0 12px;
-  }
-
-  .composer-box {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .composer-buttons {
-    justify-content: flex-end;
-  }
-
-  .queue-source {
-    width: auto;
-  }
+.narrow .live-hint {
+  display: none;
 }
 
 .drawer-button {

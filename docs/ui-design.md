@@ -96,7 +96,7 @@ Primary buttons are inverted text colour (light on dark, dark on light), not a h
 | State | Mark | Sidebar second line |
 |---|---|---|
 | Running | A small blue arc spinning in the corner instead of the dot | `Running Bash · 1m 12s` |
-| Waiting on experts (orchestrator, derived) | Hollow blue dot | `Waiting on 2 experts` |
+| Waiting on experts (orchestrator, derived from experts working on a message that reports back to it) | Hollow blue dot | `Waiting on 2 experts` |
 | Queued | Amber dot | `2 queued` |
 | Finished, unread | Green dot, name in 600 weight | `Replied 2 min ago` |
 | Failed | Coral dot | `Failed · Command exited 1` |
@@ -253,11 +253,11 @@ Like `propose_tracks`, it stores the set and returns at once, and the orchestrat
 
 Each step is shippable on its own and gets its own commit. Check every step in the browser against a test manager, in light, dark and a narrow width, and compare it with the canvas. Mark a step done here when it lands.
 
-Status: steps 1–2 done.
+Status: steps 1–3 done.
 
 1. **Foundations.** *(done)* New tokens in `styles.css` (both themes), Plex fonts, Lucide icons, button / input / menu restyle. Drop the activity bar.
 2. **Sidebar and header.** *(done)* Agent marks with status, two-line rows with the folder name, Needs you group, footer counts, search field (opens a basic switcher), the two-line header with repo chip and context ring.
-3. **Composer.** Floating composer, live status line, queue list.
+3. **Composer.** *(done)* Floating composer, live status line, queue list.
 4. **Transcript.** Message blocks with speaker lines, prose typography, work-log grouping (`timeline.ts` groups consecutive tool items), turn footers, event lines.
 5. **Delegations.** The delegation object, folding notifications and `get_expert_output` into it (client-side, matched by expert id and order).
 6. **Model and effort.** The header chip and popover, the endpoint, `model` / `effort` on `create_expert`.
