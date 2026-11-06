@@ -6,5 +6,6 @@
   "permissionMode": "auto",
   "model": null,
   "env": {},
-  "removeEnv": []
+  "removeEnv": [],
+  "idleMinutes": 10
 }

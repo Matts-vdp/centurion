@@ -60,10 +60,16 @@ export class AgentRuntime {
   private input: InputChannel | null = null;
   private busy = false;
   private stopping = false;
+  private hibernating = false;
+  private idleTimer: NodeJS.Timeout | null = null;
+  /** total_cost_usd is cumulative per query() call; we add the per-turn difference. */
+  private lastTotalCost = 0;
 
   constructor(
     public readonly rec: AgentRecord,
     private readonly hooks: RuntimeHooks,
+    /** Close the process after this long without work; 0 keeps it alive. */
+    private readonly idleMs = 0,
   ) {}
 
   get isBusy(): boolean {
@@ -78,7 +84,8 @@ export class AgentRuntime {
 
   /** Deliver the next queued message if the agent is free. */
   pump(): void {
-    if (this.busy || this.stopping || this.rec.queue.length === 0) return;
+    if (this.busy || this.stopping || this.hibernating || this.rec.queue.length === 0) return;
+    this.clearIdleTimer();
     const next = this.takeNext();
     this.busy = true;
     this.rec.current = next;
@@ -121,9 +128,29 @@ export class AgentRuntime {
 
   /** Close the process without changing the record (used on manager shutdown). */
   dispose(): void {
+    this.clearIdleTimer();
     this.stopping = true;
     this.input?.close();
     this.q?.close();
+  }
+
+  private scheduleIdleClose(): void {
+    this.clearIdleTimer();
+    if (!this.idleMs || !this.q) return;
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = null;
+      if (this.busy || !this.q) return;
+      // Free the process; the session is resumed on the next message.
+      this.hibernating = true;
+      this.input?.close();
+      this.q.close();
+    }, this.idleMs);
+    this.idleTimer.unref();
+  }
+
+  private clearIdleTimer(): void {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = null;
   }
 
   /** Combine consecutive manager notifications into one message so a busy orchestrator wakes once. */
@@ -139,6 +166,7 @@ export class AgentRuntime {
   private ensureStarted(): void {
     if (this.q) return;
     this.input = new InputChannel();
+    this.lastTotalCost = 0;
     this.q = query({ prompt: this.input, options: this.hooks.buildOptions(this.rec) });
     void this.consume(this.q);
   }
@@ -166,9 +194,12 @@ export class AgentRuntime {
       result.subtype === 'success'
         ? result.result
         : `Turn ended with ${result.subtype}${'errors' in result && result.errors?.length ? `: ${result.errors.join('; ')}` : ''}`;
-    this.rec.costUsd = result.total_cost_usd ?? this.rec.costUsd;
+    const total = result.total_cost_usd ?? this.lastTotalCost;
+    this.rec.costUsd += Math.max(0, total - this.lastTotalCost);
+    this.lastTotalCost = total;
     this.endTurn({ text, at: new Date().toISOString(), isError }, isError ? 'error' : 'idle');
     this.pump();
+    if (!this.busy) this.scheduleIdleClose();
   }
 
   private failTurn(err: unknown): void {
@@ -190,9 +221,16 @@ export class AgentRuntime {
 
   private onExit(error: unknown): void {
     const wasStopping = this.stopping;
+    const wasHibernating = this.hibernating;
     this.q = null;
     this.input = null;
     this.stopping = false;
+    this.hibernating = false;
+    this.clearIdleTimer();
+    if (wasHibernating && !this.busy) {
+      this.pump(); // a message may have been queued while the process was closing
+      return;
+    }
     if (this.busy) {
       if (wasStopping) {
         this.endTurn({ text: 'Stopped before the turn finished.', at: new Date().toISOString(), isError: true }, 'stopped');

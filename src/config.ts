@@ -18,6 +18,8 @@ export type Config = {
   env: Record<string, string>;
   /** Environment variables to strip before starting agents. */
   removeEnv: string[];
+  /** Close an agent's process after this many idle minutes (0 = never). The next message resumes it. */
+  idleMinutes: number;
   /** Folder holding the orchestrator/expert instruction files. */
   promptsDir: string;
   /** Folder holding the static test page. */
@@ -35,6 +37,7 @@ const defaults = {
   model: null,
   env: {},
   removeEnv: [],
+  idleMinutes: 10,
 };
 
 /**

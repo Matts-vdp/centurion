@@ -153,7 +153,7 @@ export class Manager extends EventEmitter<ManagerEvents> {
         onDeliver: (r, message) => this.emit('delivered', { agentId: r.id, message }),
         onTurnEnd: (r, handled, reply) => this.onTurnEnd(r, handled, reply),
         onChange: (r) => this.changed(r),
-      }),
+      }, this.config.idleMinutes * 60_000),
     );
   }
 
