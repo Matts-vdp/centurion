@@ -1,7 +1,13 @@
 import type { HistoryMessage, LiveMessage, QueuedMessage } from './api';
 import { modelLabel } from './models';
 
-export type Source = { kind: 'user' } | { kind: 'orchestrator'; name: string } | { kind: 'manager' };
+export type Source =
+  | { kind: 'user' }
+  | { kind: 'orchestrator'; name: string }
+  | { kind: 'manager' }
+  /** Claude Code itself: a background subagent ended (`<task-notification>`) or handed back its report. */
+  | { kind: 'task'; toolUseId: string; status: string; summary: string }
+  | { kind: 'handback'; agentId: string; report: string };
 
 /** One `[Manager notification]` about an expert, parsed from a manager prompt. */
 export type Notification = { expertName: string; expertId: string; text: string; preview: string };
@@ -41,21 +47,62 @@ export type Item =
   | ToolItem
   | { kind: 'note'; key: string; text: string; level: 'info' | 'error'; at?: number };
 
+/** What a subagent did, from the live stream: its own steps and the task events about it. */
+export type Sub = {
+  items: Item[];
+  /** tool_use_id → index in items */
+  tools: Map<string, number>;
+  /** The latest one-line progress summary (task_progress). */
+  summary?: string;
+  /** Set by task_notification: how it ended (background subagents end after their tool call returned). */
+  ended?: 'completed' | 'failed' | 'stopped';
+  toolUses?: number;
+  durationMs?: number;
+};
+
 export type Transcript = {
   items: Item[];
   seen: Set<string>;
   /** tool_use_id → index in items */
   tools: Map<string, number>;
+  /** Agent / Task tool_use_id → what its subagent did, live. */
+  subs: Map<string, Sub>;
 };
 
-export const emptyTranscript = (): Transcript => ({ items: [], seen: new Set(), tools: new Map() });
+export const emptyTranscript = (): Transcript => ({ items: [], seen: new Set(), tools: new Map(), subs: new Map() });
+
+const emptySub = (): Sub => ({ items: [], tools: new Map() });
 
 const ORCH_PREFIX = /^\[Message from orchestrator "([^"]*)"\]\n?/;
 const MANAGER_TAG = '[Manager notification]';
 const NOTIFICATION = /^Expert "([^"]*)" \(id: ([^)]+)\) ([\s\S]*)$/;
 
 /** Who sent a prompt, derived from the prefix the manager adds; the prefix is stripped for display. */
+const TASK_NOTIFICATION = /^<task-notification>([\s\S]*)<\/task-notification>/;
+const HANDBACK = /^(?:Another Claude session sent a message:\s*)?<agent-message from="([^"]+)">\s*\[Subagent hand-back\]([\s\S]*?)<\/agent-message>/;
+
+const tag = (body: string, name: string) => new RegExp(`<${name}>([\\s\\S]*?)</${name}>`).exec(body)?.[1]?.trim() ?? '';
+
+/** The report inside a hand-back: after "The report follows:", every line indented by the harness. */
+function handbackReport(body: string): string {
+  const at = body.indexOf('The report follows:');
+  const lines = (at >= 0 ? body.slice(at + 'The report follows:'.length) : body).replace(/^\n/, '').split('\n');
+  const indent = Math.min(...lines.filter((l) => l.trim()).map((l) => /^ */.exec(l)![0].length));
+  return lines.map((l) => l.slice(Number.isFinite(indent) ? indent : 0)).join('\n').trim();
+}
+
 export function parsePrompt(raw: string): { source: Source; text: string; notifications?: Notification[] } {
+  const task = TASK_NOTIFICATION.exec(raw.trim());
+  if (task) {
+    const body = task[1];
+    const source: Source = { kind: 'task', toolUseId: tag(body, 'tool-use-id'), status: tag(body, 'status'), summary: tag(body, 'summary') };
+    return { source, text: source.summary || 'A background task ended' };
+  }
+  const handback = HANDBACK.exec(raw.trim());
+  if (handback) {
+    const report = handbackReport(handback[2]);
+    return { source: { kind: 'handback', agentId: handback[1], report }, text: report };
+  }
   const orch = ORCH_PREFIX.exec(raw);
   if (orch) return { source: { kind: 'orchestrator', name: orch[1] }, text: raw.slice(orch[0].length) };
   if (raw.startsWith(MANAGER_TAG)) {
@@ -104,7 +151,7 @@ const MODEL_SET = /^Set model to (\S+)(?: \(([^)]+)\))?/;
 /** A slash command the user typed (e.g. a skill: `/orchestrate …`), as Claude Code stores it. */
 const SLASH_COMMAND = /^<command-message>[\s\S]*?<\/command-message>\s*<command-name>([^<]*)<\/command-name>(?:\s*<command-args>([\s\S]*?)<\/command-args>)?/;
 
-function pushPrompt(t: Transcript, raw: string, fromHistory: boolean, at: number | undefined): void {
+function pushPrompt(t: Pick<Transcript, 'items'>, raw: string, fromHistory: boolean, at: number | undefined): void {
   if (INTERRUPT_MARKER.test(raw)) return;
   const slash = SLASH_COMMAND.exec(raw.trim());
   if (slash) raw = [slash[1].trim(), slash[2]?.trim()].filter(Boolean).join(' ');
@@ -126,7 +173,7 @@ function pushPrompt(t: Transcript, raw: string, fromHistory: boolean, at: number
  * Add one user or assistant message. Mutates `t`; callers copy `items` before handing it to React.
  * `fromHistory`: user prompts only come from history; live prompts come from `delivered` events.
  */
-function addBody(t: Transcript, type: string, message: unknown, fromHistory: boolean, at: number): void {
+function addBody(t: Pick<Transcript, 'items' | 'tools'>, type: string, message: unknown, fromHistory: boolean, at: number): void {
   const blocks = blocksOf(message);
   if (blocks === null) return;
   if (type === 'user') {
@@ -175,10 +222,17 @@ const timeOf = (m: HistoryMessage): number => {
   return Number.isNaN(ts) ? Date.now() : ts;
 };
 
+/** A subagent's steps and prose from its own transcript (its prompt is the tool call's input). */
+export function fromSubagent(messages: HistoryMessage[]): Item[] {
+  const t = { items: [] as Item[], tools: new Map<string, number>() };
+  for (const m of messages) addBody(t, m.type, m.message, false, timeOf(m));
+  return t.items;
+}
+
 export function fromHistory(messages: HistoryMessage[]): Transcript {
   const t = emptyTranscript();
   for (const m of messages) {
-    if (m.parent_tool_use_id) continue; // subagent internals stay hidden
+    if (m.parent_tool_use_id) continue; // subagent transcripts load on demand (fromSubagent)
     if (m.uuid) t.seen.add(m.uuid);
     addBody(t, m.type, m.message, true, timeOf(m));
   }
@@ -190,7 +244,7 @@ export function applyLive(
   t: Transcript,
   e: { kind: 'message'; message: LiveMessage } | { kind: 'delivered'; message: QueuedMessage },
 ): Transcript {
-  const next: Transcript = { items: [...t.items], seen: t.seen, tools: t.tools };
+  const next: Transcript = { items: [...t.items], seen: t.seen, tools: t.tools, subs: t.subs };
   if (e.kind === 'delivered') {
     // The history may already hold this prompt if it was fetched right after delivery.
     const last = [...next.items].reverse().find((i) => i.kind === 'prompt');
@@ -200,10 +254,27 @@ export function applyLive(
     return next;
   }
   const m = e.message;
-  if (m.parent_tool_use_id) return t;
   if (m.uuid) {
     if (t.seen.has(m.uuid)) return t;
     t.seen.add(m.uuid);
+  }
+  // Inside a subagent: its steps go to its own list, keyed by the tool call that started it.
+  if (m.parent_tool_use_id && (m.type === 'assistant' || m.type === 'user')) {
+    const prev = t.subs.get(m.parent_tool_use_id) ?? emptySub();
+    const sub: Sub = { ...prev, items: [...prev.items], tools: new Map(prev.tools) };
+    addBody(sub, m.type, m.message, false, Date.now());
+    return withSub(t, m.parent_tool_use_id, sub);
+  }
+  if (m.parent_tool_use_id) return t;
+  if (m.type === 'system' && typeof m.tool_use_id === 'string' && (m.subtype === 'task_progress' || m.subtype === 'task_notification')) {
+    const prev = t.subs.get(m.tool_use_id) ?? emptySub();
+    const usage = m.usage as { tool_uses?: number; duration_ms?: number } | undefined;
+    const sub: Sub = { ...prev };
+    if (m.subtype === 'task_progress' && typeof m.summary === 'string' && m.summary.trim()) sub.summary = m.summary.trim();
+    if (m.subtype === 'task_notification') sub.ended = m.status as Sub['ended'];
+    if (typeof usage?.tool_uses === 'number') sub.toolUses = usage.tool_uses;
+    if (typeof usage?.duration_ms === 'number') sub.durationMs = usage.duration_ms;
+    return withSub(t, m.tool_use_id, sub);
   }
   const before = next.items.length;
   if (m.type === 'assistant' || m.type === 'user') {
@@ -225,6 +296,12 @@ export function applyLive(
     next.items.push({ kind: 'note', key: nextKey('note'), text: 'Conversation compacted', level: 'info', at: Date.now() });
   }
   return next.items.length === before && next.items.every((i, n) => i === t.items[n]) ? t : next;
+}
+
+function withSub(t: Transcript, toolUseId: string, sub: Sub): Transcript {
+  const subs = new Map(t.subs);
+  subs.set(toolUseId, sub);
+  return { ...t, subs };
 }
 
 /** The last tool call without a result, if any. */

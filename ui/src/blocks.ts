@@ -15,7 +15,21 @@ export type RenderBlock =
   | { kind: 'footer'; key: string; reply: Reply; tools: number; durationMs?: number }
   | Delegation
   | { kind: 'plan'; key: string; planId: string; version: number }
-  | { kind: 'questions'; key: string; setId: string };
+  | { kind: 'questions'; key: string; setId: string }
+  /** An Agent / Task call: a subagent gets its own line instead of hiding in a work log. */
+  | SubagentBlock;
+
+/** An Agent / Task call. A background one ends later: its notification and report fold in here. */
+export type SubagentBlock = {
+  kind: 'subagent';
+  key: string;
+  tool: ToolItem;
+  live: boolean;
+  /** From `<task-notification>`: how a background subagent ended. */
+  ended?: { status: string; summary: string };
+  /** A background subagent's report, from its hand-back. */
+  report?: string;
+};
 
 type Turn = { prompt?: PromptItem; items: Item[]; reply?: Reply };
 
@@ -41,10 +55,12 @@ export function toBlocks(items: Item[], replies: Reply[], running: boolean): Ren
   const blocks: RenderBlock[] = [];
   // expertId → the latest delegation to it, so notifications and reads can fold into it.
   const latest = new Map<string, Delegation>();
+  // Subagents by tool call and by agent id, so background endings and reports can fold into them.
+  const subs = { byTool: new Map<string, SubagentBlock>(), byAgent: new Map<string, SubagentBlock>() };
 
   turns.forEach((turn, n) => {
     const last = n === turns.length - 1;
-    if (turn.prompt) blocks.push(...promptBlocks(turn.prompt, latest));
+    if (turn.prompt) blocks.push(...promptBlocks(turn.prompt, latest, subs));
     let work: Step[] = [];
     const flush = (live: boolean) => {
       if (work.length) blocks.push({ kind: 'work', key: `work-${work[0].key}`, steps: work, live });
@@ -58,6 +74,15 @@ export function toBlocks(items: Item[], replies: Reply[], running: boolean): Ren
           const d = delegation(item);
           if (d.expertId) latest.set(d.expertId, d);
           blocks.push(d);
+          continue;
+        }
+        if (name === 'Agent' || name === 'Task') {
+          flush(false);
+          const sub: SubagentBlock = { kind: 'subagent', key: `subagent-${item.id}`, tool: item, live: running && last };
+          subs.byTool.set(item.id, sub);
+          const agentId = item.result ? /agentId: (\w+)/.exec(item.result)?.[1] : undefined;
+          if (agentId) subs.byAgent.set(agentId, sub);
+          blocks.push(sub);
           continue;
         }
         if ((name === 'propose_tracks' || name === 'ask_user') && item.result !== undefined && !item.isError) {
@@ -90,7 +115,9 @@ export function toBlocks(items: Item[], replies: Reply[], running: boolean): Ren
       else if (item.kind === 'note') blocks.push({ kind: 'event', key: item.key, text: item.text, level: item.level, at: item.at });
     }
     flush(running && last);
-    if (turn.reply) {
+    // A turn Claude Code started itself for a background task that showed nothing: no footer either.
+    const silent = (turn.prompt?.source.kind === 'task' || turn.prompt?.source.kind === 'handback') && turn.items.length === 0;
+    if (turn.reply && !silent) {
       const tools = turn.items.filter((i) => i.kind === 'tool').length;
       const durationMs = turn.reply.durationMs ?? (turn.prompt?.at ? Date.parse(turn.reply.at) - turn.prompt.at : undefined);
       blocks.push({ kind: 'footer', key: `footer-${turn.prompt?.key ?? n}`, reply: turn.reply, tools, durationMs });
@@ -125,7 +152,28 @@ function delegation(tool: ToolItem): Delegation {
  * A manager prompt that only carries notifications: each one folds into the delegation it reports on,
  * or becomes an event line. Anything else is a message.
  */
-function promptBlocks(p: PromptItem, latest: Map<string, Delegation>): RenderBlock[] {
+function promptBlocks(
+  p: PromptItem,
+  latest: Map<string, Delegation>,
+  subs: { byTool: Map<string, SubagentBlock>; byAgent: Map<string, SubagentBlock> },
+): RenderBlock[] {
+  // Claude Code's own messages about background subagents fold into the subagent's line.
+  if (p.source.kind === 'task') {
+    const sub = subs.byTool.get(p.source.toolUseId);
+    if (sub) {
+      sub.ended = { status: p.source.status, summary: p.source.summary };
+      return [];
+    }
+    return [{ kind: 'event', key: p.key, text: p.text, level: p.source.status === 'failed' ? 'error' : 'info', at: p.at }];
+  }
+  if (p.source.kind === 'handback') {
+    const sub = subs.byAgent.get(p.source.agentId);
+    if (sub) {
+      sub.report = p.source.report;
+      return [];
+    }
+    return [{ kind: 'event', key: p.key, text: 'A subagent handed back its report', level: 'info', at: p.at }];
+  }
   if (p.source.kind === 'manager' && p.notifications?.length) {
     const events: RenderBlock[] = [];
     p.notifications.forEach((notification, i) => {

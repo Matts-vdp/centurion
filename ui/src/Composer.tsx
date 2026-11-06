@@ -141,7 +141,7 @@ function Queue({ agent, run }: { agent: AgentRecord; run: (a: () => Promise<unkn
       <div className="queue-title mono">Queued · {agent.queue.length}</div>
       {agent.queue.map((m: QueuedMessage) => {
         const { source, text } = parsePrompt(m.text);
-        const from = source.kind === 'user' ? 'You' : source.kind === 'manager' ? 'Manager' : source.name;
+        const from = source.kind === 'user' ? 'You' : source.kind === 'orchestrator' ? source.name : source.kind === 'manager' ? 'Manager' : 'Claude Code';
         return (
           <div key={m.id} className="queue-item" title={text}>
             <span className="queue-source">{from}</span>

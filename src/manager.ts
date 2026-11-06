@@ -4,6 +4,8 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import {
   getSessionMessages,
+  getSubagentMessages,
+  listSubagents,
   query,
   type CanUseTool,
   type Options,
@@ -78,6 +80,8 @@ export class Manager extends EventEmitter<ManagerEvents> {
   private modelProbe: Promise<ModelOption[]> | null = null;
   /** Permission requests by id: pending ones, then the last few answered (for the UI). */
   private readonly permissions = new Map<string, PendingPermission | { request: PermissionRequest }>();
+  /** Agent / Task tool call id → the subagent's id, learned while reading subagent transcripts. */
+  private readonly subagentIds = new Map<string, string>();
 
   constructor(private readonly config: Config) {
     super();
@@ -124,6 +128,29 @@ export class Manager extends EventEmitter<ManagerEvents> {
     const rec = this.get(id);
     if (!rec.sessionId) return [];
     return getSessionMessages(rec.sessionId, { dir: rec.cwd });
+  }
+
+  /**
+   * The transcript of the subagent started by the tool call `toolUseId` (Agent / Task). Claude keeps it in
+   * its own file next to the session; the messages carry the tool call's id as `parent_tool_use_id`.
+   */
+  async subagentHistory(id: string, toolUseId: string): Promise<SessionMessage[]> {
+    const rec = this.get(id);
+    if (!rec.sessionId) return [];
+    const sessionId = rec.sessionId;
+    const known = this.subagentIds.get(toolUseId);
+    if (known) return getSubagentMessages(sessionId, known, { dir: rec.cwd });
+    // Some paths don't match the project folder's name as given; without `dir` every project is searched.
+    let ids = await listSubagents(sessionId, { dir: rec.cwd });
+    if (ids.length === 0) ids = await listSubagents(sessionId);
+    for (const agentId of ids) {
+      let messages = await getSubagentMessages(sessionId, agentId, { dir: rec.cwd });
+      if (messages.length === 0) messages = await getSubagentMessages(sessionId, agentId);
+      const owner = messages.find((m) => m.parent_tool_use_id)?.parent_tool_use_id;
+      if (owner) this.subagentIds.set(owner, agentId);
+      if (owner === toolUseId) return messages;
+    }
+    return [];
   }
 
   // ---------- commands ----------
@@ -797,6 +824,8 @@ export class Manager extends EventEmitter<ManagerEvents> {
       // settings. Top-level chats get the orchestrate skill from the managing folder's .claude/skills.
       settingSources: ['user', 'project', 'local'],
       skills: 'all',
+      // One-line summaries of what running subagents do, on task_progress events (the UI's subagent line).
+      agentProgressSummaries: true,
       systemPrompt: { type: 'preset', preset: 'claude_code', append: this.instructions(rec) },
       stderr: (data) => process.stderr.write(`[${rec.id}] ${data}`),
     };

@@ -22,7 +22,9 @@ class HttpError extends Error {
 function forward(message: SDKMessage): boolean {
   if (message.type === 'assistant' || message.type === 'user' || message.type === 'result') return true;
   if (message.type === 'system') {
-    return ['init', 'permission_denied', 'compact_boundary', 'api_retry'].includes(message.subtype as string);
+    return ['init', 'permission_denied', 'compact_boundary', 'api_retry', 'task_started', 'task_progress', 'task_notification'].includes(
+      message.subtype as string,
+    );
   }
   return false;
 }
@@ -149,6 +151,7 @@ async function route(manager: Manager, config: Config, req: http.IncomingMessage
   const id = parts[1];
   if (parts.length === 2 && method === 'GET') return manager.get(id);
   if (parts[2] === 'history' && method === 'GET') return manager.history(id);
+  if (parts[2] === 'subagents' && parts.length === 4 && method === 'GET') return manager.subagentHistory(id, parts[3]);
   if (parts[2] === 'messages' && method === 'POST') {
     const body = await readJson(req);
     return manager.sendMessage(id, str(body.text, 'text'), 'user', body.notify === true);

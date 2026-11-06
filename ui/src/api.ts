@@ -88,6 +88,7 @@ export const commands = {
     api<AgentRecord>(`/api/agents/${id}/model`, { method: 'POST', body: change }),
   models: () => api<ModelOption[]>('/api/models'),
   history: (id: string) => api<HistoryMessage[]>(`/api/agents/${id}/history`),
+  subagent: (id: string, toolUseId: string) => api<HistoryMessage[]>(`/api/agents/${id}/subagents/${toolUseId}`),
   startPlan: (id: string, start: string[], skip: string[]) => api<Plan>(`/api/plans/${id}/start`, { method: 'POST', body: { start, skip } }),
   setPlanNotify: (id: string, mode: 'round' | 'each') => api<Plan>(`/api/plans/${id}/notify`, { method: 'POST', body: { mode } }),
   answerQuestions: (id: string, answers: AnswerPayload[], corrections: { questionId: string; text: string }[]) =>

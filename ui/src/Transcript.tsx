@@ -31,7 +31,7 @@ import { QuestionSetView } from './Questions';
 import { clock, duration, money } from './status';
 import { pendingPermissions, permissionFor, store, useManager, viewPrefs } from './store';
 import { displayName, shortPath, summarize } from './tools';
-import type { PromptItem, ToolItem, Transcript as T } from './timeline';
+import { fromSubagent, type Item, type PromptItem, type Sub, type ToolItem, type Transcript as T } from './timeline';
 
 type Props = {
   transcript: T;
@@ -83,7 +83,7 @@ export function Transcript({ transcript, loading, loadError, agent, agents, focu
 
   const { permissions } = useManager();
   const asks = pendingPermissions(agent.id, { permissions });
-  const ctx: Ctx = { agent, agents, onSelect, now, verbose, latest, run };
+  const ctx: Ctx = { agent, agents, onSelect, now, verbose, latest, run, subs: transcript.subs };
 
   return (
     <div
@@ -128,6 +128,7 @@ type Ctx = {
   verbose: boolean;
   latest: Map<string, string>;
   run: (a: () => Promise<unknown>) => Promise<void>;
+  subs: Map<string, Sub>;
 };
 
 function BlockView({ block, ctx }: { block: RenderBlock; ctx: Ctx }) {
@@ -160,6 +161,8 @@ function BlockView({ block, ctx }: { block: RenderBlock; ctx: Ctx }) {
       );
     case 'questions':
       return <QuestionSetView setId={block.setId} orchestrator={ctx.agent} agents={ctx.agents} now={ctx.now} onSelect={ctx.onSelect} run={ctx.run} />;
+    case 'subagent':
+      return <SubagentView block={block} ctx={ctx} />;
     case 'delegation':
       return (
         <DelegationView
@@ -309,6 +312,144 @@ function WorkLog({ steps, live, ctx }: { steps: Step[]; live: boolean; ctx: Ctx 
             <StepRow key={s.key} step={s} ctx={ctx} running={s === current} />
           ))}
         </ol>
+      )}
+    </div>
+  );
+}
+
+// ---------- subagents ----------
+
+/** What the Agent tool's result says besides the reply: its usage, and whether it went to the background. */
+function subagentResult(text: string) {
+  const usage = /<usage>([\s\S]*?)<\/usage>/.exec(text)?.[1] ?? '';
+  const num = (key: string) => {
+    const m = new RegExp(`${key}:\\s*(\\d+)`).exec(usage);
+    return m ? Number(m[1]) : undefined;
+  };
+  const reply = text
+    .replace(/<usage>[\s\S]*?<\/usage>/g, '')
+    .replace(/^agentId: .*$/gm, '')
+    .trim();
+  return { reply, background: /^Async agent launched/.test(text), toolUses: num('tool_uses'), durationMs: num('duration_ms') };
+}
+
+/**
+ * A subagent: one line in the turn, with what it is doing (the latest progress summary) or how it ended.
+ * Opening it shows its prompt, its steps (live, or from its own transcript) and its reply.
+ */
+function SubagentView({ block, ctx }: { block: Extract<RenderBlock, { kind: 'subagent' }>; ctx: Ctx }) {
+  const { tool, live } = block;
+  const sub = ctx.subs.get(tool.id);
+  const ended = sub?.ended ?? (block.ended?.status as Sub['ended'] | undefined);
+  const [open, setOpen] = useState<boolean | null>(null);
+  const isOpen = open ?? ctx.verbose;
+  const [loaded, setLoaded] = useState<Item[] | null>(null);
+  const [loadError, setLoadError] = useState('');
+  const running = live && tool.result === undefined && !tool.denied;
+  const result = tool.result !== undefined && !tool.isError ? subagentResult(tool.result) : null;
+  const background = result?.background === true && !ended;
+  const failed = tool.isError === true || tool.denied !== undefined || ended === 'failed';
+  const liveItems = sub?.items.length ? sub.items : null;
+  const items = liveItems ?? loaded ?? [];
+  // SubagentHandback is how a background subagent delivers its report; the report shows as the reply.
+  const steps = items.filter((it): it is Step => it.kind === 'thinking' || (it.kind === 'tool' && it.name !== 'SubagentHandback'));
+  const current = running ? steps.findLast((s) => s.kind === 'tool' && s.result === undefined && !s.denied) : undefined;
+  const i = tool.input;
+  const kind = typeof i.subagent_type === 'string' && i.subagent_type && i.subagent_type !== 'general-purpose' ? i.subagent_type : 'Subagent';
+  const description = firstLine(i.description, 100) || firstLine(i.prompt, 100);
+
+  // The steps of a finished subagent come from its own transcript, once it is opened.
+  useEffect(() => {
+    if (!isOpen || liveItems || loaded || running || tool.result === undefined) return;
+    let cancelled = false;
+    commands
+      .subagent(ctx.agent.id, tool.id)
+      .then((messages) => {
+        if (!cancelled) setLoaded(fromSubagent(messages));
+      })
+      .catch((err) => {
+        if (!cancelled) setLoadError(err instanceof Error ? err.message : String(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, liveItems, loaded, running, tool.result, tool.id, ctx.agent.id]);
+
+  const tools = sub?.toolUses ?? result?.toolUses ?? (items.length ? steps.filter((s) => s.kind === 'tool').length : undefined);
+  const toolCount = tools !== undefined && tools > 0 ? `${tools} tool${tools === 1 ? '' : 's'}` : null;
+  let status: string;
+  if (running) {
+    const doing = sub?.summary ?? (current?.kind === 'tool' ? `Running ${displayName(current.name)}` : 'Working');
+    status = [doing, toolCount, duration(ctx.now - tool.startedAt)].filter(Boolean).join(' · ');
+  } else if (failed) {
+    const why = (tool.denied ?? tool.result ?? '').replace(/<\/?tool_use_error>/g, '').trim().split('\n')[0];
+    status = why ? `Failed · ${why}` : 'Failed';
+  } else if (background) {
+    status = sub?.summary ? `In the background · ${sub.summary}` : 'Running in the background';
+  } else if (ended === 'stopped') {
+    status = 'Stopped';
+  } else if (tool.result === undefined) {
+    status = 'No result';
+  } else {
+    const ms = sub?.durationMs ?? result?.durationMs ?? (tool.endedAt !== undefined ? tool.endedAt - tool.startedAt : undefined);
+    status = [ms !== undefined && ms >= 1000 ? `Done in ${duration(ms)}` : 'Done', toolCount].filter(Boolean).join(' · ');
+  }
+  const reply = result && !result.background ? result.reply : (block.report ?? '');
+
+  return (
+    <div className={`subagent${isOpen ? ' open' : ''}${failed ? ' error' : ''}`}>
+      <button className="subagent-line" aria-expanded={isOpen} onClick={() => setOpen(!isOpen)} title={description}>
+        <span className="sub-mark" aria-hidden="true">
+          {running ? <span className="spinner small" /> : failed ? <ErrorIcon size={13} /> : <BotIcon size={13} />}
+        </span>
+        <span className="sub-kind">{kind}</span>
+        <span className="sub-desc">{description}</span>
+        <span className={`sub-status${running ? ' running' : ''}`}>{status}</span>
+        <Chevron open={isOpen} size={14} />
+      </button>
+      {isOpen && (
+        <div className="sub-body">
+          {typeof i.prompt === 'string' && i.prompt.trim() && <FoldText text={i.prompt} label="Prompt" />}
+          {steps.length > 0 && (
+            <ol className="steps">
+              {steps.map((s) => (
+                <StepRow key={s.key} step={s} ctx={ctx} running={s === current} />
+              ))}
+            </ol>
+          )}
+          {steps.length === 0 && !running && !liveItems && tool.result !== undefined && !loaded && !loadError && <div className="sub-note">Loading its steps…</div>}
+          {loaded && loaded.length === 0 && <div className="sub-note">Its transcript is not available.</div>}
+          {loadError && <div className="sub-note error">Could not load its steps: {loadError}</div>}
+          {reply && (
+            <div className="prose sub-reply">
+              <Markdown text={reply} />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Text folded after a few lines, with its label. */
+function FoldText({ text, label }: { text: string; label: string }) {
+  const [open, setOpen] = useState(false);
+  const [long, setLong] = useState(false);
+  const body = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = body.current;
+    if (el && !open) setLong(el.scrollHeight > el.clientHeight + 2);
+  }, [text, open]);
+  return (
+    <div className="sub-prompt">
+      <div className="sub-prompt-label">{label}</div>
+      <div className={`message-body${open ? ' open' : ''}`} ref={body} style={{ ['--fold-lines' as string]: 4 }}>
+        {text}
+      </div>
+      {(long || open) && (
+        <button className="fold-toggle" onClick={() => setOpen(!open)}>
+          {open ? 'Show less' : 'Show all'}
+        </button>
       )}
     </div>
   );
