@@ -61,11 +61,11 @@ Warm neutrals; avoid blue-grey. The values below are the starting point for step
 
 | Token | Dark | Light | Use |
 |---|---|---|---|
-| `--canvas` | `#161514` | `#FBFAF8` | Main area |
-| `--sunken` | `#111110` | `#F3F1EE` | Sidebar, code blocks |
-| `--raised` | `#1F1E1C` | `#FFFFFF` | Composer, menus, delegation objects |
-| `--fill` | `#252422` | `#E9E6E1` | Hover, your messages, selected row |
-| `--line` | `#2A2926` | `#E4E1DC` | The few hairlines left |
+| `--canvas` | `#131211` | `#FBFAF8` | Main area |
+| `--sunken` | `#0B0A09` | `#F3F1EE` | Sidebar, code blocks |
+| `--raised` | `#1D1C1A` | `#FFFFFF` | Composer, menus, delegation objects |
+| `--fill` | `#262422` | `#E9E6E1` | Hover, your messages, selected row |
+| `--line` | `#2B2926` | `#E4E1DC` | The few hairlines left |
 | `--text` | `#ECEAE6` | `#1C1B19` | Primary text |
 | `--text-2` | `#B3AFA8` | `#5E5A54` | Secondary text |
 | `--text-3` | `#8A867F` | `#6F6B64` | Meta, timestamps (still ≥ 4.5:1) |

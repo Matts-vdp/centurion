@@ -56,12 +56,12 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     color-scheme: dark;
-    --canvas: #1b1a18;
-    --sunken: #121110;
-    --raised: #252320;
-    --fill: #2d2b28;
-    --fill-2: #383531;
-    --line: #33302c;
+    --canvas: #131211;
+    --sunken: #0b0a09;
+    --raised: #1d1c1a;
+    --fill: #262422;
+    --fill-2: #312e2b;
+    --line: #2b2926;
     --text: #efede9;
     --text-2: #bcb8b1;
     --text-3: #8f8b84;
@@ -82,7 +82,7 @@
     --id-3-bg: #24303d; --id-3-fg: #9fbad6;
     --id-4-bg: #322b45; --id-4-fg: #c4b8f5;
     --id-5-bg: #3a3324; --id-5-fg: #dcc794;
-    --id-on: #1b1a18;
+    --id-on: #131211;
     --diff-add: rgb(99 201 138 / 0.12);
     --diff-del: rgb(255 122 107 / 0.12);
     --shadow-float: inset 0 1px 0 rgb(255 255 255 / 0.04), 0 0 0 1px var(--line), 0 12px 32px rgb(0 0 0 / 0.45);
@@ -101,12 +101,12 @@
 
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --canvas: #1b1a18;
-  --sunken: #121110;
-  --raised: #252320;
-  --fill: #2d2b28;
-  --fill-2: #383531;
-  --line: #33302c;
+  --canvas: #131211;
+  --sunken: #0b0a09;
+  --raised: #1d1c1a;
+  --fill: #262422;
+  --fill-2: #312e2b;
+  --line: #2b2926;
   --text: #efede9;
   --text-2: #bcb8b1;
   --text-3: #8f8b84;
@@ -127,7 +127,7 @@
   --id-3-bg: #24303d; --id-3-fg: #9fbad6;
   --id-4-bg: #322b45; --id-4-fg: #c4b8f5;
   --id-5-bg: #3a3324; --id-5-fg: #dcc794;
-  --id-on: #1b1a18;
+  --id-on: #131211;
   --diff-add: rgb(99 201 138 / 0.12);
   --diff-del: rgb(255 122 107 / 0.12);
   --shadow-float: inset 0 1px 0 rgb(255 255 255 / 0.04), 0 0 0 1px var(--line), 0 12px 32px rgb(0 0 0 / 0.45);

@@ -100,7 +100,7 @@ export function Composer({ agent, agents, focused, run, onInterrupt }: Props) {
             />
             <div className="composer-foot">
               <span className="composer-hint">
-                {running ? 'Enter queues it for after this turn' : (decision?.hint ?? 'Enter to send · Shift+Enter for a new line')}
+                {running ? 'Enter queues it for after this turn' : decision?.hint}
               </span>
               {running && (
                 <button className="round-button stop" aria-label="Interrupt the turn (Esc). The queue stays." title="Interrupt the turn (Esc). The queue stays." onClick={onInterrupt}>
