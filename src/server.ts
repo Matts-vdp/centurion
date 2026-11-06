@@ -5,6 +5,7 @@ import { timingSafeEqual } from 'node:crypto';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { Config } from './config.js';
 import type { Manager } from './manager.js';
+import { allFiles, FileError, fileDiff, gitStatus, listFolder, RawBody, readFileContent, repoInfo } from './files.js';
 import { EFFORT_LEVELS, IMAGE_TYPES, type EffortLevel, type ImageData, type PermissionDecision } from './types.js';
 
 const MAX_BODY = 1024 * 1024;
@@ -87,9 +88,21 @@ export function startServer(manager: Manager, config: Config): http.Server {
       }
 
       const result = await route(manager, config, req, url);
+      if (result instanceof RawBody) {
+        // Never let a served file (an SVG with a script, say) run in the UI's origin.
+        res
+          .writeHead(200, {
+            'content-type': result.type,
+            'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+            'x-content-type-options': 'nosniff',
+            'cache-control': 'no-cache',
+          })
+          .end(result.body);
+        return;
+      }
       res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(result));
     } catch (err) {
-      const status = err instanceof HttpError ? err.status : 400;
+      const status = err instanceof HttpError || err instanceof FileError ? err.status : 400;
       const message = err instanceof Error ? err.message : String(err);
       if (!res.headersSent) res.writeHead(status, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ error: message }));
@@ -208,10 +221,40 @@ async function route(manager: Manager, config: Config, req: http.IncomingMessage
     if (body.message !== undefined && typeof body.message !== 'string') throw new HttpError(400, '"message" must be a string');
     return manager.answerPermission(id, str(body.requestId, 'requestId'), body.decision, body.message);
   }
+  if ((parts[2] === 'files' || parts[2] === 'git') && method === 'GET') return filesRoute(manager, id, parts, url);
   if (parts[2] === 'archive' && method === 'POST') {
     const body = await readJson(req);
     if (typeof body.archived !== 'boolean') throw new HttpError(400, '"archived" must be true or false');
     return manager.setArchived(id, body.archived);
+  }
+  throw new HttpError(404, 'Not found');
+}
+
+/** The folders an agent's Files panel may show: its own, then the ones it was given access to. */
+function rootsOf(manager: Manager, id: string): { name: string; path: string }[] {
+  const rec = manager.get(id);
+  const roots = [rec.cwd];
+  const parent = rec.parentId ? manager.get(rec.parentId) : undefined;
+  if (parent && path.resolve(parent.cwd) !== path.resolve(rec.cwd)) roots.push(parent.cwd);
+  return roots.map((p) => ({ name: path.basename(p) || p, path: p }));
+}
+
+async function filesRoute(manager: Manager, id: string, parts: string[], url: URL): Promise<unknown> {
+  const roots = rootsOf(manager, id);
+  if (parts[2] === 'files' && parts[3] === 'roots') {
+    return { roots: await Promise.all(roots.map(async (r) => ({ ...r, git: (await repoInfo(r.path)) !== null }))) };
+  }
+  const index = Number(url.searchParams.get('root') ?? '0');
+  const root = Number.isInteger(index) ? roots[index] : undefined;
+  if (!root) throw new HttpError(400, `"root" must be the index of one of the agent's folders`);
+  const rel = url.searchParams.get('path') ?? '';
+  if (parts[2] === 'files' && parts[3] === 'list') return listFolder(root.path, rel);
+  if (parts[2] === 'files' && parts[3] === 'all') return allFiles(root.path);
+  if (parts[2] === 'files' && parts[3] === 'read') return readFileContent(root.path, rel, url.searchParams.get('raw') === '1');
+  if (parts[2] === 'git' && parts[3] === 'status') return { status: await gitStatus(root.path, true) };
+  if (parts[2] === 'git' && parts[3] === 'diff') {
+    if (!rel) throw new HttpError(400, '"path" is required');
+    return fileDiff(root.path, rel);
   }
   throw new HttpError(404, 'Not found');
 }
