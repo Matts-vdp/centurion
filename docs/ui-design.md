@@ -4,8 +4,8 @@ The design language and the main UI patterns of the agent manager. All UI work f
 
 How to use it:
 - **The rules here are the source of truth; the code holds the values.** Once a step is implemented, `ui/src/styles.css` is where colours, sizes and radii live. This guide keeps the rules (what each surface and colour is for, what to avoid) and should not repeat values that already exist in the CSS.
-- **The mockups are a sketch, not a spec.** [Design canvas](https://claude.ai/artifact/ABUojRVXjKyeR8j5vc1ohJ): orchestrator view in dark, a running expert in light with the model picker open, the overview, the design language sheet, and a track plan before and after Start. The data in them is sample data. When the real UI and the mockup disagree, for example spacing that feels cramped with real transcripts, fix the UI sensibly and update this guide, not the canvas.
-- **Keep it current.** When a change alters a rule or a pattern here, update this guide in the same commit, and tick off the step in section 10.
+- **The mockups are a sketch, not a spec.** [Design canvas](https://claude.ai/artifact/ABUojRVXjKyeR8j5vc1ohJ): orchestrator view in dark, a running expert in light with the model picker open, the overview, the design language sheet, a track plan before and after Start, and a question set. The data in them is sample data. When the real UI and the mockup disagree, for example spacing that feels cramped with real transcripts, fix the UI sensibly and update this guide, not the canvas.
+- **Keep it current.** When a change alters a rule or a pattern here, update this guide in the same commit, and mark the step done in the implementation plan (the last section).
 
 ## 1. Direction
 
@@ -105,6 +105,7 @@ Primary buttons are inverted text colour (light on dark, dark on light), not a h
 | Stopped | Hollow grey dot, name dimmed | `Stopped` |
 
 | Plan waiting for you (orchestrator) | Amber dot, row in Needs you | `Plan ready · round 1, 4 tracks` |
+| Questions waiting for you (orchestrator) | Amber dot, row in Needs you | `3 questions for you` |
 
 Orchestrator rows add a roll-up of their experts on the second line when collapsed (`2 running · 1 failed`), so trouble shows with the tree closed.
 
@@ -200,14 +201,55 @@ Either way, the orchestrator writes the handoff prompts and calls `create_expert
 
 **Backend needs.** The `propose_tracks` tool and a `plans` list in state (per orchestrator: rounds, versions, tracks, status), an optional `track_id` on `create_expert` and `message_expert`, `POST /api/plans/:id/start` (only the checked and skipped track ids, delivered as a normal message to the orchestrator), a `plan` SSE event, and round-level notification grouping in `manager.ts`. `prompts/orchestrator.md` describes when to propose tracks, that it must wait after proposing, and that it should propose a new version when the user asks for changes.
 
-## 9. Accessibility and quality bar
+## 9. Questions
+
+While researching, experts hit questions they can't settle on their own. They report them to the orchestrator together with what they found, each marked as one of two kinds:
+- **Cross-repo**: needs information from another repository.
+- **Human**: needs a decision, and answering it alone would mean making an assumption.
+
+The orchestrator answers what it already knows or can deduce from the central repo, sends cross-repo questions to an expert in the right repo, and asks you the rest. You answer those with clicks in one place instead of writing "for 1 I'd do this, for 2 that" in the chat.
+
+**How the orchestrator asks.** A new orchestrator tool, `ask_user`:
+
+```ts
+ask_user({
+  title: 'Questions from round 1',
+  questions: [{                    // for the user
+    id: 'q2', from: 'foundation-sessions-…',   // the expert who raised it, if any
+    question: 'Which SameSite value should the cart cookie get?',
+    context: 'Lax fixes Safari but … The October security review asked for Strict.',
+    kind: 'single' | 'multi' | 'text',
+    options: [{ label: 'Lax for the cart cookie only', detail: 'Fixes the redirect …', suggested: true }, …],
+  }],
+  resolved: [{ question: '…', answer: '…', source: 'notes/releases' }],      // answered by the orchestrator
+  routed:   [{ question: '…', expertId: 'api-contracts-…' }],                // sent to another repo
+})
+```
+
+Like `propose_tracks`, it stores the set and returns at once, and the orchestrator ends its turn. The orchestrator shows **Needs you · 3 questions for you**. For `routed` questions it also calls `message_expert`; the manager matches the reply to the question.
+
+**What you see** (canvas: *Questions for you*). A question set is one object on `--raised`, with every question visible in one list:
+- Header: the title, `1 of 3 answered` and a segmented progress bar, one segment per question for you.
+- **For you**, in order. The expert who raised a question is shown above it with its mark (`foundation-sessions asks · decision`). Then the question in 15 px 600, one or two lines of context, and the answer controls:
+  - `single`: full-width option rows (label and one-line detail), a radio, and the key number (`1`–`4`). The orchestrator's suggestion is marked `suggested`, not pre-selected, so a quick Send never answers for you.
+  - `multi`: compact toggle chips that wrap.
+  - Every question ends with a "Something else…" field for a free answer; `text` questions have only that field.
+  - An answered question folds to one line: a filled check, the question in `--text-2` and the answer below it, with **Change**.
+- **Answered by the orchestrator** and **Sent to another repo**: two folded groups on a `--sunken` band below, so you can see every question without them competing with yours. Each answered one shows the answer and where it came from (`from notes/releases`, `you said so at 10:29`) with **Correct**, which opens it as a question for you. A routed question shows the expert, its repo and live status, then its answer when it replies.
+- Footer: `2 of 3 ready. Unanswered questions stay open here.`, the keyboard hint (`1`–`4` picks, `Tab` next question), and **Send 2 answers**.
+
+**Sending.** The same rule as Start: **Send** delivers only the answers, as one structured message (question id, answer, and any corrections of the orchestrator's answers). Enter in the composer sends only what you typed, never the selected answers. You can send part of the answers; the rest stay open in the set, and the sidebar keeps showing the count. Once every question is answered, the set folds to one line (`Questions from round 1 · 3 by you, 2 by checkout-dropoff, 1 by api-contracts`) that opens on click. The orchestrator passes the answers on to the experts that asked.
+
+**Backend and prompts.** The `ask_user` tool and a `questions` list in state (per orchestrator: sets, questions, answers, status), `POST /api/questions/:id/answer`, a `questions` SSE event, and matching a routed question to the expert's reply. `prompts/expert.md` asks experts to end their findings with their open questions, each marked `cross-repo` or `human`, with what they would assume. `prompts/orchestrator.md` describes the triage: answer what it can (and say where from), route cross-repo questions, ask the user the rest with options when there are clear choices, and suggest one when it has a preference.
+
+## 10. Accessibility and quality bar
 
 - Text contrast ≥ 4.5:1 in both themes, including `--text-3`. Status always has a word or shape besides its colour.
 - Every interactive thing is a real `<button>` or `<a>`; tree navigation with arrow keys; visible focus ring.
 - Check light, dark, and 375 px width for every change (as `CLAUDE.md` already says).
 - `prefers-reduced-motion` turns off the arc rotation and shimmer (the arc becomes a static ring).
 
-## 10. Implementation plan
+## 11. Implementation plan
 
 Each step is shippable on its own and gets its own commit. Check every step in the browser against a test manager, in light, dark and a narrow width, and compare it with the canvas. Mark a step done here when it lands.
 
@@ -220,6 +262,7 @@ Status: not started.
 5. **Delegations.** The delegation object, folding notifications and `get_expert_output` into it (client-side, matched by expert id and order).
 6. **Model and effort.** The header chip and popover, the endpoint, `model` / `effort` on `create_expert`.
 7. **Track plans.** `propose_tracks`, plan state and endpoints, the plan object and its tracker, round notifications, the orchestrator prompt.
-8. **Overview.** The no-selection home.
+8. **Questions.** `ask_user`, question state and endpoint, the question set, routing cross-repo questions, the expert and orchestrator prompts.
+9. **Overview.** The no-selection home.
 
-Backend needs: none for steps 1–5. Turn footers need per-turn duration and cost on each reply in `replies` (the cost is already computed per turn in `AgentRuntime`; duration is `result.duration_ms`). Steps 6 and 7 need the backend work described in their sections. "Spend today" in the overview needs cost per day, which can wait.
+Backend needs: none for steps 1–5. Turn footers need per-turn duration and cost on each reply in `replies` (the cost is already computed per turn in `AgentRuntime`; duration is `result.duration_ms`). Steps 6 to 8 need the backend work described in their sections. "Spend today" in the overview needs cost per day, which can wait.
