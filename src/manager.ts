@@ -2,8 +2,8 @@ import { EventEmitter } from 'node:events';
 import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { getSessionMessages, type Options, type SDKMessage, type SessionMessage } from '@anthropic-ai/claude-agent-sdk';
-import { AgentRuntime } from './agent.js';
+import { getSessionMessages, query, type Options, type Query, type SDKMessage, type SessionMessage } from '@anthropic-ai/claude-agent-sdk';
+import { AgentRuntime, InputChannel, type RunSettings } from './agent.js';
 import type { Config } from './config.js';
 import {
   applyAnswers,
@@ -20,7 +20,18 @@ import {
 } from './decisions.js';
 import { StateStore, type State } from './state.js';
 import { createManagerTools } from './tools.js';
-import type { AgentKind, AgentRecord, MessageSource, Plan, QuestionSet, QueuedMessage, Reply } from './types.js';
+import {
+  EFFORT_LEVELS,
+  type AgentKind,
+  type AgentRecord,
+  type EffortLevel,
+  type MessageSource,
+  type ModelOption,
+  type Plan,
+  type QuestionSet,
+  type QueuedMessage,
+  type Reply,
+} from './types.js';
 
 const PREVIEW_CHARS = 300;
 
@@ -35,11 +46,17 @@ export type ManagerEvents = {
 /** Extra links a message can carry: the plan track or the routed question it belongs to. */
 type MessageLinks = Pick<QueuedMessage, 'track' | 'question'>;
 
+/** A model/effort change: a missing field stays as it is, null goes back to the default. */
+export type ModelChange = { model?: string | null; effort?: EffortLevel | null };
+
 export class Manager extends EventEmitter<ManagerEvents> {
   private readonly runtimes = new Map<string, AgentRuntime>();
   private readonly store: StateStore;
   private plans: Plan[];
   private questionSets: QuestionSet[];
+  /** The supported models, learned from the first process that starts (or a probe). */
+  private modelList: ModelOption[] | null = null;
+  private modelProbe: Promise<ModelOption[]> | null = null;
 
   constructor(private readonly config: Config) {
     super();
@@ -93,14 +110,23 @@ export class Manager extends EventEmitter<ManagerEvents> {
     return rec;
   }
 
+  /**
+   * A new expert. Model and effort are optional: without them it takes its plan track's, and otherwise
+   * runs on the same model and effort as its orchestrator does now.
+   */
   createExpert(
     parentId: string,
-    input: { name: string; cwd?: string; message?: string; notify?: boolean; trackId?: string },
+    input: { name: string; cwd?: string; message?: string; notify?: boolean; trackId?: string; model?: string; effort?: EffortLevel },
   ): AgentRecord {
     const parent = this.get(parentId);
     if (parent.kind !== 'orchestrator') throw new Error('Only orchestrators can create experts');
     const track = input.trackId ? this.findTrack(parentId, input.trackId) : undefined;
-    const rec = this.createAgent('expert', input.name, input.cwd ?? parent.cwd, parent.id);
+    const planned = track ? currentVersion(this.plan(track.planId)).tracks.find((t) => t.id === track.trackId) : undefined;
+    const settings = this.expertSettings(parent, {
+      model: input.model ?? planned?.model,
+      effort: input.effort ?? planned?.effort,
+    });
+    const rec = this.createAgent('expert', input.name, input.cwd ?? parent.cwd, parent.id, settings);
     if (track) this.linkTrack(track, rec.id);
     if (input.message) this.sendMessage(rec.id, input.message, 'orchestrator', input.notify ?? true, { track });
     return rec;
@@ -147,6 +173,31 @@ export class Manager extends EventEmitter<ManagerEvents> {
 
   removeQueued(id: string, messageId: string): void {
     if (!this.runtime(id).removeQueued(messageId)) throw new Error('That message is no longer queued');
+  }
+
+  /** Switch an agent's model and/or effort. A running turn finishes as it is; the next turn uses the new values. */
+  setModel(id: string, change: ModelChange): AgentRecord {
+    const rt = this.runtime(id);
+    const rec = rt.rec;
+    const model = change.model === undefined ? rec.model : change.model?.trim() || null;
+    let effort = change.effort === undefined ? rec.effort : change.effort;
+    if (effort !== null && !EFFORT_LEVELS.includes(effort)) throw new Error(`Unknown effort "${effort}"`);
+    const info = this.checkModel(model);
+    // Switching only the model: an effort the new model can't run goes back to its default.
+    if (change.effort === undefined && effort && info && !supportsEffort(info, effort)) effort = null;
+    if (effort && info && !supportsEffort(info, effort)) throw new Error(effortError(info, effort));
+    rec.model = model;
+    rec.effort = effort;
+    rt.updateSettings();
+    this.changed(rec);
+    return rec;
+  }
+
+  /** The supported models (aliases and ids), cached for the manager's lifetime. */
+  async models(): Promise<ModelOption[]> {
+    if (this.modelList) return this.modelList;
+    this.modelProbe ??= this.probeModels().finally(() => (this.modelProbe = null));
+    return this.modelProbe;
   }
 
   setArchived(id: string, archived: boolean): AgentRecord {
@@ -380,9 +431,74 @@ export class Manager extends EventEmitter<ManagerEvents> {
     return { agents: this.list(), plans: this.plans, questionSets: this.questionSets };
   }
 
+  // ---------- model and effort ----------
+
+  /** An expert's model and effort: the explicit ones, else the orchestrator's (what it is set to, else what it runs on). */
+  private expertSettings(parent: AgentRecord, input: { model?: string; effort?: EffortLevel }): Pick<AgentRecord, 'model' | 'effort'> {
+    const model = input.model?.trim() || parent.model || parent.activeModel || null;
+    const info = this.checkModel(model);
+    if (input.effort) {
+      if (!EFFORT_LEVELS.includes(input.effort)) throw new Error(`Unknown effort "${input.effort}"`);
+      if (info && !supportsEffort(info, input.effort)) throw new Error(effortError(info, input.effort));
+      return { model, effort: input.effort };
+    }
+    const inherited = parent.effort ?? parent.activeEffort;
+    // An inherited effort the expert's model can't run is dropped (the model's default applies).
+    return { model, effort: inherited && (!info || supportsEffort(info, inherited)) ? inherited : null };
+  }
+
+  /** The list entry for a model, or undefined when the list isn't known yet. Throws for an unknown model. */
+  private checkModel(model: string | null): ModelOption | undefined {
+    if (!this.modelList) return undefined;
+    const value = model ?? this.config.model ?? 'default';
+    const info = findModel(this.modelList, value);
+    if (!info && model) {
+      const aliases = this.modelList.filter((m) => !m.value.startsWith('claude-') && m.value !== 'default').map((m) => m.value);
+      throw new Error(`Unknown model "${model}". Use an alias (${aliases.join(', ')}) or a model id.`);
+    }
+    return info;
+  }
+
+  private runSettings(rec: AgentRecord): RunSettings {
+    const model = rec.model ?? this.config.model ?? undefined;
+    return { ...(model ? { model } : {}), ...(rec.effort ? { effort: rec.effort } : {}) };
+  }
+
+  private learnModels(q: Query): void {
+    if (this.modelList) return;
+    q.supportedModels().then(
+      (list) => (this.modelList ??= list.map(toModelOption)),
+      () => {}, // the process may have closed; the next one tries again
+    );
+  }
+
+  /** Start a process without a prompt just to ask for the models. It sends nothing to the API. */
+  private async probeModels(): Promise<ModelOption[]> {
+    const input = new InputChannel();
+    const q = query({
+      prompt: input,
+      options: { cwd: this.config.orchestratorFolder, env: this.agentEnv(), persistSession: false, stderr: () => {} },
+    });
+    try {
+      const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Timed out asking for the models')), 60_000).unref());
+      const list = await Promise.race([q.supportedModels(), timeout]);
+      this.modelList ??= list.map(toModelOption);
+      return this.modelList;
+    } finally {
+      input.close();
+      q.close();
+    }
+  }
+
   // ---------- internals ----------
 
-  private createAgent(kind: AgentKind, name: string, cwd: string, parentId: string | null): AgentRecord {
+  private createAgent(
+    kind: AgentKind,
+    name: string,
+    cwd: string,
+    parentId: string | null,
+    settings: Pick<AgentRecord, 'model' | 'effort'> = { model: null, effort: null },
+  ): AgentRecord {
     const dir = validateDir(cwd);
     const now = new Date().toISOString();
     const rec: AgentRecord = {
@@ -402,6 +518,10 @@ export class Manager extends EventEmitter<ManagerEvents> {
       archived: false,
       lastActivityAt: now,
       context: null,
+      model: settings.model,
+      effort: settings.effort,
+      activeModel: null,
+      activeEffort: null,
       createdAt: now,
       updatedAt: now,
     };
@@ -431,6 +551,8 @@ export class Manager extends EventEmitter<ManagerEvents> {
       rec.id,
       new AgentRuntime(rec, {
         buildOptions: (r) => this.buildOptions(r),
+        runSettings: (r) => this.runSettings(r),
+        onStarted: (q) => this.learnModels(q),
         onMessage: (r, message) => this.emit('message', { agentId: r.id, message }),
         onDeliver: (r, message) => this.emit('delivered', { agentId: r.id, message }),
         onTurnEnd: (r, handled, reply) => this.onTurnEnd(r, handled, reply),
@@ -499,15 +621,18 @@ export class Manager extends EventEmitter<ManagerEvents> {
     this.runtime(orchestratorId).enqueue(message);
   }
 
-  private buildOptions(rec: AgentRecord): Options {
+  private agentEnv(): Record<string, string | undefined> {
     const env: Record<string, string | undefined> = { ...process.env, ...this.config.env };
     for (const key of this.config.removeEnv) delete env[key];
+    return env;
+  }
 
+  private buildOptions(rec: AgentRecord): Options {
     const options: Options = {
       cwd: rec.cwd,
       resume: rec.sessionId ?? undefined,
       title: rec.name,
-      env,
+      env: this.agentEnv(),
       permissionMode: this.config.permissionMode,
       allowDangerouslySkipPermissions: this.config.permissionMode === 'bypassPermissions',
       // Nobody sits behind a prompt: anything auto mode can't decide is denied and the agent adapts.
@@ -515,7 +640,10 @@ export class Manager extends EventEmitter<ManagerEvents> {
       systemPrompt: { type: 'preset', preset: 'claude_code', append: this.instructions(rec) },
       stderr: (data) => process.stderr.write(`[${rec.id}] ${data}`),
     };
-    if (this.config.model) options.model = this.config.model;
+    // Saved on the record, so a resumed process (after idleMinutes or a restart) gets them back.
+    const { model, effort } = this.runSettings(rec);
+    if (model) options.model = model;
+    if (effort) options.effort = effort;
 
     if (rec.kind === 'orchestrator') {
       options.mcpServers = { manager: createManagerTools(this, rec.id) };
@@ -550,6 +678,35 @@ export class Manager extends EventEmitter<ManagerEvents> {
     this.store.save(() => this.state());
     this.emit('agent', rec);
   }
+}
+
+function toModelOption(m: ModelOption): ModelOption {
+  return {
+    value: m.value,
+    ...(m.resolvedModel ? { resolvedModel: m.resolvedModel } : {}),
+    displayName: m.displayName,
+    description: m.description,
+    ...(m.supportsEffort ? { supportsEffort: true, supportedEffortLevels: m.supportedEffortLevels ?? [] } : {}),
+  };
+}
+
+/** The entry for an alias or id: an exact value first, then an entry that resolves to it. */
+function findModel(list: ModelOption[], model: string): ModelOption | undefined {
+  return (
+    list.find((m) => m.value === model) ??
+    list.find((m) => m.resolvedModel === model && m.value !== 'default') ??
+    list.find((m) => m.resolvedModel === model)
+  );
+}
+
+function supportsEffort(info: ModelOption, effort: EffortLevel): boolean {
+  return !!info.supportsEffort && (info.supportedEffortLevels ?? []).includes(effort);
+}
+
+function effortError(info: ModelOption, effort: EffortLevel): string {
+  return info.supportsEffort
+    ? `${info.displayName} does not support effort "${effort}". Use one of: ${(info.supportedEffortLevels ?? []).join(', ')}.`
+    : `${info.displayName} has no effort levels; leave effort out.`;
 }
 
 function validateDir(dir: string): string {

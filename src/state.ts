@@ -23,6 +23,10 @@ export class StateStore {
       lastActivityAt: rec.lastActivityAt ?? rec.updatedAt,
       context: rec.context ?? null,
       turnStartedAt: rec.turnStartedAt ?? null,
+      model: rec.model ?? null,
+      effort: rec.effort ?? null,
+      activeModel: rec.activeModel ?? null,
+      activeEffort: rec.activeEffort ?? null,
     }));
     return { agents, plans: data.plans ?? [], questionSets: data.questionSets ?? [] };
   }

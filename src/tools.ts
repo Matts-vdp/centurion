@@ -1,7 +1,7 @@
 import { createSdkMcpServer, tool, type McpSdkServerConfigWithInstance } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import type { Manager } from './manager.js';
-import type { AgentRecord } from './types.js';
+import { EFFORT_LEVELS, type AgentRecord, type EffortLevel } from './types.js';
 
 type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean };
 
@@ -19,6 +19,8 @@ function summary(rec: AgentRecord) {
     name: rec.name,
     folder: rec.cwd,
     status: rec.status,
+    model: rec.model ?? rec.activeModel ?? 'default',
+    effort: rec.effort ?? rec.activeEffort ?? 'model default',
     queued: rec.queue.length,
     replies: rec.replies.length,
     lastError: rec.lastError,
@@ -53,13 +55,20 @@ export function createManagerTools(manager: Manager, orchestratorId: string): Mc
         'create_expert',
         'Start a new expert agent in a folder. It runs as its own Claude session in that folder, with that folder\'s ' +
           'settings and MCP servers. Omit `folder` to start it in your own folder (useful for web research or MCP-only work). ' +
-          'If you pass `message`, the expert starts working on it right away.',
+          'If you pass `message`, the expert starts working on it right away. Leave `model` and `effort` out unless the ' +
+          'task clearly needs something else: the expert then runs on the same model and effort as you (or as its plan ' +
+          'track says).',
         {
           name: z.string().describe('Short name, e.g. "api-research"'),
           folder: z.string().optional().describe('Absolute path of the folder the expert works in. Defaults to your own folder.'),
           message: z.string().optional().describe('First task for the expert'),
           notify: z.boolean().optional().describe('Wake you with a notification when it finishes this message. Default true.'),
           track_id: z.string().optional().describe('The id of the plan track this expert works on (from propose_tracks)'),
+          model: z
+            .string()
+            .optional()
+            .describe('Model alias (haiku, sonnet, opus, fable) or id. Default: the track\'s model, else yours.'),
+          effort: z.enum(EFFORT_LEVELS as [EffortLevel, ...EffortLevel[]]).optional().describe('Default: the track\'s effort, else yours.'),
         },
         guard((args) => {
           const rec = manager.createExpert(orchestratorId, {
@@ -68,6 +77,8 @@ export function createManagerTools(manager: Manager, orchestratorId: string): Mc
             message: args.message,
             notify: args.notify ?? true,
             trackId: args.track_id,
+            model: args.model,
+            effort: args.effort,
           });
           return ok(summary(rec));
         }),
@@ -134,8 +145,8 @@ export function createManagerTools(manager: Manager, orchestratorId: string): Mc
                   z.object({ kind: z.literal('existing_expert'), expertId: z.string() }),
                   z.object({ kind: z.literal('subagent') }),
                 ]),
-                model: z.string().optional(),
-                effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
+                model: z.string().optional().describe('Only when the track needs a different model than yours, e.g. haiku for a log scan'),
+                effort: z.enum(EFFORT_LEVELS as [EffortLevel, ...EffortLevel[]]).optional().describe('Only when it needs a different effort than yours'),
               }),
             )
             .min(1),

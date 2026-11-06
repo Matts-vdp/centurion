@@ -5,6 +5,7 @@ import { timingSafeEqual } from 'node:crypto';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { Config } from './config.js';
 import type { Manager } from './manager.js';
+import { EFFORT_LEVELS, type EffortLevel } from './types.js';
 
 const MAX_BODY = 1024 * 1024;
 
@@ -106,8 +107,10 @@ async function route(manager: Manager, config: Config, req: http.IncomingMessage
       permissionMode: config.permissionMode,
       orchestratorFolder: config.orchestratorFolder,
       platform: process.platform,
+      defaultModel: config.model,
     };
   }
+  if (parts[0] === 'models' && method === 'GET') return manager.models();
   if (parts[0] === 'plans' && parts.length === 1 && method === 'GET') return manager.listPlans();
   if (parts[0] === 'plans' && parts[2] === 'start' && method === 'POST') {
     const body = await readJson(req);
@@ -159,6 +162,21 @@ async function route(manager: Manager, config: Config, req: http.IncomingMessage
   if (parts[2] === 'queue' && parts.length === 4 && method === 'DELETE') {
     manager.removeQueued(id, parts[3]);
     return manager.get(id);
+  }
+  if (parts[2] === 'model' && method === 'POST') {
+    const body = await readJson(req);
+    const change: { model?: string | null; effort?: EffortLevel | null } = {};
+    if ('model' in body) {
+      if (body.model !== null && typeof body.model !== 'string') throw new HttpError(400, '"model" must be a string or null');
+      change.model = body.model;
+    }
+    if ('effort' in body) {
+      if (body.effort !== null && !EFFORT_LEVELS.includes(body.effort)) {
+        throw new HttpError(400, `"effort" must be one of ${EFFORT_LEVELS.join(', ')} or null`);
+      }
+      change.effort = body.effort;
+    }
+    return manager.setModel(id, change);
   }
   if (parts[2] === 'archive' && method === 'POST') {
     const body = await readJson(req);

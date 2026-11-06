@@ -6,7 +6,7 @@ import {
   type SDKResultMessage,
   type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
-import type { AgentRecord, ContextUsage, QueuedMessage, Reply } from './types.js';
+import { EFFORT_LEVELS, type AgentRecord, type ContextUsage, type EffortLevel, type QueuedMessage, type Reply } from './types.js';
 
 const MAX_REPLIES = 20;
 
@@ -21,7 +21,7 @@ function inputTokens(u: InputUsage): number {
 }
 
 /** Async iterable the SDK reads user messages from; we push one per turn. */
-class InputChannel implements AsyncIterable<SDKUserMessage> {
+export class InputChannel implements AsyncIterable<SDKUserMessage> {
   private buffer: SDKUserMessage[] = [];
   private waiters: ((r: IteratorResult<SDKUserMessage>) => void)[] = [];
   private closed = false;
@@ -50,8 +50,15 @@ class InputChannel implements AsyncIterable<SDKUserMessage> {
   }
 }
 
+/** The model and effort a process should run with (after fallbacks); undefined = Claude Code's default. */
+export type RunSettings = { model?: string; effort?: EffortLevel };
+
 export type RuntimeHooks = {
   buildOptions(rec: AgentRecord): Options;
+  /** What `model` and `effort` resolve to for this agent; applied to a live process before its next turn. */
+  runSettings(rec: AgentRecord): RunSettings;
+  /** A process started (used to learn the supported models). */
+  onStarted(q: Query): void;
   onMessage(rec: AgentRecord, message: SDKMessage): void;
   /** A queued message was handed to the agent and its turn starts now. */
   onDeliver(rec: AgentRecord, message: QueuedMessage): void;
@@ -79,6 +86,8 @@ export class AgentRuntime {
   /** Main model (from the init message) and the input size of the turn's last main-loop model call. */
   private model: string | null = null;
   private lastCallInput: number | null = null;
+  /** The record's model or effort changed while the process was alive; apply before the next turn. */
+  private settingsChanged = false;
 
   constructor(
     public readonly rec: AgentRecord,
@@ -89,6 +98,11 @@ export class AgentRuntime {
 
   get isBusy(): boolean {
     return this.busy;
+  }
+
+  /** The record's model or effort changed. A running turn finishes as it is; the next turn uses the new values. */
+  updateSettings(): void {
+    if (this.q) this.settingsChanged = true;
   }
 
   enqueue(message: QueuedMessage): void {
@@ -117,11 +131,31 @@ export class AgentRuntime {
       this.failTurn(err);
       return;
     }
-    this.input!.push({
-      type: 'user',
-      message: { role: 'user', content: next.text },
-      parent_tool_use_id: null,
-    });
+    const input = this.input!;
+    const send = () =>
+      input.push({
+        type: 'user',
+        message: { role: 'user', content: next.text },
+        parent_tool_use_id: null,
+      });
+    if (this.settingsChanged && this.q) {
+      this.settingsChanged = false;
+      void this.applySettings(this.q).then(send);
+    } else {
+      send();
+    }
+  }
+
+  /** Switch a live process to the record's model and effort. Failures are logged; the turn goes ahead. */
+  private async applySettings(q: Query): Promise<void> {
+    const { model, effort } = this.hooks.runSettings(this.rec);
+    try {
+      await q.setModel(model);
+      await q.applyFlagSettings({ effortLevel: effort ?? null });
+    } catch (err) {
+      process.stderr.write(`[${this.rec.id}] could not switch model or effort: ${err instanceof Error ? err.message : String(err)}
+`);
+    }
   }
 
   /** Cancel the current turn only. The queue and the process stay; the next queued message follows. */
@@ -206,7 +240,9 @@ export class AgentRuntime {
     if (this.q) return;
     this.input = new InputChannel();
     this.lastTotalCost = 0;
+    this.settingsChanged = false; // the options carry the current values
     this.q = query({ prompt: this.input, options: this.hooks.buildOptions(this.rec) });
+    this.hooks.onStarted(this.q);
     void this.consume(this.q);
   }
 
@@ -218,9 +254,13 @@ export class AgentRuntime {
           this.rec.sessionId = message.session_id;
           this.changed();
         }
-        if (message.type === 'system' && message.subtype === 'init') this.model = message.model;
-        if (message.type === 'assistant' && message.parent_tool_use_id === null && message.message.usage) {
-          this.lastCallInput = inputTokens(message.message.usage);
+        if (message.type === 'system' && message.subtype === 'init') {
+          this.model = message.model;
+          this.reportActive(message.model, 'effort' in message ? (message.effort ?? null) : undefined);
+        }
+        if (message.type === 'assistant' && message.parent_tool_use_id === null) {
+          if (message.message.usage) this.lastCallInput = inputTokens(message.message.usage);
+          if (message.message.model) this.reportActive(message.message.model, undefined);
         }
         this.hooks.onMessage(this.rec, message);
         if (message.type === 'result') this.finishTurn(message);
@@ -229,6 +269,20 @@ export class AgentRuntime {
       error = err;
     }
     this.onExit(error);
+  }
+
+  /** Record what the process says it runs on. `effort` undefined = not reported. */
+  private reportActive(model: string, effort: EffortLevel | null | undefined): void {
+    let changed = false;
+    if (model && model !== '<synthetic>' && this.rec.activeModel !== model) {
+      this.rec.activeModel = model;
+      changed = true;
+    }
+    if (effort !== undefined && (effort === null || EFFORT_LEVELS.includes(effort)) && this.rec.activeEffort !== effort) {
+      this.rec.activeEffort = effort;
+      changed = true;
+    }
+    if (changed) this.changed();
   }
 
   private finishTurn(result: SDKResultMessage): void {

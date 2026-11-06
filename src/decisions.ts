@@ -1,11 +1,11 @@
 // Pure helpers for track plans and question sets: validation and the messages the user's decisions
 // turn into. The Manager owns the state and calls these.
-import type { Answer, LaterRound, Plan, QuestionSet, Track, TrackTarget, UserQuestion } from './types.js';
+import type { Answer, EffortLevel, LaterRound, Plan, QuestionSet, Track, TrackTarget, UserQuestion } from './types.js';
 
 export type ProposeInput = {
   round: number;
   title: string;
-  tracks: { id: string; title: string; summary: string; target: TrackTarget; model?: string; effort?: string }[];
+  tracks: { id: string; title: string; summary: string; target: TrackTarget; model?: string; effort?: EffortLevel }[];
   later?: LaterRound[];
 };
 
@@ -61,7 +61,9 @@ export function startMessage(plan: Plan, start: string[], skip: string[]): strin
   const v = currentVersion(plan);
   const label = (id: string) => {
     const n = v.tracks.findIndex((t) => t.id === id);
-    return `${n + 1}. ${v.tracks[n].title} (track_id "${id}")`;
+    const t = v.tracks[n];
+    const run = [t.model && `model ${t.model}`, t.effort && `effort ${t.effort}`].filter(Boolean).join(', ');
+    return `${n + 1}. ${t.title} (track_id "${id}"${run ? `, ${run}` : ''})`;
   };
   const lines = [`Start round ${plan.round} of "${v.title}" (plan v${v.version}) with ${start.length} of ${v.tracks.length} tracks:`];
   for (const id of start) lines.push(`- ${label(id)}`);

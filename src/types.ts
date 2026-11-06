@@ -7,6 +7,22 @@ export type AgentStatus =
   | 'stopped' // stopped on purpose; the next message resumes it
   | 'interrupted'; // the manager restarted while a turn was running
 
+export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
+export const EFFORT_LEVELS: readonly EffortLevel[] = ['low', 'medium', 'high', 'xhigh', 'max'];
+
+/** A model the agents can run on, from the SDK's `supportedModels()`. */
+export type ModelOption = {
+  /** What to pass as `model`: an alias (`sonnet`) or a model id. `default` is Claude Code's default. */
+  value: string;
+  /** The model id the value resolves to. */
+  resolvedModel?: string;
+  displayName: string;
+  description: string;
+  supportsEffort?: boolean;
+  supportedEffortLevels?: EffortLevel[];
+};
+
 export type MessageSource = 'user' | 'orchestrator' | 'manager';
 
 export type QueuedMessage = {
@@ -66,6 +82,13 @@ export type AgentRecord = {
   /** When a turn last ended or failed. The UI compares it with its own "last seen" time. */
   lastActivityAt: string;
   context: ContextUsage | null;
+  /** Model chosen for this agent (alias or id); null uses `config.model` or Claude Code's default. */
+  model: string | null;
+  /** Effort chosen for this agent; null uses the model's default. */
+  effort: EffortLevel | null;
+  /** What the process last reported: the model of the last main-loop call and the effort from init. */
+  activeModel: string | null;
+  activeEffort: EffortLevel | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -84,7 +107,7 @@ export type Track = {
   summary: string;
   target: TrackTarget;
   model?: string;
-  effort?: string;
+  effort?: EffortLevel;
 };
 
 /** An outline of a later round: information only, it can't be started. */
