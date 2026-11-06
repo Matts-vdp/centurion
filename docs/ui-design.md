@@ -144,14 +144,16 @@ The transcript column is centred, 760 px max, with prose at 15 px. Item by item:
 
 ## 7. Model and effort
 
-**Seeing it.** The header has a chip before the repo chip: `Sonnet 5.5 ▂▄▆ medium ⌄`. The small bars show the effort level at a glance; the word says it. The overview's expert rows and the track plan show the same `model · effort` in mono.
+**Seeing it.** The header has a chip before the repo chip: `Sonnet 5.5 ▂▄▆ medium ⌄`. Five bars of rising height, filled up to the level (low = 1 … max = 5), show the effort at a glance; the word says it (`default` when none is set). The bars stay neutral: colour is for state. A model without effort levels shows only its name. On narrow screens the chip shows only the model name, and the repo chip only its icon. Delegations, the round tracker and the track plan show the same `model · effort` in mono, with the values the expert actually runs on (inherited ones included). A switch shows in the transcript as an event line, `Model switched to Haiku 5.5`, where the next turn starts (Claude Code writes it into the session as command output).
 
 **Switching it.** Clicking the chip opens a popover:
-- **Model**: the list from `supportedModels()`, each with a one-line hint (deepest / balanced / quickest), the current one checked.
-- **Effort**: a segmented control with only the levels the chosen model supports (`supportedEffortLevels`), so impossible combinations can't be picked.
+- **Model**: the aliases from `supportedModels()` (Default, Opus, Sonnet, Fable, Haiku), each with its description from the SDK as the hint, the current one checked on a `--sunken` row. Dated model ids fold under **Other versions**. Picking applies at once.
+- **Effort**: a segmented control with only the levels the chosen model supports (`supportedEffortLevels`), so impossible combinations can't be picked. Switching to a model that can't run the current effort drops it back to the default.
 - A note: changes apply from the next turn. While a turn runs, the note says which model the running turn finishes on.
 
-**Backend.** Both can change mid-session without a restart: `q.setModel(model)` and `q.applyFlagSettings({ effortLevel })` on the live query. The record keeps `model` and `effort`, so a resumed process (after `idleMinutes` or a restart) gets them as `query()` options. New: `POST /api/agents/:id/model` with `{ model?, effort? }`, the fields on the record and in the `agent` event. `create_expert` gets optional `model` and `effort`, so the orchestrator can pick Haiku for a log scan and Opus for a hard design question. A config default for experts (`expertModel`, `expertEffort`) is a nice extra.
+**Backend.** Both change mid-session without a restart: `q.setModel(model)` and `q.applyFlagSettings({ effortLevel })` on the live query, applied just before the next message is delivered, so a running turn finishes as it started. The record keeps `model` and `effort` (null = default), so a resumed process (after `idleMinutes` or a restart) gets them as `query()` options, and `activeModel` / `activeEffort` with what the process reports (init message and main-loop assistant messages; effort only when Claude Code reports it). `POST /api/agents/:id/model` takes `{ model?, effort? }`; `GET /api/models` returns the cached `supportedModels()` list.
+
+**Experts inherit.** `model` and `effort` on `create_expert` (and on a track) are optional, and about 90 % of the time they should be left out: an expert then runs on its track's values, else on its orchestrator's current model and effort (copied when the expert is created). There is deliberately no separate expert default in the config. The orchestrator prompt says to set them only when a track clearly needs something else, such as Haiku for a log scan or Opus for a hard design question.
 
 ## 8. Track plans
 
@@ -253,14 +255,14 @@ Like `propose_tracks`, it stores the set and returns at once, and the orchestrat
 
 Each step is shippable on its own and gets its own commit. Check every step in the browser against a test manager, in light, dark and a narrow width, and compare it with the canvas. Mark a step done here when it lands.
 
-Status: steps 1–5, 7 and 8 done.
+Status: steps 1–8 done.
 
 1. **Foundations.** *(done)* New tokens in `styles.css` (both themes), Plex fonts, Lucide icons, button / input / menu restyle. Drop the activity bar.
 2. **Sidebar and header.** *(done)* Agent marks with status, two-line rows with the folder name, Needs you group, footer counts, search field (opens a basic switcher), the two-line header with repo chip and context ring.
 3. **Composer.** *(done)* Floating composer, live status line, queue list.
 4. **Transcript.** *(done)* Message blocks with speaker lines, prose typography, work-log grouping (`timeline.ts` groups consecutive tool items), turn footers, event lines.
 5. **Delegations.** *(done)* The delegation object, folding notifications and `get_expert_output` into it (client-side, matched by expert id and order).
-6. **Model and effort.** The header chip and popover, the endpoint, `model` / `effort` on `create_expert`.
+6. **Model and effort.** *(done)* The header chip and popover, the endpoint, `model` / `effort` on `create_expert`, experts inheriting their orchestrator's.
 7. **Track plans.** *(done)* `propose_tracks`, plan state and endpoints, the plan object and its tracker, round notifications, the orchestrator prompt.
 8. **Questions.** *(done)* `ask_user`, question state and endpoint, the question set, routing cross-repo questions, the expert and orchestrator prompts.
 9. **Overview.** The no-selection home.
