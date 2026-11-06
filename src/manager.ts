@@ -14,6 +14,7 @@ const PREVIEW_CHARS = 300;
 export type ManagerEvents = {
   agent: [AgentRecord];
   message: [{ agentId: string; message: SDKMessage }];
+  delivered: [{ agentId: string; message: QueuedMessage }];
 };
 
 export class Manager extends EventEmitter<ManagerEvents> {
@@ -149,6 +150,7 @@ export class Manager extends EventEmitter<ManagerEvents> {
       new AgentRuntime(rec, {
         buildOptions: (r) => this.buildOptions(r),
         onMessage: (r, message) => this.emit('message', { agentId: r.id, message }),
+        onDeliver: (r, message) => this.emit('delivered', { agentId: r.id, message }),
         onTurnEnd: (r, handled, reply) => this.onTurnEnd(r, handled, reply),
         onChange: (r) => this.changed(r),
       }),

@@ -43,6 +43,8 @@ class InputChannel implements AsyncIterable<SDKUserMessage> {
 export type RuntimeHooks = {
   buildOptions(rec: AgentRecord): Options;
   onMessage(rec: AgentRecord, message: SDKMessage): void;
+  /** A queued message was handed to the agent and its turn starts now. */
+  onDeliver(rec: AgentRecord, message: QueuedMessage): void;
   /** Called once per handled queue message, also when the turn failed or was stopped. */
   onTurnEnd(rec: AgentRecord, handled: QueuedMessage, reply: Reply): void;
   onChange(rec: AgentRecord): void;
@@ -83,6 +85,7 @@ export class AgentRuntime {
     this.rec.status = 'running';
     this.rec.lastError = null;
     this.changed();
+    this.hooks.onDeliver(this.rec, next);
     try {
       this.ensureStarted();
     } catch (err) {
