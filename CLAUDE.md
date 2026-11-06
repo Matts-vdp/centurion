@@ -8,9 +8,10 @@ A local manager for Claude agents, replacing a terminal "herder". The user runs 
 
 - `src/agent.ts`: `AgentRuntime`, one long-lived Agent SDK `query()` per agent (streaming input). Handles the per-agent queue, turn tracking, interrupt and stop, context usage, and closing idle processes.
 - `src/manager.ts`: agent registry (a tree: `parentId`), SDK options per agent, routing notifications, restoring state on startup.
-- `src/tools.ts`: in-process MCP server `manager`, given to orchestrators only: `create_expert`, `message_expert`, `get_expert_output`, `list_experts`, `stop_expert`.
-- `src/server.ts`: HTTP API, server-sent events (`snapshot`, `agent`, `delivered`, `message`) and the token check. `src/config.ts`: config loading. `src/state.ts`: the JSON state file.
-- `ui/`: the web UI (Vite + React + TypeScript, plain CSS with theme variables in `ui/src/styles.css`). `api.ts` (token, fetch, commands), `store.ts` (SSE-fed agent store, per-browser view state in `localStorage`), `timeline.ts` (history + live events → transcript items; sender derived from the prompt prefix), `blocks.ts` (transcript items → turns, work logs, delegations, footers), `status.ts` (an agent's one state and its status line), `tools.ts` (tool summaries), components `App`, `Sidebar`, `Switcher`, `AgentView`, `Header`, `Composer`, `Transcript`, `Delegation`, `Mark`. `npm run build` writes `dist/ui`, which `src/server.ts` serves at `/`.
+- `src/tools.ts`: in-process MCP server `manager`, given to orchestrators only: `create_expert`, `message_expert`, `get_expert_output`, `list_experts`, `stop_expert`, `propose_tracks`, `ask_user`.
+- `src/decisions.ts`: helpers for track plans and question sets (validation, the messages Start and Send turn into). The state lives in `Manager` (`plans`, `questionSets`) and in the state file.
+- `src/server.ts`: HTTP API, server-sent events (`snapshot`, `agent`, `delivered`, `message`, `plan`, `questions`) and the token check. `src/config.ts`: config loading. `src/state.ts`: the JSON state file.
+- `ui/`: the web UI (Vite + React + TypeScript, plain CSS with theme variables in `ui/src/styles.css`). `api.ts` (token, fetch, commands), `store.ts` (SSE-fed agent store, per-browser view state in `localStorage`), `timeline.ts` (history + live events → transcript items; sender derived from the prompt prefix), `blocks.ts` (transcript items → turns, work logs, delegations, footers), `status.ts` (an agent's one state and its status line), `tools.ts` (tool summaries), components `App`, `Sidebar`, `Switcher`, `AgentView`, `Header`, `Composer`, `Transcript`, `Delegation`, `Plan`, `Questions`, `Mark`. `npm run build` writes `dist/ui`, which `src/server.ts` serves at `/`.
 - `prompts/orchestrator.md`, `prompts/expert.md`: instructions appended to the Claude Code system prompt (`{{placeholders}}` are filled in per agent).
 - `README.md`: usage, config fields and the API table. Keep it in sync when these change.
 
@@ -18,6 +19,7 @@ A local manager for Claude agents, replacing a terminal "herder". The user runs 
 
 - **One message per turn.** The next queued message is sent only after the previous `result` arrives, so every turn maps to exactly one queue entry.
 - **Messaging is async only.** `message_expert` never waits. With `notify` (default on), the parent gets a `[Manager notification]` when the turn ends, and reads the reply with `get_expert_output`. Consecutive notifications are combined into one message.
+- **Decisions never mix with chat.** Start (plans) and Send (questions) deliver only the structured choice as one message; Enter in the composer sends only what was typed.
 - **Handoffs use files.** The orchestrator writes `handoffs/<task>/<expert>.prompt.md` and the expert writes the matching `.findings.md`. Experts get the orchestrator's folder through `additionalDirectories`.
 - **State is one JSON file:** the registry, queues, session IDs and the last 20 final replies. Writes go through a temp file and a rename, and only the manager writes it. Transcripts are **not** copied; history comes from `getSessionMessages()` (Claude's own session files).
 - **Permissions:** `auto` mode with `permissionPrompts: 'none'`, so anything auto can't decide is denied, never asked. Dev containers will use `bypassPermissions`.

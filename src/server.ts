@@ -35,6 +35,8 @@ export function startServer(manager: Manager, config: Config): http.Server {
 
   manager.on('agent', (rec) => broadcast('agent', rec));
   manager.on('delivered', (data) => broadcast('delivered', data));
+  manager.on('plan', (plan) => broadcast('plan', plan));
+  manager.on('questions', (set) => broadcast('questions', set));
   manager.on('message', (data) => {
     if (forward(data.message)) broadcast('message', data);
   });
@@ -64,6 +66,8 @@ export function startServer(manager: Manager, config: Config): http.Server {
           connection: 'keep-alive',
         });
         res.write(`event: snapshot\ndata: ${JSON.stringify(manager.list())}\n\n`);
+        for (const plan of manager.listPlans()) res.write(`event: plan\ndata: ${JSON.stringify(plan)}\n\n`);
+        for (const set of manager.listQuestionSets()) res.write(`event: questions\ndata: ${JSON.stringify(set)}\n\n`);
         clients.add(res);
         const ping = setInterval(() => res.write(': ping\n\n'), 25_000);
         req.on('close', () => {
@@ -103,6 +107,30 @@ async function route(manager: Manager, config: Config, req: http.IncomingMessage
       orchestratorFolder: config.orchestratorFolder,
       platform: process.platform,
     };
+  }
+  if (parts[0] === 'plans' && parts.length === 1 && method === 'GET') return manager.listPlans();
+  if (parts[0] === 'plans' && parts[2] === 'start' && method === 'POST') {
+    const body = await readJson(req);
+    return manager.startPlan(parts[1], strings(body.start, 'start'), strings(body.skip ?? [], 'skip'));
+  }
+  if (parts[0] === 'plans' && parts[2] === 'notify' && method === 'POST') {
+    const body = await readJson(req);
+    if (body.mode !== 'round' && body.mode !== 'each') throw new HttpError(400, '"mode" must be "round" or "each"');
+    return manager.setPlanNotify(parts[1], body.mode);
+  }
+  if (parts[0] === 'questions' && parts.length === 1 && method === 'GET') return manager.listQuestionSets();
+  if (parts[0] === 'questions' && parts[2] === 'answer' && method === 'POST') {
+    const body = await readJson(req);
+    const answers = list(body.answers, 'answers').map((a) => ({
+      questionId: str(a.questionId, 'questionId'),
+      choices: a.choices === undefined ? [] : strings(a.choices, 'choices'),
+      text: typeof a.text === 'string' ? a.text : '',
+    }));
+    const corrections = list(body.corrections ?? [], 'corrections').map((c) => ({
+      questionId: str(c.questionId, 'questionId'),
+      text: str(c.text, 'text'),
+    }));
+    return manager.answerQuestions(parts[1], answers, corrections);
   }
   if (parts[0] !== 'agents') throw new HttpError(404, 'Not found');
 
@@ -178,6 +206,16 @@ async function serveUi(dir: string, pathname: string, res: http.ServerResponse):
 
 function str(value: unknown, field: string): string {
   if (typeof value !== 'string' || !value.trim()) throw new HttpError(400, `"${field}" is required`);
+  return value;
+}
+
+function strings(value: unknown, field: string): string[] {
+  if (!Array.isArray(value) || !value.every((v) => typeof v === 'string')) throw new HttpError(400, `"${field}" must be a list of strings`);
+  return value;
+}
+
+function list(value: unknown, field: string): Record<string, any>[] {
+  if (!Array.isArray(value) || !value.every((v) => v && typeof v === 'object')) throw new HttpError(400, `"${field}" must be a list`);
   return value;
 }
 

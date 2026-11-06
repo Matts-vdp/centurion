@@ -16,6 +16,10 @@ export type QueuedMessage = {
   /** Notify the parent orchestrator when the turn handling this message ends. */
   notify: boolean;
   queuedAt: string;
+  /** The plan track this message starts or continues (create_expert / message_expert with track_id). */
+  track?: { planId: string; trackId: string };
+  /** The routed question this message asks (message_expert with question_id). */
+  question?: { setId: string; questionId: string };
 };
 
 export type Reply = {
@@ -66,7 +70,113 @@ export type AgentRecord = {
   updatedAt: string;
 };
 
+// ---------- track plans (docs/ui-design.md, section 8) ----------
+
+export type TrackTarget =
+  | { kind: 'new_expert'; name: string; folder?: string }
+  | { kind: 'existing_expert'; expertId: string }
+  | { kind: 'subagent' };
+
+export type Track = {
+  id: string;
+  title: string;
+  /** One or two sentences for the user to decide on. The real instructions are the handoff prompt. */
+  summary: string;
+  target: TrackTarget;
+  model?: string;
+  effort?: string;
+};
+
+/** An outline of a later round: information only, it can't be started. */
+export type LaterRound = { round: number; title: string; tracks: { title: string; summary?: string }[] };
+
+export type PlanVersion = {
+  version: number;
+  title: string;
+  tracks: Track[];
+  later: LaterRound[];
+  proposedAt: string;
+  /** The propose_tracks call that made this version. */
+  toolUseId?: string;
+};
+
+export type Plan = {
+  id: string;
+  orchestratorId: string;
+  round: number;
+  /** Oldest first; the last one is current. */
+  versions: PlanVersion[];
+  /** waiting: for the user. started: tracks are being or were started. */
+  status: 'waiting' | 'started';
+  startedAt: string | null;
+  /** The user's choice from Start (absent when the plan was started from the chat). */
+  chosen: string[] | null;
+  skipped: string[] | null;
+  /** trackId → expert id, from create_expert / message_expert with track_id. */
+  experts: Record<string, string>;
+  /** trackId → when its expert's turn for the track ended. */
+  replied: Record<string, string>;
+  /** round: one combined notification when every started track has replied. each: one per reply. */
+  notify: 'round' | 'each';
+  /** Notifications held back until the round is complete. */
+  held: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+// ---------- question sets (docs/ui-design.md, section 9) ----------
+
+export type QuestionOption = { label: string; detail?: string; suggested?: boolean };
+
+export type Answer = { choices: string[]; text: string; at: string };
+
+export type UserQuestion = {
+  id: string;
+  /** The expert that raised it, if any. */
+  from?: string;
+  question: string;
+  context?: string;
+  kind: 'single' | 'multi' | 'text';
+  options: QuestionOption[];
+  answer?: Answer;
+};
+
+export type ResolvedQuestion = {
+  id: string;
+  from?: string;
+  question: string;
+  answer: string;
+  source?: string;
+  /** The user corrected the orchestrator's answer. */
+  correction?: { text: string; at: string };
+};
+
+export type RoutedQuestion = {
+  id: string;
+  from?: string;
+  question: string;
+  expertId: string;
+  /** The expert's reply to the routed message. */
+  answer?: { text: string; at: string };
+};
+
+export type QuestionSet = {
+  id: string;
+  orchestratorId: string;
+  title: string;
+  questions: UserQuestion[];
+  resolved: ResolvedQuestion[];
+  routed: RoutedQuestion[];
+  /** open: some questions for the user are unanswered. */
+  status: 'open' | 'answered';
+  toolUseId?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type StateFile = {
   version: 1;
   agents: AgentRecord[];
+  plans?: Plan[];
+  questionSets?: QuestionSet[];
 };

@@ -12,5 +12,9 @@ You were started by the orchestrator "{{orchestratorName}}", whose folder is `{{
   ---
   ```
 
-  Then add your findings and any open questions.
+  Then add your findings. End with your open questions, if any, each marked as one of:
+  - `cross-repo`: needs information from another repository,
+  - `human`: needs a decision; answering it yourself would mean making an assumption.
+
+  For each, say what you would assume if nobody answers.
 - End every turn with a short final reply that summarizes what you did and where the results are. The orchestrator reads this reply.

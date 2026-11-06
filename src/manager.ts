@@ -5,9 +5,22 @@ import path from 'node:path';
 import { getSessionMessages, type Options, type SDKMessage, type SessionMessage } from '@anthropic-ai/claude-agent-sdk';
 import { AgentRuntime } from './agent.js';
 import type { Config } from './config.js';
-import { StateStore } from './state.js';
+import {
+  applyAnswers,
+  checkUniqueIds,
+  currentVersion,
+  expertTracks,
+  startMessage,
+  toQuestions,
+  toTracks,
+  type AnswerInput,
+  type AskInput,
+  type CorrectionInput,
+  type ProposeInput,
+} from './decisions.js';
+import { StateStore, type State } from './state.js';
 import { createManagerTools } from './tools.js';
-import type { AgentKind, AgentRecord, MessageSource, QueuedMessage, Reply } from './types.js';
+import type { AgentKind, AgentRecord, MessageSource, Plan, QuestionSet, QueuedMessage, Reply } from './types.js';
 
 const PREVIEW_CHARS = 300;
 
@@ -15,16 +28,26 @@ export type ManagerEvents = {
   agent: [AgentRecord];
   message: [{ agentId: string; message: SDKMessage }];
   delivered: [{ agentId: string; message: QueuedMessage }];
+  plan: [Plan];
+  questions: [QuestionSet];
 };
+
+/** Extra links a message can carry: the plan track or the routed question it belongs to. */
+type MessageLinks = Pick<QueuedMessage, 'track' | 'question'>;
 
 export class Manager extends EventEmitter<ManagerEvents> {
   private readonly runtimes = new Map<string, AgentRuntime>();
   private readonly store: StateStore;
+  private plans: Plan[];
+  private questionSets: QuestionSet[];
 
   constructor(private readonly config: Config) {
     super();
     this.store = new StateStore(config.stateFile);
-    const interrupted = this.store.load().filter((rec) => this.recover(rec));
+    const state = this.store.load();
+    this.plans = state.plans;
+    this.questionSets = state.questionSets;
+    const interrupted = state.agents.filter((rec) => this.recover(rec));
     // Parents are all loaded now, so their notifications have somewhere to go.
     for (const rec of interrupted) {
       this.notifyParent(rec, 'was interrupted because the manager restarted. Send it a message to continue.');
@@ -46,6 +69,14 @@ export class Manager extends EventEmitter<ManagerEvents> {
     return this.list().filter((a) => a.parentId === parentId);
   }
 
+  listPlans(): Plan[] {
+    return this.plans;
+  }
+
+  listQuestionSets(): QuestionSet[] {
+    return this.questionSets;
+  }
+
   /** Full transcript from Claude's own session files. */
   async history(id: string): Promise<SessionMessage[]> {
     const rec = this.get(id);
@@ -64,16 +95,30 @@ export class Manager extends EventEmitter<ManagerEvents> {
 
   createExpert(
     parentId: string,
-    input: { name: string; cwd?: string; message?: string; notify?: boolean },
+    input: { name: string; cwd?: string; message?: string; notify?: boolean; trackId?: string },
   ): AgentRecord {
     const parent = this.get(parentId);
     if (parent.kind !== 'orchestrator') throw new Error('Only orchestrators can create experts');
+    const track = input.trackId ? this.findTrack(parentId, input.trackId) : undefined;
     const rec = this.createAgent('expert', input.name, input.cwd ?? parent.cwd, parent.id);
-    if (input.message) this.sendMessage(rec.id, input.message, 'orchestrator', input.notify ?? true);
+    if (track) this.linkTrack(track, rec.id);
+    if (input.message) this.sendMessage(rec.id, input.message, 'orchestrator', input.notify ?? true, { track });
     return rec;
   }
 
-  sendMessage(id: string, text: string, source: MessageSource, notify: boolean): QueuedMessage {
+  /** message_expert, with the optional track or routed question it belongs to. */
+  messageExpert(
+    parentId: string,
+    expertId: string,
+    input: { message: string; notify: boolean; trackId?: string; questionId?: string },
+  ): QueuedMessage {
+    const track = input.trackId ? this.findTrack(parentId, input.trackId) : undefined;
+    const question = input.questionId ? this.findRouted(parentId, input.questionId, expertId) : undefined;
+    if (track) this.linkTrack(track, expertId);
+    return this.sendMessage(expertId, input.message, 'orchestrator', input.notify, { track, question });
+  }
+
+  sendMessage(id: string, text: string, source: MessageSource, notify: boolean, links: MessageLinks = {}): QueuedMessage {
     const rt = this.runtime(id);
     if (!text.trim()) throw new Error('Message is empty');
     let body = text;
@@ -86,6 +131,8 @@ export class Manager extends EventEmitter<ManagerEvents> {
       source,
       notify: notify && rt.rec.parentId !== null,
       queuedAt: new Date().toISOString(),
+      ...(links.track ? { track: links.track } : {}),
+      ...(links.question ? { question: links.question } : {}),
     };
     // A message to an archived expert brings it back into the tree.
     if (rt.rec.archived) rt.rec.archived = false;
@@ -121,7 +168,216 @@ export class Manager extends EventEmitter<ManagerEvents> {
 
   shutdown(): void {
     for (const rt of this.runtimes.values()) rt.dispose();
-    this.store.writeNow(this.list());
+    this.store.writeNow(this.state());
+  }
+
+  // ---------- track plans ----------
+
+  /** propose_tracks: a new plan for the round, or a new version of the round's waiting plan. */
+  proposeTracks(orchestratorId: string, input: ProposeInput, toolUseId?: string): Plan {
+    const orch = this.get(orchestratorId);
+    if (orch.kind !== 'orchestrator') throw new Error('Only orchestrators can propose tracks');
+    const tracks = toTracks(input.tracks);
+    for (const t of tracks) {
+      if (t.target.kind === 'existing_expert' && this.runtimes.get(t.target.expertId)?.rec.parentId !== orchestratorId) {
+        throw new Error(`Track "${t.id}": expert ${t.target.expertId} is not one of yours`);
+      }
+      if (t.target.kind === 'new_expert' && t.target.folder) validateDir(t.target.folder);
+    }
+    const now = new Date().toISOString();
+    let plan = this.plans.find((p) => p.orchestratorId === orchestratorId && p.round === input.round);
+    if (plan?.status === 'started') {
+      throw new Error(`Round ${input.round} was already started. Propose the next round with a higher round number.`);
+    }
+    const version = {
+      version: (plan?.versions.length ?? 0) + 1,
+      title: input.title,
+      tracks,
+      later: input.later ?? [],
+      proposedAt: now,
+      ...(toolUseId ? { toolUseId } : {}),
+    };
+    if (plan) {
+      plan.versions.push(version);
+      plan.updatedAt = now;
+    } else {
+      plan = {
+        id: newId('plan'),
+        orchestratorId,
+        round: input.round,
+        versions: [version],
+        status: 'waiting',
+        startedAt: null,
+        chosen: null,
+        skipped: null,
+        experts: {},
+        replied: {},
+        notify: 'round',
+        held: [],
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.plans.push(plan);
+    }
+    this.planChanged(plan);
+    return plan;
+  }
+
+  /** Start: the checked and skipped tracks go to the orchestrator as one message, nothing else. */
+  startPlan(planId: string, start: string[], skip: string[]): Plan {
+    const plan = this.plan(planId);
+    if (plan.status !== 'waiting') throw new Error('This plan was already started');
+    const ids = currentVersion(plan).tracks.map((t) => t.id);
+    checkUniqueIds([...start, ...skip], 'track');
+    for (const id of [...start, ...skip]) if (!ids.includes(id)) throw new Error(`Unknown track "${id}"`);
+    if (start.length === 0) throw new Error('Check at least one track to start');
+    const now = new Date().toISOString();
+    plan.status = 'started';
+    plan.startedAt = now;
+    plan.chosen = start;
+    plan.skipped = skip;
+    plan.updatedAt = now;
+    this.sendMessage(plan.orchestratorId, startMessage(plan, start, skip), 'user', false);
+    this.planChanged(plan);
+    return plan;
+  }
+
+  setPlanNotify(planId: string, mode: 'round' | 'each'): Plan {
+    const plan = this.plan(planId);
+    plan.notify = mode;
+    if (mode === 'each') this.releaseHeld(plan);
+    plan.updatedAt = new Date().toISOString();
+    this.planChanged(plan);
+    return plan;
+  }
+
+  /** The orchestrator's plan holding this track: the newest one, preferring started plans. */
+  private findTrack(orchestratorId: string, trackId: string): { planId: string; trackId: string } {
+    const plans = this.plans
+      .filter((p) => p.orchestratorId === orchestratorId && currentVersion(p).tracks.some((t) => t.id === trackId))
+      .sort((a, b) => Number(b.status === 'started') - Number(a.status === 'started') || b.createdAt.localeCompare(a.createdAt));
+    if (!plans[0]) throw new Error(`No plan of yours has a track "${trackId}"`);
+    return { planId: plans[0].id, trackId };
+  }
+
+  private linkTrack(track: { planId: string; trackId: string }, expertId: string): void {
+    const plan = this.plan(track.planId);
+    if (plan.status === 'waiting') {
+      // Started from the chat ("only start track 1"): the tracker follows what was actually started.
+      plan.status = 'started';
+      plan.startedAt = new Date().toISOString();
+    }
+    plan.experts[track.trackId] = expertId;
+    plan.updatedAt = new Date().toISOString();
+    this.planChanged(plan);
+  }
+
+  /**
+   * Release the round's held notifications once every started track has replied, and either every
+   * chosen track has been started or the orchestrator is idle (so it won't start more).
+   */
+  private checkRound(plan: Plan): void {
+    if (plan.held.length === 0) return;
+    const started = Object.keys(plan.experts);
+    if (!started.every((id) => plan.replied[id])) return;
+    const allStarted = expertTracks(plan).every((id) => plan.experts[id]);
+    const orch = this.runtimes.get(plan.orchestratorId);
+    const orchIdle = !orch || (!orch.isBusy && orch.rec.queue.length === 0);
+    if (allStarted || orchIdle) this.releaseHeld(plan);
+  }
+
+  private releaseHeld(plan: Plan): void {
+    if (plan.held.length === 0) return;
+    const held = plan.held;
+    plan.held = [];
+    const v = currentVersion(plan);
+    const n = Object.keys(plan.experts).length;
+    this.enqueueNotification(
+      plan.orchestratorId,
+      `[Manager notification] Round ${plan.round} of "${v.title}": all ${n} started track${n === 1 ? '' : 's'} replied.`,
+    );
+    for (const text of held) this.enqueueNotification(plan.orchestratorId, text);
+    this.planChanged(plan);
+  }
+
+  private plan(id: string): Plan {
+    const plan = this.plans.find((p) => p.id === id);
+    if (!plan) throw new Error(`Unknown plan: ${id}`);
+    return plan;
+  }
+
+  private planChanged(plan: Plan): void {
+    this.store.save(() => this.state());
+    this.emit('plan', plan);
+  }
+
+  // ---------- question sets ----------
+
+  /** ask_user: questions for the user, plus what the orchestrator answered or routed itself. */
+  askUser(orchestratorId: string, input: AskInput, toolUseId?: string): QuestionSet {
+    const orch = this.get(orchestratorId);
+    if (orch.kind !== 'orchestrator') throw new Error('Only orchestrators can ask the user');
+    const resolved = input.resolved ?? [];
+    const routed = input.routed ?? [];
+    checkUniqueIds([...input.questions.map((q) => q.id), ...resolved.map((q) => q.id), ...routed.map((q) => q.id)], 'question');
+    if (input.questions.length === 0) throw new Error('Ask at least one question');
+    for (const q of routed) {
+      if (this.runtimes.get(q.expertId)?.rec.parentId !== orchestratorId) throw new Error(`Question "${q.id}": expert ${q.expertId} is not one of yours`);
+    }
+    const now = new Date().toISOString();
+    const set: QuestionSet = {
+      id: newId('qs'),
+      orchestratorId,
+      title: input.title,
+      questions: toQuestions(input.questions),
+      resolved,
+      routed,
+      status: 'open',
+      ...(toolUseId ? { toolUseId } : {}),
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.questionSets.push(set);
+    this.questionsChanged(set);
+    return set;
+  }
+
+  /** Send: only the answers and corrections, as one message to the orchestrator. */
+  answerQuestions(setId: string, answers: AnswerInput[], corrections: CorrectionInput[]): QuestionSet {
+    const set = this.questionSet(setId);
+    if (answers.length === 0 && corrections.length === 0) throw new Error('Nothing to send');
+    const text = applyAnswers(set, answers, corrections);
+    this.sendMessage(set.orchestratorId, text, 'user', false);
+    this.questionsChanged(set);
+    return set;
+  }
+
+  private findRouted(orchestratorId: string, questionId: string, expertId: string): { setId: string; questionId: string } {
+    const set = [...this.questionSets]
+      .reverse()
+      .find((s) => s.orchestratorId === orchestratorId && s.routed.some((q) => q.id === questionId));
+    if (!set) throw new Error(`No question set of yours routes a question "${questionId}". Call ask_user first.`);
+    const q = set.routed.find((x) => x.id === questionId)!;
+    if (q.expertId !== expertId) {
+      q.expertId = expertId;
+      this.questionsChanged(set);
+    }
+    return { setId: set.id, questionId };
+  }
+
+  private questionSet(id: string): QuestionSet {
+    const set = this.questionSets.find((s) => s.id === id);
+    if (!set) throw new Error(`Unknown question set: ${id}`);
+    return set;
+  }
+
+  private questionsChanged(set: QuestionSet): void {
+    this.store.save(() => this.state());
+    this.emit('questions', set);
+  }
+
+  private state(): State {
+    return { agents: this.list(), plans: this.plans, questionSets: this.questionSets };
   }
 
   // ---------- internals ----------
@@ -184,26 +440,63 @@ export class Manager extends EventEmitter<ManagerEvents> {
   }
 
   private onTurnEnd(rec: AgentRecord, handled: QueuedMessage, reply: Reply): void {
-    if (!handled.notify) return;
-    if (reply.interrupted) {
-      this.notifyParent(rec, 'was interrupted by the user. Send it a message to continue.');
-      return;
+    // A routed question: the expert's reply is its answer.
+    if (handled.question && !reply.interrupted) {
+      const set = this.questionSets.find((s) => s.id === handled.question!.setId);
+      const q = set?.routed.find((x) => x.id === handled.question!.questionId);
+      if (set && q) {
+        q.answer = { text: reply.text, at: reply.at };
+        set.updatedAt = reply.at;
+        this.questionsChanged(set);
+      }
     }
-    const preview = reply.text.length > PREVIEW_CHARS ? `${reply.text.slice(0, PREVIEW_CHARS)}…` : reply.text;
-    const outcome = reply.isError ? 'finished its turn with an error' : 'finished its turn';
-    this.notifyParent(rec, `${outcome}. Read the full reply with get_expert_output.\nPreview: ${preview}`);
+    const plan = handled.track ? this.plans.find((p) => p.id === handled.track!.planId) : undefined;
+    if (plan && !reply.interrupted) {
+      plan.replied[handled.track!.trackId] = reply.at;
+      plan.updatedAt = reply.at;
+      this.planChanged(plan);
+    }
+    if (handled.notify) {
+      if (reply.interrupted) {
+        this.notifyParent(rec, 'was interrupted by the user. Send it a message to continue.');
+      } else {
+        const preview = reply.text.length > PREVIEW_CHARS ? `${reply.text.slice(0, PREVIEW_CHARS)}…` : reply.text;
+        const outcome = reply.isError ? 'finished its turn with an error' : 'finished its turn';
+        const what = `${outcome}. Read the full reply with get_expert_output.\nPreview: ${preview}`;
+        if (plan && plan.notify === 'round') {
+          plan.held.push(this.notificationText(rec, what));
+          this.planChanged(plan);
+        } else {
+          this.notifyParent(rec, what);
+        }
+      }
+    }
+    if (plan) this.checkRound(plan);
+    // An orchestrator that ends its turn won't start more tracks: rounds waiting on that can complete.
+    if (rec.kind === 'orchestrator') {
+      for (const p of this.plans) if (p.orchestratorId === rec.id && p.held.length) this.checkRound(p);
+    }
+  }
+
+  private notificationText(rec: AgentRecord, what: string): string {
+    return `[Manager notification] Expert "${rec.name}" (id: ${rec.id}) ${what}`;
   }
 
   private notifyParent(rec: AgentRecord, what: string): void {
-    if (!rec.parentId || !this.runtimes.has(rec.parentId)) return;
+    if (!rec.parentId) return;
+    this.enqueueNotification(rec.parentId, this.notificationText(rec, what));
+  }
+
+  private enqueueNotification(orchestratorId: string, text: string): void {
+    if (!this.runtimes.has(orchestratorId)) return;
     const message: QueuedMessage = {
       id: newId('msg'),
-      text: `[Manager notification] Expert "${rec.name}" (id: ${rec.id}) ${what}`,
+      text,
       source: 'manager',
       notify: false,
       queuedAt: new Date().toISOString(),
     };
-    this.runtime(rec.parentId).enqueue(message);
+    this.runtime(orchestratorId).enqueue(message);
   }
 
   private buildOptions(rec: AgentRecord): Options {
@@ -254,7 +547,7 @@ export class Manager extends EventEmitter<ManagerEvents> {
   }
 
   private changed(rec: AgentRecord): void {
-    this.store.save(() => this.list());
+    this.store.save(() => this.state());
     this.emit('agent', rec);
   }
 }

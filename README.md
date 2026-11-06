@@ -26,10 +26,12 @@ Auth comes from your normal Claude Code login (`claude` → `/login`), a `CLAUDE
 
 ## The UI
 
-- **Sidebar:** each agent has a monogram mark (filled for orchestrators) with its state in the corner: a spinning arc while running, dots for a new reply, queued, failed, interrupted or stopped. Rows have two lines: the name (experts add their folder name) and a status line (`Running Bash · 1m 12s`, `Replied 4 min ago`). **Needs you** lists failed or interrupted agents and orchestrators with an unread reply. A collapsed orchestrator rolls up its experts ("1 running · 1 failed"). Archived experts sit in an "Archived" group. The footer shows what is running and the total spend.
+- **Sidebar:** each agent has a monogram mark (filled for orchestrators) with its state in the corner: a spinning arc while running, dots for a new reply, queued, failed, interrupted or stopped. Rows have two lines: the name (experts add their folder name) and a status line (`Running Bash · 1m 12s`, `Replied 4 min ago`). **Needs you** lists orchestrators with a plan or questions waiting for you, failed or interrupted agents, and orchestrators with an unread reply. A collapsed orchestrator rolls up its experts ("1 running · 1 failed"). Archived experts sit in an "Archived" group. The footer shows what is running and the total spend.
 - **Ctrl+K** (or the search field) jumps to any agent by name, folder or orchestrator.
 - **Header:** the breadcrumb as the title (the orchestrator part is a link; **Alt+←** goes there), the folder chip (click copies the path), cost, a context ring, and the **⋯** menu with **Archive** / **Unarchive** (experts) and **Stop agent**, which also clears the queue and closes the process. The second line says what the agent is doing.
 - **Transcript:** messages into the agent (from you or the orchestrator) sit on a block with who sent it and when; the agent's replies are plain text with markdown and code highlighting. Runs of tool calls fold into one line ("Worked for 18s · ran 3 commands, read 2 files") that opens into the steps, with commands, outputs and diffs. Failed steps open by themselves. **Ctrl+O** opens every step. Each turn ends with a footer: duration, tools and cost, or the error. In an orchestrator, every `create_expert` / `message_expert` is one object with the expert's live state and its reply; the manager notification and `get_expert_output` fold into it.
+- **Track plans:** when an orchestrator proposes tracks, the plan shows in its transcript with a checkbox per track, the later rounds it outlined (folded) and **Start**. Start sends only the checked tracks; anything typed in the composer is a separate chat message. A new version of the plan folds the old one away. After Start, the same object tracks the round: one row per started track with the expert's state and first reply line, and a toggle between one notification per round (default) and one per reply.
+- **Question sets:** the orchestrator's questions for you show as one object: options to click (keys 1–4), chips for multiple choice, a free answer for everything, plus the questions it answered itself (with **Correct**) and the ones it sent to an expert in another repo. **Send** delivers only the answers; you can send some and answer the rest later.
 - **Composer:** Enter sends, Shift+Enter adds a line. While the agent runs, a status line shows what it is doing, messages queue (listed in the composer, each removable), and **Esc** or the stop button interrupts the current turn and keeps the queue.
 - Light and dark themes follow the system setting. Unread state and collapsed tree nodes are kept per browser.
 
@@ -52,13 +54,15 @@ Use `--config <path>` or `AGENT_MANAGER_CONFIG` to point at another config file.
 
 - **One agent = one Claude session** (Agent SDK `query()` with streaming input) in its own folder. Each agent has a **queue**, and the manager delivers one message per turn.
 - **Orchestrator tools** (MCP server `manager`, orchestrators only):
-  `create_expert(name, folder?, message?, notify?)`, `message_expert(expert_id, message, notify?)`, `get_expert_output(expert_id, last_n?)`, `list_experts()`, `stop_expert(expert_id)`.
+  `create_expert(name, folder?, message?, notify?, track_id?)`, `message_expert(expert_id, message, notify?, track_id?, question_id?)`, `get_expert_output(expert_id, last_n?)`, `list_experts()`, `stop_expert(expert_id)`, `propose_tracks(round, title, tracks, later?)`, `ask_user(title, questions, resolved?, routed?)`.
   `folder` defaults to the orchestrator's own folder. `notify` defaults to true. `list_experts` includes archived experts with `archived: true`.
 - **Notifications:** when an expert finishes a message sent with `notify`, the orchestrator gets a `[Manager notification]` message with a short preview. Notifications that pile up while the orchestrator is busy are combined into one message. If you interrupt such a turn, the orchestrator is told the expert "was interrupted by the user".
+- **Rounds:** `propose_tracks` stores a plan and returns at once; the orchestrator waits for the user. Calling it again for the same round makes a new version. `track_id` ties an expert to its track. With the default round notifications, the replies of a round's tracks are held back and delivered together (with a `Round … : all … started tracks replied.` line) once every started track has replied and either every chosen track was started or the orchestrator is idle.
+- **Questions:** `ask_user` stores a question set and returns at once. `question_id` on `message_expert` ties a routed question to the expert's reply, which becomes its answer.
 - **Interrupt vs. stop:** interrupt cancels the current turn only; the reply is recorded as "Interrupted by the user." (not an error) and the next queued message follows. Stop also clears the queue and closes the process.
 - **Archive:** hides an idle or stopped expert in the tree. Sending it a message unarchives it.
 - **Files for handoffs:** the instructions in `prompts/orchestrator.md` tell it to write prompt files and expect findings files in its own folder. Experts get access to the orchestrator's folder through `additionalDirectories`. Edit the files in `prompts/` to change the instructions.
-- **State:** `stateFile` holds the agent tree, queues, session IDs, the last 20 final replies, the archive flag, the last activity time and the context use per agent. Transcripts are not copied: the UI reads them from Claude's own session files. After a restart, an agent that was mid-turn shows as `interrupted`. Its next message resumes the same session.
+- **State:** `stateFile` holds the track plans and question sets, the agent tree, queues, session IDs, the last 20 final replies, the archive flag, the last activity time and the context use per agent. Transcripts are not copied: the UI reads them from Claude's own session files. After a restart, an agent that was mid-turn shows as `interrupted`. Its next message resumes the same session.
 - **Context use** is the input size of the last model call of the last turn, divided by the main model's context window.
 
 ### API
@@ -75,6 +79,11 @@ Use `--config <path>` or `AGENT_MANAGER_CONFIG` to point at another config file.
 | DELETE | `/api/agents/:id/queue/:messageId` | Removes a queued message |
 | POST | `/api/agents/:id/archive` | `{ archived }`; experts only, refused while running |
 | POST | `/api/agents/:id/stop` | Cancels the turn, clears the queue and closes the process |
-| GET | `/api/events` | Server-sent events: `snapshot`, `agent`, `delivered`, `message` |
+| GET | `/api/plans` | Track plans |
+| POST | `/api/plans/:id/start` | `{ start: trackIds, skip?: trackIds }`; sends the orchestrator only these ids |
+| POST | `/api/plans/:id/notify` | `{ mode: 'round' \| 'each' }` |
+| GET | `/api/questions` | Question sets |
+| POST | `/api/questions/:id/answer` | `{ answers: [{ questionId, choices?, text? }], corrections?: [{ questionId, text }] }` |
+| GET | `/api/events` | Server-sent events: `snapshot`, `agent`, `delivered`, `message`, `plan`, `questions` (all plans and question sets follow each snapshot) |
 
 Agent records carry `archived`, `lastActivityAt` (when a turn last ended or failed), `turnStartedAt` (while a turn runs) and `context: { usedTokens, windowTokens } | null`, besides the queue, replies, status and cost. Each reply has `durationMs` and `costUsd` for its turn.
