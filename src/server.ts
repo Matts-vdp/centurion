@@ -153,6 +153,12 @@ async function route(manager: Manager, config: Config, req: http.IncomingMessage
     const body = await readJson(req);
     return manager.sendMessage(id, str(body.text, 'text'), 'user', body.notify === true);
   }
+  if (parts[2] === 'experts' && method === 'POST') {
+    const body = await readJson(req);
+    const message = typeof body.message === 'string' && body.message.trim() ? body.message : undefined;
+    const cwd = typeof body.cwd === 'string' && body.cwd.trim() ? body.cwd.trim() : undefined;
+    return manager.createExpert(id, { name: str(body.name, 'name'), cwd, message }, 'user');
+  }
   if (parts[2] === 'stop' && method === 'POST') {
     await manager.stop(id, 'user');
     return manager.get(id);

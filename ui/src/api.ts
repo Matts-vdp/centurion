@@ -75,6 +75,8 @@ export type LiveMessage = {
 export const commands = {
   createChat: (name: string, message?: string) =>
     api<AgentRecord>('/api/agents', { method: 'POST', body: { name, message } }),
+  createExpert: (chatId: string, input: { name: string; cwd?: string; message?: string }) =>
+    api<AgentRecord>(`/api/agents/${chatId}/experts`, { method: 'POST', body: input }),
   send: (id: string, text: string) => api<QueuedMessage>(`/api/agents/${id}/messages`, { method: 'POST', body: { text } }),
   interrupt: (id: string) => api<AgentRecord>(`/api/agents/${id}/interrupt`, { method: 'POST' }),
   stop: (id: string) => api<AgentRecord>(`/api/agents/${id}/stop`, { method: 'POST' }),

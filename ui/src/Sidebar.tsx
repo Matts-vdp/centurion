@@ -5,7 +5,7 @@ import { ArchiveIcon, Chevron, PlusIcon, SearchIcon } from './icons';
 import { DRAG_TYPE } from './layout';
 import { AgentMark } from './Mark';
 import { agentState, archiveBlocker, clock, folderName, money, needsYou, rollup, type AgentState } from './status';
-import { lastSeen, store, treeState, useManager } from './store';
+import { lastSeen, newExpertFor, openNewExpert, recentFolders, store, treeState, useManager } from './store';
 
 type Props = {
   agents: Map<string, AgentRecord>;
@@ -29,6 +29,7 @@ export function Sidebar({ agents, selected, open: openIds, onSelect, onOpenInSpl
   const [creating, setCreating] = useState(false);
   const [menu, setMenu] = useState<RowMenu | null>(null);
   const [error, setError] = useState('');
+  const expertFor = newExpertFor.use();
   const list = [...agents.values()].sort(byCreated);
   const anyRunning = list.some((a) => a.status === 'running');
   const now = useNow(true, anyRunning ? 1000 : 30_000);
@@ -101,6 +102,16 @@ export function Sidebar({ agents, selected, open: openIds, onSelect, onOpenInSpl
           expander={children.length > 0 ? { open: !collapsed, toggle } : undefined}
           extra={collapsed && children.length > 0 ? `${children.length} expert${children.length === 1 ? '' : 's'}` : undefined}
         />
+        {!inArchive && expertFor === o.id && (
+          <NewExpert
+            chat={o}
+            agents={agents}
+            onDone={(rec) => {
+              newExpertFor.set(null);
+              if (rec) onSelect(rec.id);
+            }}
+          />
+        )}
         {!collapsed && children.length > 0 && (
           <div className="tree-children">
             {active.map((c) => (
@@ -220,6 +231,18 @@ export function Sidebar({ agents, selected, open: openIds, onSelect, onOpenInSpl
             Open in split
             <span className="menu-hint">Or drag the row onto the main area</span>
           </button>
+          {menuAgent.kind === 'orchestrator' && (
+            <button
+              role="menuitem"
+              onClick={() => {
+                setMenu(null);
+                openNewExpert(menuAgent.id);
+              }}
+            >
+              New expert
+              <span className="menu-hint">Starts an expert under this chat without telling it</span>
+            </button>
+          )}
           <button
             role="menuitem"
             disabled={menuBlocker !== null}
@@ -454,6 +477,95 @@ function LogoIcon() {
       <circle cx="19" cy="19" r="2.5" />
       <path d="M7.5 12h4M11.5 12V7c0-1.1.9-2 2-2h3M11.5 12v5c0 1.1.9 2 2 2h3" />
     </svg>
+  );
+}
+
+/**
+ * A new expert under a chat, started by the user. The chat isn't told; the user asks it to read the
+ * expert's output when they want that. The folder comes from the recent ones or is typed.
+ */
+function NewExpert({ chat, agents, onDone }: { chat: AgentRecord; agents: Map<string, AgentRecord>; onDone: (rec: AgentRecord | null) => void }) {
+  const recents = recentFolders(agents);
+  const lastHere = [...agents.values()].filter((a) => a.parentId === chat.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  const [name, setName] = useState('');
+  const [folder, setFolder] = useState(() => lastHere?.cwd ?? recents[0] ?? chat.cwd);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const nameRef = useRef<HTMLInputElement>(null);
+  useEffect(() => nameRef.current?.focus(), []);
+
+  const submit = async (e?: FormEvent) => {
+    e?.preventDefault();
+    if (!name.trim() || !folder.trim() || busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      const rec = await commands.createExpert(chat.id, { name: name.trim(), cwd: folder.trim(), message: message.trim() || undefined });
+      store.upsert(rec);
+      onDone(rec);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form
+      className="new-chat new-expert"
+      aria-label={`New expert under ${chat.name}`}
+      onSubmit={submit}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') {
+          e.stopPropagation();
+          onDone(null);
+        }
+      }}
+    >
+      <div className="form-title">New expert under {chat.name}</div>
+      <input ref={nameRef} placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
+      <input className="mono" placeholder="Folder (absolute path)" value={folder} spellCheck={false} onChange={(e) => setFolder(e.target.value)} />
+      {recents.length > 0 && (
+        <div className="recent-folders" role="listbox" aria-label="Recent folders">
+          {recents.slice(0, 6).map((dir) => (
+            <button
+              type="button"
+              key={dir}
+              role="option"
+              aria-selected={dir === folder.trim()}
+              className={`recent-folder${dir === folder.trim() ? ' selected' : ''}`}
+              title={dir}
+              onClick={() => setFolder(dir)}
+            >
+              <span className="recent-name">{folderName(dir)}</span>
+              <span className="recent-path mono">{dir}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      <textarea
+        placeholder="First message (optional)"
+        rows={3}
+        value={message}
+        onChange={(e) => setMessage(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            void submit();
+          }
+        }}
+      />
+      <div className="hint">{chat.name} isn't told. Ask it to read the expert's output when you want it to.</div>
+      {error && <div className="form-error">{error}</div>}
+      <div className="form-actions">
+        <button type="button" className="button secondary small" onClick={() => onDone(null)}>
+          Cancel
+        </button>
+        <button type="submit" className="button primary small" disabled={!name.trim() || !folder.trim() || busy}>
+          Start
+        </button>
+      </div>
+    </form>
   );
 }
 

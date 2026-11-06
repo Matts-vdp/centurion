@@ -142,6 +142,8 @@ export class Manager extends EventEmitter<ManagerEvents> {
   createExpert(
     parentId: string,
     input: { name: string; cwd?: string; message?: string; notify?: boolean; trackId?: string; model?: string; effort?: EffortLevel },
+    /** Who sends the first message: the orchestrator (create_expert) or the user (the UI, which tells no one). */
+    from: 'orchestrator' | 'user' = 'orchestrator',
   ): AgentRecord {
     const parent = this.get(parentId);
     if (parent.kind !== 'orchestrator') throw new Error('Only orchestrators can create experts');
@@ -153,7 +155,7 @@ export class Manager extends EventEmitter<ManagerEvents> {
     });
     const rec = this.createAgent('expert', input.name, input.cwd ?? parent.cwd, parent.id, settings);
     if (track) this.linkTrack(track, rec.id);
-    if (input.message) this.sendMessage(rec.id, input.message, 'orchestrator', input.notify ?? true, { track });
+    if (input.message) this.sendMessage(rec.id, input.message, from, from === 'orchestrator' && (input.notify ?? true), { track });
     return rec;
   }
 

@@ -5,7 +5,7 @@ import { CheckIcon, CloseIcon, FolderIcon, MenuIcon, MoreIcon } from './icons';
 import { AgentMark, StateDot } from './Mark';
 import { ModelPicker } from './ModelPicker';
 import { agentState, archiveBlocker, folderName, money } from './status';
-import { lastSeen, useManager } from './store';
+import { lastSeen, openNewExpert, useManager } from './store';
 
 type Props = {
   agent: AgentRecord;
@@ -95,6 +95,19 @@ export function Header({ agent, parent, agents, run, onSelect, onClose, onOpenDr
             </button>
             {menu && (
               <div className="menu" role="menu">
+                {agent.kind === 'orchestrator' && !agent.archived && (
+                  <button
+                    role="menuitem"
+                    onClick={() => {
+                      setMenu(false);
+                      openNewExpert(agent.id);
+                      onOpenDrawer?.();
+                    }}
+                  >
+                    New expert
+                    <span className="menu-hint">Starts an expert under this chat without telling it</span>
+                  </button>
+                )}
                 <button
                   role="menuitem"
                   disabled={blocker !== null}

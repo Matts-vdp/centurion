@@ -216,10 +216,54 @@ class PersistedMap<V> {
   }
 }
 
+/** A tiny shared value with React bindings, not persisted. */
+class Signal<V> {
+  private readonly listeners = new Set<() => void>();
+  constructor(private value: V) {}
+  get = () => this.value;
+  subscribe = (fn: () => void) => {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  };
+  set(v: V): void {
+    if (this.value === v) return;
+    this.value = v;
+    for (const fn of this.listeners) fn();
+  }
+  use(): V {
+    return useSyncExternalStore(this.subscribe, this.get);
+  }
+}
+
+/** The chat whose New expert form is open in the sidebar (the header menu opens it too). */
+export const newExpertFor = new Signal<string | null>(null);
+
+/** Folders experts have used, newest first, then the managing folder. */
+export function recentFolders(agents: Map<string, AgentRecord>): string[] {
+  const list = [...agents.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const add = (dir: string) => {
+    const key = dir.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(dir);
+  };
+  for (const a of list) if (a.kind === 'expert') add(a.cwd);
+  for (const a of list) if (a.kind === 'orchestrator') add(a.cwd);
+  return out;
+}
+
 /** agentId → the lastActivityAt the user has seen. */
 export const lastSeen = new PersistedMap<string>('agent-manager-last-seen');
 /** orchestratorId → collapsed in the tree; `archived:<id>` → archived group expanded. */
 export const treeState = new PersistedMap<boolean>('agent-manager-tree');
+
+/** Open the New expert form under a chat, with the chat expanded in the tree. */
+export function openNewExpert(chatId: string): void {
+  treeState.set(chatId, false);
+  newExpertFor.set(chatId);
+}
 
 export function isUnread(a: AgentRecord, seen: Record<string, string>): boolean {
   const since = seen[a.id] ?? a.createdAt;
