@@ -1,6 +1,8 @@
-import type { AgentRecord, Plan, QuestionSet, QueuedMessage, Track, UserQuestion } from '../../src/types';
+import type { AgentRecord, EffortLevel, ModelOption, Plan, QuestionSet, QueuedMessage, Track, UserQuestion } from '../../src/types';
 
-export type { AgentRecord, Plan, QuestionSet, QueuedMessage, Track, UserQuestion };
+export type { AgentRecord, EffortLevel, ModelOption, Plan, QuestionSet, QueuedMessage, Track, UserQuestion };
+
+export const EFFORT_LEVELS: readonly EffortLevel[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 export type AnswerPayload = { questionId: string; choices: string[]; text: string };
 
@@ -69,10 +71,13 @@ export const commands = {
     api<AgentRecord>(`/api/agents/${id}/queue/${messageId}`, { method: 'DELETE' }),
   setArchived: (id: string, archived: boolean) =>
     api<AgentRecord>(`/api/agents/${id}/archive`, { method: 'POST', body: { archived } }),
+  setModel: (id: string, change: { model?: string | null; effort?: EffortLevel | null }) =>
+    api<AgentRecord>(`/api/agents/${id}/model`, { method: 'POST', body: change }),
+  models: () => api<ModelOption[]>('/api/models'),
   history: (id: string) => api<HistoryMessage[]>(`/api/agents/${id}/history`),
   startPlan: (id: string, start: string[], skip: string[]) => api<Plan>(`/api/plans/${id}/start`, { method: 'POST', body: { start, skip } }),
   setPlanNotify: (id: string, mode: 'round' | 'each') => api<Plan>(`/api/plans/${id}/notify`, { method: 'POST', body: { mode } }),
   answerQuestions: (id: string, answers: AnswerPayload[], corrections: { questionId: string; text: string }[]) =>
     api<QuestionSet>(`/api/questions/${id}/answer`, { method: 'POST', body: { answers, corrections } }),
-  info: () => api<{ orchestratorFolder: string; permissionMode: string; platform: string }>('/api/info'),
+  info: () => api<{ orchestratorFolder: string; permissionMode: string; platform: string; defaultModel: string | null }>('/api/info'),
 };

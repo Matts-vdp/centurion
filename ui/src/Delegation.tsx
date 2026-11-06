@@ -3,6 +3,7 @@ import type { AgentRecord } from './api';
 import type { Delegation } from './blocks';
 import { CheckIcon, ErrorIcon, OpenIcon } from './icons';
 import { AgentMark } from './Mark';
+import { runLabel, useModels } from './models';
 import { agentState, duration, folderName, money, type StateKey } from './status';
 import { lastSeen, useManager } from './store';
 
@@ -25,6 +26,7 @@ export function DelegationView({ block, agents, isLatest, now, onSelect }: Props
   const { activity } = useManager();
   const seen = lastSeen.use();
   const [open, setOpen] = useState(false);
+  useModels();
   const expert = block.expertId ? agents.get(block.expertId) : undefined;
   const name = expert?.name ?? block.expertName;
   const status = delegationStatus(block, expert, isLatest, now, (a) => agentState(a, agents, seen, activity.get(a.id), now).sentence);
@@ -39,7 +41,7 @@ export function DelegationView({ block, agents, isLatest, now, onSelect }: Props
           <span className="delegation-name">{name}</span>
           {expert && (
             <span className="mono delegation-folder" title={expert.cwd}>
-              {folderName(expert.cwd)}
+              {folderName(expert.cwd)} · {runLabel(expert)}
             </span>
           )}
         </div>

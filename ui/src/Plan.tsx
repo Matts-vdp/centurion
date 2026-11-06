@@ -3,6 +3,7 @@ import { commands, type AgentRecord, type Plan, type Track } from './api';
 import { expertStatus } from './Delegation';
 import { BellIcon, Chevron, OpenIcon } from './icons';
 import { AgentMark } from './Mark';
+import { modelLabel, runLabel, useModels } from './models';
 import { agentState, clock, folderName } from './status';
 import { lastSeen, store, useManager } from './store';
 
@@ -23,6 +24,7 @@ type Props = {
  */
 export function PlanView({ planId, version, orchestrator, agents, now, onSelect, run }: Props) {
   const { plans } = useManager();
+  useModels();
   const plan = plans.get(planId);
   if (!plan) return null;
   const v = plan.versions[version - 1];
@@ -34,21 +36,25 @@ export function PlanView({ planId, version, orchestrator, agents, now, onSelect,
 
 // ---------- shared bits ----------
 
-export function modelLabel(model: string): string {
-  const m = /claude-(\w+)-(\d+)-(\d+)/.exec(model);
-  return m ? `${m[1][0].toUpperCase()}${m[1].slice(1)} ${m[2]}.${m[3]}` : model;
-}
-
+/**
+ * Where a track runs, with its model and effort. A new expert without its own takes the orchestrator's
+ * (and an existing one keeps its own), so the line shows those.
+ */
 function targetLine(t: Track, orchestrator: AgentRecord, agents: Map<string, AgentRecord>): string {
   const parts: string[] = [];
+  let runsOn: AgentRecord | undefined = orchestrator;
   if (t.target.kind === 'new_expert') parts.push('New expert', folderName(t.target.folder ?? orchestrator.cwd));
   else if (t.target.kind === 'existing_expert') {
     const e = agents.get(t.target.expertId);
     parts.push(`${e?.name ?? t.target.expertId} (existing)`);
     if (e) parts.push(folderName(e.cwd));
+    runsOn = e;
   } else parts.push(`Subagent of ${orchestrator.name}`);
-  if (t.model) parts.push(modelLabel(t.model));
-  if (t.effort) parts.push(t.effort);
+  if (t.model || t.effort) {
+    parts.push(...[t.model ? modelLabel(t.model) : '', t.effort ?? ''].filter(Boolean));
+  } else if (runsOn && t.target.kind !== 'subagent') {
+    parts.push(runLabel(runsOn));
+  }
   return parts.join(' · ');
 }
 
@@ -303,7 +309,7 @@ function Tracker({
         }
         const s = statuses.get(r.track.id)!;
         const reply = r.expert.replies.find((x) => Date.parse(x.at) >= since && !x.isError && !x.interrupted);
-        const meta = [folderName(r.expert.cwd), r.track.model ? modelLabel(r.track.model) : '', r.track.effort ?? ''].filter(Boolean).join(' · ');
+        const meta = `${folderName(r.expert.cwd)} · ${runLabel(r.expert)}`;
         return (
           <button key={r.track.id} className="tracker-row" onClick={() => onSelect(r.expert.id)} title={`Open ${r.expert.name}`}>
             <span className="plan-num mono">{i + 1}</span>

@@ -10,6 +10,7 @@ export {
   Bot as BotIcon,
   Brain as ThinkIcon,
   Check as CheckIcon,
+  ChevronDown as ChevronDownIcon,
   CircleX as ErrorIcon,
   Copy as CopyIcon,
   Ellipsis as MoreIcon,

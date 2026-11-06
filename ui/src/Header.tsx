@@ -3,6 +3,7 @@ import { commands, type AgentRecord } from './api';
 import { useNow } from './hooks';
 import { CheckIcon, FolderIcon, MenuIcon, MoreIcon } from './icons';
 import { AgentMark, StateDot } from './Mark';
+import { ModelPicker } from './ModelPicker';
 import { agentState, folderName, money } from './status';
 import { lastSeen, useManager } from './store';
 
@@ -77,9 +78,10 @@ export function Header({ agent, parent, agents, run, onSelect, onOpenDrawer }: P
           {agent.archived && <span className="tag">archived</span>}
         </nav>
         <div className="header-tools">
+          <ModelPicker agent={agent} run={run} />
           <button className="chip mono" title={`${agent.cwd}\nClick to copy the path`} onClick={copyPath}>
             {copied ? <CheckIcon size={13} /> : <FolderIcon size={13} />}
-            {copied ? 'Copied' : folderName(agent.cwd)}
+            <span className="chip-label">{copied ? 'Copied' : folderName(agent.cwd)}</span>
           </button>
           <span className="mono header-cost" title="Total cost of this agent">
             {money(agent.costUsd)}

@@ -1,4 +1,5 @@
 import type { HistoryMessage, LiveMessage, QueuedMessage } from './api';
+import { modelLabel } from './models';
 
 export type Source = { kind: 'user' } | { kind: 'orchestrator'; name: string } | { kind: 'manager' };
 
@@ -96,8 +97,23 @@ const nextKey = (prefix: string) => `${prefix}-${++keySeq}`;
 /** Interrupt markers Claude Code writes into the session as user text. The turn footer says it instead. */
 const INTERRUPT_MARKER = /^\[Request interrupted by user/;
 
+/** Output of a session command, e.g. the manager switching the model: "Set model to `sonnet (claude-sonnet-5-5)`". */
+const COMMAND_OUTPUT = /^<local-command-stdout>([\s\S]*)<\/local-command-stdout>\s*$/;
+const COMMAND_NAME = /^<command-name>/;
+const MODEL_SET = /^Set model to (\S+)(?: \(([^)]+)\))?/;
+
 function pushPrompt(t: Transcript, raw: string, fromHistory: boolean, at: number | undefined): void {
   if (INTERRUPT_MARKER.test(raw)) return;
+  // The command itself (`<command-name>/model</command-name>…`) stays hidden; its output becomes an event line.
+  if (COMMAND_NAME.test(raw.trim())) return;
+  const command = COMMAND_OUTPUT.exec(raw.trim());
+  if (command) {
+    const out = command[1].replaceAll('`', '').trim();
+    const model = MODEL_SET.exec(out);
+    const text = model ? `Model switched to ${modelLabel(model[2] ?? model[1])}` : out;
+    if (text) t.items.push({ kind: 'note', key: nextKey('note'), text, level: 'info', at });
+    return;
+  }
   const { source, text, notifications } = parsePrompt(raw);
   t.items.push({ kind: 'prompt', key: nextKey('prompt'), text, source, fromHistory, at, notifications });
 }
