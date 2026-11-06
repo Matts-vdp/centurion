@@ -84,7 +84,7 @@ Primary buttons are inverted text colour (light on dark, dark on light), not a h
 
 ### Icons and motion
 
-- One stroke icon set (Lucide, 16 px, 1.5 stroke) instead of the hand-made `icons.tsx`.
+- One stroke icon set: Lucide, 16 px, 1.75 stroke (thin enough to stay quiet, thick enough to stay crisp at 14–16 px). `ui/src/icons.tsx` re-exports the icons the app uses under its own names.
 - Motion is functional: 120–160 ms ease-out for hover and expand, a rotating arc for running, a soft shimmer on the live status text. All of it off under `prefers-reduced-motion`.
 
 ## 4. Agents and status
@@ -253,9 +253,9 @@ Like `propose_tracks`, it stores the set and returns at once, and the orchestrat
 
 Each step is shippable on its own and gets its own commit. Check every step in the browser against a test manager, in light, dark and a narrow width, and compare it with the canvas. Mark a step done here when it lands.
 
-Status: not started.
+Status: step 1 done.
 
-1. **Foundations.** New tokens in `styles.css` (both themes), Plex fonts, Lucide icons, button / input / menu restyle. Drop the activity bar.
+1. **Foundations.** *(done)* New tokens in `styles.css` (both themes), Plex fonts, Lucide icons, button / input / menu restyle. Drop the activity bar.
 2. **Sidebar and header.** Agent marks with status, two-line rows with the folder name, Needs you group, footer counts, search field (opens a basic switcher), the two-line header with repo chip and context ring.
 3. **Composer.** Floating composer, live status line, queue list.
 4. **Transcript.** Message blocks with speaker lines, prose typography, work-log grouping (`timeline.ts` groups consecutive tool items), turn footers, event lines.

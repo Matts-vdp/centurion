@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
 import type { AgentRecord } from './api';
-import { CheckIcon, Chevron, ErrorIcon, LinkIcon } from './icons';
+import { CheckIcon, Chevron, ErrorIcon, OpenIcon } from './icons';
 import { displayName, linkedExpert, summarize } from './tools';
 import { pendingTool, type Item, type Source, type ToolItem, type Transcript as T } from './timeline';
 
@@ -169,7 +169,7 @@ function ToolCard({ tool, agents, onSelect, now, running }: { tool: ToolItem } &
             }}
           >
             {expert.name}
-            <LinkIcon size={12} />
+            <OpenIcon size={12} />
           </button>
         )}
         <span className="tool-state">

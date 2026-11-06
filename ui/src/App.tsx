@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AgentView } from './AgentView';
-import { AgentsIcon } from './icons';
+import { MenuIcon } from './icons';
 import { Sidebar } from './Sidebar';
 import { store, useManager } from './store';
 
-const NARROW = '(max-width: 720px)';
+const NARROW = '(max-width: 899px)';
 
 function readHash(): string | null {
   const m = /^#agent=(.+)$/.exec(location.hash);
@@ -57,16 +57,6 @@ export function App() {
 
   return (
     <div className={`app${narrow ? ' narrow' : ''}`}>
-      <nav className="activitybar" aria-label="Views">
-        <button
-          className={`activity${showSidebar ? ' active' : ''}`}
-          title="Agents"
-          aria-pressed={showSidebar}
-          onClick={() => setSidebarOpen((open) => !(open || (narrow && !agent)))}
-        >
-          <AgentsIcon size={22} />
-        </button>
-      </nav>
       {showSidebar && (
         <>
           {narrow && agent && <div className="scrim" onClick={() => setSidebarOpen(false)} />}
@@ -76,6 +66,11 @@ export function App() {
         </>
       )}
       <main className="main">
+        {narrow && !showSidebar && (
+          <button className="icon-button drawer-button" title="Agents" aria-label="Open the agent list" onClick={() => setSidebarOpen(true)}>
+            <MenuIcon size={16} />
+          </button>
+        )}
         {!connected && epoch > 0 && <div className="banner">Connection lost. Reconnecting…</div>}
         {authError && <div className="banner error">The manager refused the token. Open the URL the manager printed (it ends in ?token=…).</div>}
         {agent ? (
