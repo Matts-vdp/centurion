@@ -1,5 +1,6 @@
 import type { AgentRecord } from './api';
 import type { Item, Notification, PromptItem, ThinkingItem, ToolItem } from './timeline';
+import { displayName } from './tools';
 
 type Reply = AgentRecord['replies'][number];
 
@@ -11,23 +12,60 @@ export type RenderBlock =
   | { kind: 'prose'; key: string; text: string }
   | { kind: 'work'; key: string; steps: Step[]; live: boolean }
   | { kind: 'event'; key: string; text: string; level: 'info' | 'error'; at?: number; notification?: Notification }
-  | { kind: 'footer'; key: string; reply: Reply; tools: number; durationMs?: number };
+  | { kind: 'footer'; key: string; reply: Reply; tools: number; durationMs?: number }
+  | Delegation;
 
 type Turn = { prompt?: PromptItem; items: Item[]; reply?: Reply };
+
+/** create_expert or message_expert, with what came back about it folded in. */
+export type Delegation = {
+  kind: 'delegation';
+  key: string;
+  tool: ToolItem;
+  /** null until create_expert returns the new expert's id. */
+  expertId: string | null;
+  expertName: string;
+  message: string;
+  /** The matching `[Manager notification]`, when it arrived. */
+  notification?: Notification;
+  notifiedAt?: number;
+  /** The orchestrator read the reply with get_expert_output. */
+  read: boolean;
+};
 
 export function toBlocks(items: Item[], replies: Reply[], running: boolean): RenderBlock[] {
   const turns = splitTurns(items);
   assignReplies(turns, replies, running);
   const blocks: RenderBlock[] = [];
+  // expertId → the latest delegation to it, so notifications and reads can fold into it.
+  const latest = new Map<string, Delegation>();
+
   turns.forEach((turn, n) => {
     const last = n === turns.length - 1;
-    if (turn.prompt) blocks.push(...promptBlocks(turn.prompt));
+    if (turn.prompt) blocks.push(...promptBlocks(turn.prompt, latest));
     let work: Step[] = [];
     const flush = (live: boolean) => {
       if (work.length) blocks.push({ kind: 'work', key: `work-${work[0].key}`, steps: work, live });
       work = [];
     };
     for (const item of turn.items) {
+      if (item.kind === 'tool') {
+        const name = displayName(item.name);
+        if (name === 'create_expert' || name === 'message_expert') {
+          flush(false);
+          const d = delegation(item);
+          if (d.expertId) latest.set(d.expertId, d);
+          blocks.push(d);
+          continue;
+        }
+        if (name === 'get_expert_output' && typeof item.input.expert_id === 'string' && !item.isError) {
+          const d = latest.get(item.input.expert_id);
+          if (d) {
+            d.read = true;
+            continue;
+          }
+        }
+      }
       if (item.kind === 'tool' || item.kind === 'thinking') {
         work.push(item);
         continue;
@@ -46,17 +84,52 @@ export function toBlocks(items: Item[], replies: Reply[], running: boolean): Ren
   return blocks;
 }
 
-/** A manager prompt that only carries notifications becomes event lines; anything else is a message. */
-function promptBlocks(p: PromptItem): RenderBlock[] {
+function delegation(tool: ToolItem): Delegation {
+  const i = tool.input;
+  let expertId = typeof i.expert_id === 'string' ? i.expert_id : null;
+  if (!expertId && tool.result && !tool.isError) {
+    try {
+      const parsed = JSON.parse(tool.result) as { id?: unknown };
+      if (typeof parsed.id === 'string') expertId = parsed.id;
+    } catch {
+      // not JSON
+    }
+  }
+  return {
+    kind: 'delegation',
+    key: `delegation-${tool.id}`,
+    tool,
+    expertId,
+    expertName: typeof i.name === 'string' ? i.name : (expertId ?? 'expert'),
+    message: typeof i.message === 'string' ? i.message : '',
+    read: false,
+  };
+}
+
+/**
+ * A manager prompt that only carries notifications: each one folds into the delegation it reports on,
+ * or becomes an event line. Anything else is a message.
+ */
+function promptBlocks(p: PromptItem, latest: Map<string, Delegation>): RenderBlock[] {
   if (p.source.kind === 'manager' && p.notifications?.length) {
-    return p.notifications.map((notification, i) => ({
-      kind: 'event' as const,
-      key: `${p.key}-n${i}`,
-      text: `${notification.expertName} ${notification.text.replace(/\. Read the full reply with get_expert_output\.?$/, '').replace(/\.$/, '')}`,
-      level: /error/.test(notification.text) ? ('error' as const) : ('info' as const),
-      at: p.at,
-      notification,
-    }));
+    const events: RenderBlock[] = [];
+    p.notifications.forEach((notification, i) => {
+      const d = latest.get(notification.expertId);
+      if (d && !d.notification) {
+        d.notification = notification;
+        d.notifiedAt = p.at;
+        return;
+      }
+      events.push({
+        kind: 'event',
+        key: `${p.key}-n${i}`,
+        text: `${notification.expertName} ${notification.text.replace(/\. Read the full reply with get_expert_output\.?$/, '').replace(/\.$/, '')}`,
+        level: /error/.test(notification.text) ? 'error' : 'info',
+        at: p.at,
+        notification,
+      });
+    });
+    return events;
   }
   return [{ kind: 'message', key: p.key, item: p }];
 }
@@ -118,7 +191,7 @@ const CATEGORY: Record<string, [string, string]> = {
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : word.endsWith('search') ? 'es' : 's'}`;
 
 /** "ran 3 commands, read 2 files" */
-export function workSummary(steps: Step[], displayName: (n: string) => string): string {
+export function workSummary(steps: Step[]): string {
   const counts = new Map<string, number>();
   let other = 0;
   for (const s of steps) {

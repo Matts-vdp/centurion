@@ -24,6 +24,7 @@ import {
   WebIcon,
   WriteIcon,
 } from './icons';
+import { DelegationView } from './Delegation';
 import { AgentMark } from './Mark';
 import { clock, duration, money } from './status';
 import { viewPrefs } from './store';
@@ -43,7 +44,6 @@ export function Transcript({ transcript, loading, loadError, agent, agents, onSe
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const running = agent.status === 'running';
-  const now = useNow(running);
   const verbose = viewPrefs.use().verbose === true;
   const blocks = useMemo(() => toBlocks(transcript.items, agent.replies, running), [transcript, agent.replies, running]);
 
@@ -65,7 +65,17 @@ export function Transcript({ transcript, loading, loadError, agent, agents, onSe
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   }, [blocks, loading]);
 
-  const ctx: Ctx = { agent, agents, onSelect, now, verbose };
+  // expertId → key of the latest delegation to it; only that one follows the expert live.
+  const latest = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const b of blocks) if (b.kind === 'delegation' && b.expertId) m.set(b.expertId, b.key);
+    return m;
+  }, [blocks]);
+  // Any expert this agent delegated to may be running: keep the clock going for their timers.
+  const watching = [...latest.keys()].some((id) => agents.get(id)?.status === 'running');
+  const now = useNow(running || watching);
+
+  const ctx: Ctx = { agent, agents, onSelect, now, verbose, latest };
 
   return (
     <div
@@ -105,6 +115,7 @@ type Ctx = {
   onSelect: (id: string) => void;
   now: number;
   verbose: boolean;
+  latest: Map<string, string>;
 };
 
 function BlockView({ block, ctx }: { block: RenderBlock; ctx: Ctx }) {
@@ -123,6 +134,16 @@ function BlockView({ block, ctx }: { block: RenderBlock; ctx: Ctx }) {
       return <EventLine block={block} ctx={ctx} />;
     case 'footer':
       return <TurnFooter block={block} />;
+    case 'delegation':
+      return (
+        <DelegationView
+          block={block}
+          agents={ctx.agents}
+          isLatest={block.expertId !== null && ctx.latest.get(block.expertId) === block.key}
+          now={ctx.now}
+          onSelect={ctx.onSelect}
+        />
+      );
   }
 }
 
@@ -237,7 +258,7 @@ function WorkLog({ steps, live, ctx }: { steps: Step[]; live: boolean; ctx: Ctx 
   const [open, setOpen] = useState<boolean | null>(null);
   const isOpen = open ?? (ctx.verbose || failed > 0);
   const ms = workDuration(steps);
-  const summary = workSummary(steps, displayName);
+  const summary = workSummary(steps);
   const current = live ? steps.findLast((s) => s.kind === 'tool' && s.result === undefined && !s.denied) : undefined;
   const liveMs = live ? ctx.now - Math.min(...steps.map((s) => (s.kind === 'tool' ? s.startedAt : s.at))) : null;
 

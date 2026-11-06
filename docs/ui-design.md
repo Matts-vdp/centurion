@@ -123,7 +123,7 @@ The transcript column is centred, 760 px max, with prose at 15 px. Item by item:
   - Edit and Write open a real diff with line numbers and +/- counts.
   - A running step shows a live timer; an error step is coral and opens by default.
   - Verbose mode (Ctrl+O) expands all work logs and shows inputs and outputs.
-- **Delegations.** `create_expert` and `message_expert` render as one object on `--raised`: the expert's mark, `Asked restaurant-summary` with its repo, the first line of the message, and a live status line below (`Working · 32s · Running Bash: Run the e2e tests`, `Replied after 1m 52s`, `Failed: <error>`), with an **Open** button. Consecutive delegations stack with an 8 px gap. When the matching manager notification and `get_expert_output` arrive, they fold into the same object (`Replied · reply read`), instead of showing as three separate items. This is the signature element of the app.
+- **Delegations.** `create_expert` and `message_expert` render as one object on `--raised`: the expert's mark, `Asked restaurant-summary` with its repo, the first line of the message, and a live status line below (`Working · 32s · Running Bash: Run the e2e tests`, `Replied after 1m 52s`, `Failed: <error>`), with an **Open** button. Consecutive delegations stack with an 8 px gap. When the matching manager notification and `get_expert_output` arrive, they fold into the same object (`Replied · reply read`), instead of showing as three separate items. This is the signature element of the app. Matching is client side: a notification or read goes to the latest delegation to that expert; the reply is the expert's first reply after the message was sent. Only the latest delegation to an expert follows its live state; older ones show how they ended.
 - **Manager notifications** that don't match a delegation are a single quiet event line with an icon: `restaurant-summary finished its turn · 11:21`.
 - **Turn footer.** After each turn, a mono line in `--text-3`: `Done in 42s · 3 tools · $0.004`. Interrupted turns say `Interrupted by you`; failed turns put the error text there in coral. Footers come from the record's last replies (each has `durationMs` and `costUsd`), tied to turns by time: a reply belongs to the last turn that started before it. Older turns, beyond the last 20 replies, have no footer. Claude Code's own `[Request interrupted by user]` marker is hidden, since the footer says it.
 - **Thinking** is a step in the work log (`Thought` and its first line); the full text opens on click.
@@ -253,13 +253,13 @@ Like `propose_tracks`, it stores the set and returns at once, and the orchestrat
 
 Each step is shippable on its own and gets its own commit. Check every step in the browser against a test manager, in light, dark and a narrow width, and compare it with the canvas. Mark a step done here when it lands.
 
-Status: steps 1–4 done.
+Status: steps 1–5 done.
 
 1. **Foundations.** *(done)* New tokens in `styles.css` (both themes), Plex fonts, Lucide icons, button / input / menu restyle. Drop the activity bar.
 2. **Sidebar and header.** *(done)* Agent marks with status, two-line rows with the folder name, Needs you group, footer counts, search field (opens a basic switcher), the two-line header with repo chip and context ring.
 3. **Composer.** *(done)* Floating composer, live status line, queue list.
 4. **Transcript.** *(done)* Message blocks with speaker lines, prose typography, work-log grouping (`timeline.ts` groups consecutive tool items), turn footers, event lines.
-5. **Delegations.** The delegation object, folding notifications and `get_expert_output` into it (client-side, matched by expert id and order).
+5. **Delegations.** *(done)* The delegation object, folding notifications and `get_expert_output` into it (client-side, matched by expert id and order).
 6. **Model and effort.** The header chip and popover, the endpoint, `model` / `effort` on `create_expert`.
 7. **Track plans.** `propose_tracks`, plan state and endpoints, the plan object and its tracker, round notifications, the orchestrator prompt.
 8. **Questions.** `ask_user`, question state and endpoint, the question set, routing cross-repo questions, the expert and orchestrator prompts.

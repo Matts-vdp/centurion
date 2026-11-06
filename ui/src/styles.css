@@ -1621,6 +1621,125 @@ button.crumb:hover {
   color: var(--text-3);
 }
 
+/* ---------- delegations: the orchestrator asked an expert ---------- */
+
+.delegation {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--raised);
+  box-shadow: inset 0 0 0 1px var(--line);
+  --ring: var(--raised);
+  min-width: 0;
+}
+
+/* Consecutive delegations stack closer than other blocks. */
+.delegation + .delegation {
+  margin-top: -12px;
+}
+
+.delegation-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.delegation-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.delegation-verb {
+  color: var(--text-3);
+}
+
+.delegation-name {
+  font-weight: 600;
+}
+
+.delegation-folder {
+  color: var(--text-3);
+}
+
+.delegation-message {
+  display: block;
+  width: 100%;
+  margin-top: 3px;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.delegation-message.open {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.delegation-message:hover {
+  color: var(--text);
+}
+
+.delegation-status {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 12.5px;
+  color: var(--text-3);
+  min-width: 0;
+}
+
+.delegation-status > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.delegation-extra {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.status-running {
+  color: var(--running);
+}
+
+.status-done {
+  color: var(--done);
+}
+
+.status-waiting {
+  color: var(--waiting);
+}
+
+.status-failed {
+  color: var(--failed);
+}
+
+.status-muted {
+  color: var(--text-3);
+}
+
+.delegation-open {
+  flex: none;
+  color: var(--text-2);
+}
+
+.narrow .delegation-open {
+  padding: 0 8px;
+}
+
 /* ---------- events and turn footers ---------- */
 
 .event {
