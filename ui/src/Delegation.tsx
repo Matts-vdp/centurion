@@ -4,7 +4,7 @@ import type { Delegation } from './blocks';
 import { CheckIcon, ErrorIcon, OpenIcon } from './icons';
 import { AgentMark } from './Mark';
 import { runLabel, useModels } from './models';
-import { agentState, duration, folderName, money, type StateKey } from './status';
+import { agentState, duration, folderName, money, repoHue, type StateKey } from './status';
 import { lastSeen, useManager } from './store';
 
 type Props = {
@@ -34,14 +34,14 @@ export function DelegationView({ block, agents, isLatest, now, onSelect }: Props
 
   return (
     <div className="delegation">
-      <AgentMark agent={{ name, kind: 'expert' }} state={status.state} />
+      <AgentMark agent={{ name, kind: 'expert', cwd: expert?.cwd }} state={status.state} />
       <div className="delegation-main">
         <div className="delegation-title">
           <span className="delegation-verb">{created ? 'Started' : 'Asked'}</span>
           <span className="delegation-name">{name}</span>
           {expert && (
-            <span className="mono delegation-folder" title={expert.cwd}>
-              {folderName(expert.cwd)} · {runLabel(expert)}
+            <span className="mono delegation-folder" title={expert.cwd} data-hue={repoHue(expert.cwd)}>
+              <span className="repo-hue">{folderName(expert.cwd)}</span> · {runLabel(expert)}
             </span>
           )}
         </div>

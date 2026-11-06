@@ -13,11 +13,16 @@ How to use it:
 
 Three ideas carry the design:
 
-1. **Colour means state.** The chrome is warm graphite (dark) or warm paper (light) with no brand accent. Blue, green, amber and coral appear only for running, done, waiting and failed. If something is coloured, it is telling you something.
+1. **Colour always means something.** The chrome is warm graphite (dark) or warm paper (light). Colour comes in three kinds, and each says one thing:
+   - **State**: blue, green, amber and coral, only for running, done, waiting and failed.
+   - **Action**: one aqua accent for what you can act on: the selected row, focus rings, the send button, primary buttons, links and checkboxes. Never for state, never as decoration.
+   - **Identity**: soft repo hues on expert marks (and the repo name on delegations), so experts in one repo share a colour and you recognise them without reading. Always a tint with coloured letters, never a dot, since dots are state.
+
+   The first version had state colour only, and with nothing running the whole app read as gray. Purple may appear among the identity hues, but it is not the app's theme colour.
 2. **The transcript is a document, not a chat log.** Agent prose sits in a centred reading column with no container. Tool calls collapse into one "worked for 18s" line per run of steps. Only messages *into* the agent and links to other agents get a surface.
 3. **The hierarchy is the product.** Delegations to experts are live objects in the orchestrator's transcript, the sidebar is a team roster, and moving between parent and child is one click or `Alt+←`. No other agent UI does this well (see `ui-research.md`).
 
-What it deliberately avoids: coloured left borders, a tinted box per role, cards around everything, gradient or "AI sparkle" decoration, emoji status, ALL CAPS labels, pill badges on every row, and VS Code's blue-on-grey.
+What it deliberately avoids: coloured left borders, a tinted box per role, cards around everything, gradient or "AI sparkle" decoration, emoji status, ALL CAPS labels, pill badges on every row, VS Code's blue-on-grey, and a purple theme.
 
 ## 2. Layout
 
@@ -65,8 +70,12 @@ Warm neutrals; avoid blue-grey. The values below are the starting point for step
 | `--done` | `#63C98A` | `#1E8A4C` | Finished with an unread reply |
 | `--waiting` | `#E8B04A` | `#9A6200` | Queued, interrupted, a plan waiting for you |
 | `--failed` | `#FF7A6B` | `#C2392A` | Failed, denied, errors |
+| `--accent` (+ `-text`, `-soft`, `-line`, `--on-accent`) | aqua | deep teal | What you can act on: selection, focus, send, primary buttons, links |
+| `--id-0` … `--id-5` (`-bg` / `-fg`) | rose, plum, clay, steel, lavender, sand | same, light tints | Expert marks by repo (`repoHue()` in `status.ts`) |
 
-Primary buttons are inverted text colour (light on dark, dark on light), not a hue. The focus ring is a 2 px `--text` outline at 60 % with a 2 px offset.
+The dark surfaces step further apart than the first values above (see `styles.css`), so the sidebar, your messages and raised objects separate by tone alone. Keep identity hues away from the state hues (no green, blue, amber or coral, and no teal next to the accent).
+
+Primary buttons and the send button are the accent with `--on-accent` text. An empty composer's send button stays readable (`--fill-2`), not faded. The focus ring is a 2 px accent outline at 70 % with a 2 px offset; the composer gets a 1 px accent ring while focused.
 
 ### Type
 
@@ -89,7 +98,7 @@ Primary buttons are inverted text colour (light on dark, dark on light), not a h
 
 ## 4. Agents and status
 
-**Agent mark.** Every agent has a 22 px mark with a two-letter monogram from its name. Orchestrators are filled (inverted), experts are sunken with a hairline. Monochrome on purpose: colour stays reserved for state.
+**Agent mark.** Every agent has a 22 px mark with a two-letter monogram from its name. Orchestrators (chats) are filled (inverted). Experts are tinted in their repo's identity hue with letters in the same hue, so every expert in `restaurant` looks alike; an expert without a known folder is sunken with a hairline. The selected sidebar row is an `--accent-soft` wash.
 
 **Status on the mark.** A 8 px dot on the mark's bottom-right corner, with a ring in the background colour so it reads on any surface. Status never relies on colour alone: each one also has a shape or a word.
 
@@ -123,9 +132,9 @@ The transcript column is centred, 760 px max, with prose at 15 px. Item by item:
   - Edit and Write open a real diff with line numbers and +/- counts.
   - A running step shows a live timer; an error step is coral and opens by default.
   - Verbose mode (Ctrl+O) expands all work logs and shows inputs and outputs.
-- **Delegations.** `create_expert` and `message_expert` render as one object on `--raised`: the expert's mark, `Asked restaurant-summary` with its repo, the first line of the message, and a live status line below (`Working · 32s · Running Bash: Run the e2e tests`, `Replied after 1m 52s`, `Failed: <error>`), with an **Open** button. Consecutive delegations stack with an 8 px gap. When the matching manager notification and `get_expert_output` arrive, they fold into the same object (`Replied · reply read`), instead of showing as three separate items. This is the signature element of the app. Matching is client side: a notification or read goes to the latest delegation to that expert; the reply is the expert's first reply after the message was sent. Only the latest delegation to an expert follows its live state; older ones show how they ended.
+- **Delegations.** `create_expert` and `message_expert` render as one object on `--raised`: the expert's mark, `Asked restaurant-summary` with its repo (the repo name in its identity hue), the first line of the message, and a live status line below (`Working · 32s · Running Bash: Run the e2e tests`, `Replied after 1m 52s`, `Failed: <error>`), with an **Open** button. Consecutive delegations stack with an 8 px gap. When the matching manager notification and `get_expert_output` arrive, they fold into the same object (`Replied · reply read`), instead of showing as three separate items. This is the signature element of the app. Matching is client side: a notification or read goes to the latest delegation to that expert; the reply is the expert's first reply after the message was sent. Only the latest delegation to an expert follows its live state; older ones show how they ended.
 - **Manager notifications** that don't match a delegation are a single quiet event line with an icon: `restaurant-summary finished its turn · 11:21`.
-- **Turn footer.** After each turn, a mono line in `--text-3`: `Done in 42s · 3 tools · $0.004`. Interrupted turns say `Interrupted by you`; failed turns put the error text there in coral. Footers come from the record's last replies (each has `durationMs` and `costUsd`), tied to turns by time: a reply belongs to the last turn that started before it. Older turns, beyond the last 20 replies, have no footer. Claude Code's own `[Request interrupted by user]` marker is hidden, since the footer says it.
+- **Turn footer.** After each turn, a mono line in `--text-3`: `✓ Done in 42s · 3 tools · $0.004`, the check in `--done`. Interrupted turns say `Interrupted by you`; failed turns put the error text there in coral. Footers come from the record's last replies (each has `durationMs` and `costUsd`), tied to turns by time: a reply belongs to the last turn that started before it. Older turns, beyond the last 20 replies, have no footer. Claude Code's own `[Request interrupted by user]` marker is hidden, since the footer says it.
 - **Thinking** is a step in the work log (`Thought` and its first line); the full text opens on click.
 
 ## 6. Header, composer and overview
@@ -255,7 +264,7 @@ Like `propose_tracks`, it stores the set and returns at once, and the orchestrat
 
 Each step is shippable on its own and gets its own commit. Check every step in the browser against a test manager, in light, dark and a narrow width, and compare it with the canvas. Mark a step done here when it lands.
 
-Status: steps 1–8 done.
+Status: steps 1–8 done, plus a colour pass after step 8 (aqua accent for actions, repo hues on expert marks, wider dark surface steps).
 
 1. **Foundations.** *(done)* New tokens in `styles.css` (both themes), Plex fonts, Lucide icons, button / input / menu restyle. Drop the activity bar.
 2. **Sidebar and header.** *(done)* Agent marks with status, two-line rows with the folder name, Needs you group, footer counts, search field (opens a basic switcher), the two-line header with repo chip and context ring.

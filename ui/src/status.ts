@@ -116,6 +116,13 @@ export function folderName(p: string): string {
   return p.split(/[\\/]/).filter(Boolean).at(-1) ?? p;
 }
 
+/** A repo's identity hue (0–5), stable per folder name, so every expert in one repo shares a colour. */
+export function repoHue(cwd: string): number {
+  let h = 0;
+  for (const c of folderName(cwd).toLowerCase()) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return h % 6;
+}
+
 export function duration(ms: number): string {
   const s = Math.max(0, Math.round(ms / 1000));
   if (s < 60) return `${s}s`;

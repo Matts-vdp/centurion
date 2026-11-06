@@ -1,5 +1,5 @@
 import type { AgentRecord } from './api';
-import { monogram, type StateKey } from './status';
+import { monogram, repoHue, type StateKey } from './status';
 
 const STATE_LABEL: Record<StateKey, string> = {
   running: 'running',
@@ -14,13 +14,23 @@ const STATE_LABEL: Record<StateKey, string> = {
 };
 
 /**
- * An agent's mark: a monogram (filled for orchestrators, outlined for experts) with its state in the
- * bottom-right corner. Colour is reserved for that state.
+ * An agent's mark: a monogram (filled for orchestrators, tinted in its repo's hue for experts) with its
+ * state in the bottom-right corner. The tint says which repo; only the corner says state.
  */
-export function AgentMark({ agent, state, size = 24 }: { agent: Pick<AgentRecord, 'name' | 'kind'>; state?: StateKey; size?: number }) {
+export function AgentMark({
+  agent,
+  state,
+  size = 24,
+}: {
+  agent: Pick<AgentRecord, 'name' | 'kind'> & { cwd?: string };
+  state?: StateKey;
+  size?: number;
+}) {
+  const hue = agent.kind === 'expert' && agent.cwd ? repoHue(agent.cwd) : undefined;
   return (
     <span
       className={`mark ${agent.kind}`}
+      data-hue={hue}
       style={{ width: size, height: size, fontSize: size < 22 ? 9 : 10 }}
       role="img"
       aria-label={`${agent.name}${state && state !== 'idle' ? `, ${STATE_LABEL[state]}` : ''}`}

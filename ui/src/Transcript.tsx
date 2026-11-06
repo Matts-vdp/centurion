@@ -521,7 +521,10 @@ function TurnFooter({ block }: { block: Extract<RenderBlock, { kind: 'footer' }>
   if (reply.costUsd !== undefined) parts.push(money(reply.costUsd));
   return (
     <div className={`turn-footer mono${reply.isError ? ' error' : ''}`}>
-      <span>{parts.join(' · ')}</span>
+      <span>
+        {!reply.isError && !reply.interrupted && <CheckIcon size={13} className="done-check" aria-hidden="true" />}
+        {parts.join(' · ')}
+      </span>
       {reply.isError && <span className="turn-error">{reply.text}</span>}
     </div>
   );
