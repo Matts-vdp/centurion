@@ -1,0 +1,4 @@
+node_modules/
+# Per-environment config and state (session IDs only exist on the machine that made them)
+agent-manager.config.json
+.agent-manager/
