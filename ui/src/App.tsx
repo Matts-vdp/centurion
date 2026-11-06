@@ -44,12 +44,15 @@ export function App() {
     [narrow],
   );
 
-  // Going from narrow to wide brings the sidebar back.
-  useEffect(() => {
-    if (!narrow) setSidebarOpen(true);
-  }, [narrow]);
-
   const agent = selected ? agents.get(selected) : undefined;
+
+  // Wide: the sidebar comes back. Narrow: it becomes a drawer, closed while an agent is open.
+  // `selected` rather than `agent`: the agent list may not have arrived yet on first load.
+  const hasAgent = selected !== null;
+  useEffect(() => {
+    setSidebarOpen(!narrow || !hasAgent);
+    // Only when the width class changes, not on every selection.
+  }, [narrow]);
   const showSidebar = sidebarOpen || (narrow && !agent);
 
   return (

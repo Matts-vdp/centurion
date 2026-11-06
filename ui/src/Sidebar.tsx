@@ -17,6 +17,16 @@ export function Sidebar({ agents, selected, onSelect }: Props) {
   const tree = treeState.use();
   const [creating, setCreating] = useState(false);
 
+  // Opening an agent (from a link, the breadcrumb or archiving it) reveals it in the tree once.
+  const open = selected ? agents.get(selected) : undefined;
+  const openParent = open?.parentId ?? null;
+  const openArchived = open?.archived === true;
+  useEffect(() => {
+    if (!openParent) return;
+    treeState.set(openParent, false);
+    if (openArchived) treeState.set(`archived:${openParent}`, true);
+  }, [selected, openParent, openArchived]);
+
   const list = [...agents.values()].sort(byCreated);
   const orchestrators = list.filter((a) => !a.parentId);
   const childrenOf = (id: string) => list.filter((a) => a.parentId === id);

@@ -200,7 +200,8 @@ function Composer({
     setSending(true);
     await run(async () => {
       await commands.send(agent.id, value);
-      setText('');
+      // Keep anything typed while the request was in flight.
+      setText((current) => (current.trim() === value ? '' : current));
     });
     setSending(false);
     box.current?.focus();
