@@ -1,6 +1,6 @@
 # Agent manager
 
-A local manager for Claude agents. You start **orchestrator** agents in a central project. They start **expert** agents in other folders through a small set of tools, and they get notified when the experts finish. A VS Code-style web UI shows every agent in a tree, its live transcript with tool calls collapsed, and a box to message any agent directly.
+A local manager for Claude agents. You start **chats** in a central project (the managing folder). A chat always has a small set of tools to start **expert** agents in other folders, and it gets notified when the experts finish. Run `/orchestrate` in a chat to make it an **orchestrator** that plans work as rounds of parallel tracks. A VS Code-style web UI shows every agent in a tree, its live transcript with tool calls collapsed, and a box to message any agent directly.
 
 ## Run it (Windows or Linux)
 
@@ -11,7 +11,7 @@ npm run build
 npm start
 ```
 
-Open the URL it prints (it includes `?token=...`). Start an orchestrator with the **+** button in the sidebar: it only needs a name and, optionally, a first message. Orchestrators all run in `orchestratorFolder`.
+Open the URL it prints (it includes `?token=...`). Start a chat with the **+** button in the sidebar: it only needs a name and, optionally, a first message. Chats all run in `orchestratorFolder` (normally the folder you start the manager from). A chat is a plain Claude Code session; start a message with `/orchestrate` to load the orchestrator workflow from `.claude/skills/orchestrate/SKILL.md`.
 
 Auth comes from your normal Claude Code login (`claude` → `/login`), a `CLAUDE_CODE_OAUTH_TOKEN`, or provider variables such as Foundry. Put provider variables in the config's `env` or in your shell. If `ANTHROPIC_API_KEY` is set, it is used and billed instead of your subscription.
 
@@ -42,7 +42,7 @@ Auth comes from your normal Claude Code login (`claude` → `/login`), a `CLAUDE
 | `host`, `port` | Where the API and UI listen. Keep `127.0.0.1` unless you use plain `docker -p`. |
 | `token` | Required on every API call (`Authorization: Bearer` or `?token=`). Empty disables the check, so don't do that with `bypassPermissions`. |
 | `stateFile` | JSON state, relative to the config file. Keep one per environment: session IDs only exist on the machine that created them. |
-| `orchestratorFolder` | Folder every orchestrator runs in, relative to the config file or absolute. Default (`null` or missing): the folder the manager was started from. Checked at startup. |
+| `orchestratorFolder` | Folder every top-level chat runs in, relative to the config file or absolute. Default (`null` or missing): the folder the manager was started from. Checked at startup. |
 | `permissionMode` | `auto` (classifier decides; what it can't decide is denied, not asked) or `bypassPermissions` (dev containers). |
 | `model` | Default model for agents that have none set (see *Model and effort*), or `null` for the Claude Code default. |
 | `env` / `removeEnv` | Environment variables to add to or remove from agent processes. |
@@ -53,7 +53,9 @@ Use `--config <path>` or `AGENT_MANAGER_CONFIG` to point at another config file.
 ## How it works
 
 - **One agent = one Claude session** (Agent SDK `query()` with streaming input) in its own folder. Each agent has a **queue**, and the manager delivers one message per turn.
-- **Orchestrator tools** (MCP server `manager`, orchestrators only):
+- **Chats and orchestrators:** every top-level agent is a chat in `orchestratorFolder` with the `manager` tools; nothing about orchestration is added to its prompt. The `orchestrate` skill (`.claude/skills/orchestrate/SKILL.md` in the managing folder) holds the workflow: rounds of tracks, handoff files, triaging questions. Edit it to change how orchestrators work. Experts get `prompts/expert.md` appended to their system prompt.
+- **Settings and skills:** every agent loads the user, project and local settings of its own folder (`settingSources: ['user', 'project', 'local']`, `skills: 'all'`): your `~/.claude`, plus the folder's CLAUDE.md, `.claude/skills` and settings. Chats get the managing folder's, experts their repo's.
+- **Manager tools** (MCP server `manager`, top-level chats only):
   `create_expert(name, folder?, message?, notify?, track_id?, model?, effort?)`, `message_expert(expert_id, message, notify?, track_id?, question_id?)`, `get_expert_output(expert_id, last_n?)`, `list_experts()`, `stop_expert(expert_id)`, `propose_tracks(round, title, tracks, later?)`, `ask_user(title, questions, resolved?, routed?)`.
   `folder` defaults to the orchestrator's own folder. `notify` defaults to true. `model` and `effort` default to the track's (with `track_id`), else to the orchestrator's (see below). `list_experts` includes archived experts with `archived: true`.
 - **Model and effort:** each agent has an optional `model` (alias such as `sonnet`, or a model id) and `effort` (`low` … `max`). Unset, the model is `config.model` or Claude Code's default, and the effort is the model's default. An expert created without them gets its track's values, else its orchestrator's current ones (what it is set to, else the model it last ran on), so most experts simply run like their orchestrator. An inherited effort the expert's model can't run is dropped; an explicit one is refused. Changing them on a live process (`POST /api/agents/:id/model`) applies before the next turn: a running turn finishes on its model. The values are saved, so a resumed process gets them as `query()` options. `activeModel` on the record is the model of the last main-loop call.
@@ -62,7 +64,7 @@ Use `--config <path>` or `AGENT_MANAGER_CONFIG` to point at another config file.
 - **Questions:** `ask_user` stores a question set and returns at once. `question_id` on `message_expert` ties a routed question to the expert's reply, which becomes its answer.
 - **Interrupt vs. stop:** interrupt cancels the current turn only; the reply is recorded as "Interrupted by the user." (not an error) and the next queued message follows. Stop also clears the queue and closes the process.
 - **Archive:** hides an idle or stopped expert in the tree. Sending it a message unarchives it.
-- **Files for handoffs:** the instructions in `prompts/orchestrator.md` tell it to write prompt files and expect findings files in its own folder. Experts get access to the orchestrator's folder through `additionalDirectories`. Edit the files in `prompts/` to change the instructions.
+- **Files for handoffs:** the `orchestrate` skill tells the orchestrator to write prompt files and expect findings files in its own folder. Experts get access to the orchestrator's folder through `additionalDirectories`.
 - **State:** `stateFile` holds the track plans and question sets, the agent tree, queues, session IDs, the last 20 final replies, the archive flag, the last activity time and the context use per agent. Transcripts are not copied: the UI reads them from Claude's own session files. After a restart, an agent that was mid-turn shows as `interrupted`. Its next message resumes the same session.
 - **Context use** is the input size of the last model call of the last turn, divided by the main model's context window.
 
@@ -73,7 +75,7 @@ Use `--config <path>` or `AGENT_MANAGER_CONFIG` to point at another config file.
 | GET | `/api/info` | `{ permissionMode, orchestratorFolder, platform, defaultModel }` |
 | GET | `/api/models` | Supported models: `{ value, resolvedModel?, displayName, description, supportsEffort?, supportedEffortLevels? }[]` (cached; learned from the first agent process, or from a process started just to ask) |
 | GET | `/api/agents` | |
-| POST | `/api/agents` | `{ name, message? }` creates an orchestrator in `orchestratorFolder` |
+| POST | `/api/agents` | `{ name, message? }` creates a chat in `orchestratorFolder` |
 | GET | `/api/agents/:id` | |
 | GET | `/api/agents/:id/history` | Transcript from Claude's session file |
 | POST | `/api/agents/:id/messages` | `{ text, notify? }` |

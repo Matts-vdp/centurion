@@ -89,7 +89,7 @@ export function App() {
             ) : (
               <>
                 <h1>Agent manager</h1>
-                <p>Pick an agent in the sidebar, or start a new orchestrator with the + button.</p>
+                <p>Pick an agent in the sidebar, or start a new chat with the + button.</p>
               </>
             )}
           </div>

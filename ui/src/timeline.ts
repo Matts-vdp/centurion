@@ -101,9 +101,13 @@ const INTERRUPT_MARKER = /^\[Request interrupted by user/;
 const COMMAND_OUTPUT = /^<local-command-stdout>([\s\S]*)<\/local-command-stdout>\s*$/;
 const COMMAND_NAME = /^<command-name>/;
 const MODEL_SET = /^Set model to (\S+)(?: \(([^)]+)\))?/;
+/** A slash command the user typed (e.g. a skill: `/orchestrate …`), as Claude Code stores it. */
+const SLASH_COMMAND = /^<command-message>[\s\S]*?<\/command-message>\s*<command-name>([^<]*)<\/command-name>(?:\s*<command-args>([\s\S]*?)<\/command-args>)?/;
 
 function pushPrompt(t: Transcript, raw: string, fromHistory: boolean, at: number | undefined): void {
   if (INTERRUPT_MARKER.test(raw)) return;
+  const slash = SLASH_COMMAND.exec(raw.trim());
+  if (slash) raw = [slash[1].trim(), slash[2]?.trim()].filter(Boolean).join(' ');
   // The command itself (`<command-name>/model</command-name>…`) stays hidden; its output becomes an event line.
   if (COMMAND_NAME.test(raw.trim())) return;
   const command = COMMAND_OUTPUT.exec(raw.trim());

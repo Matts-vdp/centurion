@@ -49,7 +49,7 @@ export function Sidebar({ agents, selected, onSelect, onSearch }: Props) {
       <div className="sidebar-head">
         <LogoIcon />
         <span className="app-name">Agent manager</span>
-        <button className="icon-button" title="New orchestrator" aria-label="New orchestrator" onClick={() => setCreating(true)}>
+        <button className="icon-button" title="New chat" aria-label="New chat" onClick={() => setCreating(true)}>
           <PlusIcon size={16} />
         </button>
       </div>
@@ -59,7 +59,7 @@ export function Sidebar({ agents, selected, onSelect, onSearch }: Props) {
         <kbd>Ctrl K</kbd>
       </button>
       {creating && (
-        <NewOrchestrator
+        <NewChat
           onDone={(rec) => {
             setCreating(false);
             if (rec) onSelect(rec.id);
@@ -75,12 +75,12 @@ export function Sidebar({ agents, selected, onSelect, onSearch }: Props) {
             ))}
           </>
         )}
-        <div className="group-label">Orchestrators</div>
+        <div className="group-label">Chats</div>
         {orchestrators.length === 0 && !creating && (
           <div className="tree-empty">
             No agents yet.{' '}
             <button className="link-button" onClick={() => setCreating(true)}>
-              Start an orchestrator
+              Start a chat
             </button>
           </div>
         )}
@@ -209,7 +209,7 @@ type RowProps = {
 
 function Row({ agent, state, selected, onSelect, parentId, line, extra, meta, expander, dim }: RowProps) {
   const folder = folderName(agent.cwd);
-  const title = [`${agent.name} (${agent.kind})`, agent.cwd, agent.lastError && state.key === 'failed' ? agent.lastError.slice(0, 300) : '']
+  const title = [`${agent.name} (${agent.kind === 'expert' ? 'expert' : 'chat'})`, agent.cwd, agent.lastError && state.key === 'failed' ? agent.lastError.slice(0, 300) : '']
     .filter(Boolean)
     .join('\n');
   const statusLine = line ?? state.line;
@@ -272,7 +272,7 @@ function LogoIcon() {
   );
 }
 
-function NewOrchestrator({ onDone }: { onDone: (rec: AgentRecord | null) => void }) {
+function NewChat({ onDone }: { onDone: (rec: AgentRecord | null) => void }) {
   const [name, setName] = useState('');
   const [message, setMessage] = useState('');
   const [folder, setFolder] = useState('');
@@ -294,7 +294,7 @@ function NewOrchestrator({ onDone }: { onDone: (rec: AgentRecord | null) => void
     setBusy(true);
     setError('');
     try {
-      const rec = await commands.createOrchestrator(name.trim(), message.trim() || undefined);
+      const rec = await commands.createChat(name.trim(), message.trim() || undefined);
       store.upsert(rec);
       onDone(rec);
     } catch (err) {
@@ -305,16 +305,16 @@ function NewOrchestrator({ onDone }: { onDone: (rec: AgentRecord | null) => void
 
   return (
     <form
-      className="new-orchestrator"
+      className="new-chat"
       onSubmit={submit}
       onKeyDown={(e) => {
         if (e.key === 'Escape') onDone(null);
       }}
     >
-      <div className="form-title">New orchestrator</div>
+      <div className="form-title">New chat</div>
       <input ref={nameRef} placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
       <textarea
-        placeholder="First message (optional)"
+        placeholder="First message (optional). Start with /orchestrate to plan work with experts."
         rows={3}
         value={message}
         onChange={(e) => setMessage(e.target.value)}

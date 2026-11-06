@@ -764,7 +764,7 @@ kbd {
   margin-left: auto;
 }
 
-.new-orchestrator {
+.new-chat {
   margin: 12px 0 0;
   padding: 12px;
   border-radius: 10px;
@@ -779,7 +779,7 @@ kbd {
   font-weight: 600;
 }
 
-.new-orchestrator textarea {
+.new-chat textarea {
   resize: vertical;
 }
 

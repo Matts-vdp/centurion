@@ -62,7 +62,7 @@ export type LiveMessage = {
 };
 
 export const commands = {
-  createOrchestrator: (name: string, message?: string) =>
+  createChat: (name: string, message?: string) =>
     api<AgentRecord>('/api/agents', { method: 'POST', body: { name, message } }),
   send: (id: string, text: string) => api<QueuedMessage>(`/api/agents/${id}/messages`, { method: 'POST', body: { text } }),
   interrupt: (id: string) => api<AgentRecord>(`/api/agents/${id}/interrupt`, { method: 'POST' }),

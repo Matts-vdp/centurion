@@ -636,6 +636,10 @@ export class Manager extends EventEmitter<ManagerEvents> {
       allowDangerouslySkipPermissions: this.config.permissionMode === 'bypassPermissions',
       // Nobody sits behind a prompt: anything auto mode can't decide is denied and the agent adapts.
       permissionPrompts: 'none',
+      // Every agent gets what its own folder (and the user's ~/.claude) sets up: CLAUDE.md, skills,
+      // settings. Top-level chats get the orchestrate skill from the managing folder's .claude/skills.
+      settingSources: ['user', 'project', 'local'],
+      skills: 'all',
       systemPrompt: { type: 'preset', preset: 'claude_code', append: this.instructions(rec) },
       stderr: (data) => process.stderr.write(`[${rec.id}] ${data}`),
     };
@@ -655,6 +659,7 @@ export class Manager extends EventEmitter<ManagerEvents> {
     return options;
   }
 
+  /** Only experts get appended instructions; a top-level chat becomes an orchestrator through the orchestrate skill. */
   private instructions(rec: AgentRecord): string {
     const file = path.join(this.config.promptsDir, `${rec.kind}.md`);
     const template = existsSync(file) ? readFileSync(file, 'utf8') : '';

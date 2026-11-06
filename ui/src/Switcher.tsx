@@ -88,7 +88,7 @@ export function Switcher({ agents, onSelect, onClose }: { agents: Map<string, Ag
                 <AgentMark agent={a} state={st.key} size={22} />
                 <span className="switcher-name">{a.name}</span>
                 <span className="mono switcher-where">
-                  {a.kind === 'expert' ? folderName(a.cwd) : 'orchestrator'}
+                  {a.kind === 'expert' ? folderName(a.cwd) : 'chat'}
                   {parent ? ` · ${parent.name}` : ''}
                   {a.archived ? ' · archived' : ''}
                 </span>
