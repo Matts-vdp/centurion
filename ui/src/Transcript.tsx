@@ -14,8 +14,10 @@ import {
   EditIcon,
   ErrorIcon,
   FileIcon,
+  ForkIcon,
   GlobIcon,
   OpenIcon,
+  RewindIcon,
   SearchIcon,
   TerminalIcon,
   ThinkIcon,
@@ -29,7 +31,7 @@ import { AgentMark } from './Mark';
 import { PlanView } from './Plan';
 import { QuestionSetView } from './Questions';
 import { clock, duration, money } from './status';
-import { pendingPermissions, permissionFor, store, useManager, viewPrefs } from './store';
+import { composerFill, pendingPermissions, permissionFor, store, useManager, viewPrefs } from './store';
 import { displayName, shortPath, summarize } from './tools';
 import { fromSubagent, type Item, type PromptItem, type Sub, type ToolItem, type Transcript as T } from './timeline';
 
@@ -83,7 +85,12 @@ export function Transcript({ transcript, loading, loadError, agent, agents, focu
 
   const { permissions } = useManager();
   const asks = pendingPermissions(agent.id, { permissions });
-  const ctx: Ctx = { agent, agents, onSelect, now, verbose, latest, run, subs: transcript.subs };
+  const ctx: Ctx = { agent, agents, onSelect, now, verbose, latest, run, subs: transcript.subs, asks: asks.length };
+  // message key → how many messages come after it (the turns a rewind there drops besides its own).
+  const messagesAfter = useMemo(() => {
+    const keys = blocks.filter((b) => b.kind === 'message').map((b) => b.key);
+    return new Map(keys.map((k, i) => [k, keys.length - 1 - i]));
+  }, [blocks]);
 
   return (
     <div
@@ -110,7 +117,7 @@ export function Transcript({ transcript, loading, loadError, agent, agents, focu
           <div className="transcript-note">No messages yet. Send {agent.name} a message below.</div>
         )}
         {blocks.map((b) => (
-          <BlockView key={b.key} block={b} ctx={ctx} />
+          <BlockView key={b.key} block={b} ctx={ctx} after={b.kind === 'message' ? messagesAfter.get(b.key) : undefined} />
         ))}
         {asks.map((p, i) => (
           <PermissionView key={p.id} request={p} ctx={ctx} autoFocus={focused && i === 0} />
@@ -129,12 +136,14 @@ type Ctx = {
   latest: Map<string, string>;
   run: (a: () => Promise<unknown>) => Promise<void>;
   subs: Map<string, Sub>;
+  /** Pending permission requests: no rewind while one waits. */
+  asks: number;
 };
 
-function BlockView({ block, ctx }: { block: RenderBlock; ctx: Ctx }) {
+function BlockView({ block, ctx, after }: { block: RenderBlock; ctx: Ctx; after?: number }) {
   switch (block.kind) {
     case 'message':
-      return <Message item={block.item} ctx={ctx} />;
+      return <Message item={block.item} ctx={ctx} after={after ?? 0} />;
     case 'prose':
       return (
         <div className="prose">
@@ -180,9 +189,45 @@ function BlockView({ block, ctx }: { block: RenderBlock; ctx: Ctx }) {
 
 const FOLD_LINES = 8;
 
-function Message({ item, ctx }: { item: PromptItem; ctx: Ctx }) {
+function Message({ item, ctx, after }: { item: PromptItem; ctx: Ctx; after: number }) {
   const [open, setOpen] = useState(false);
   const [long, setLong] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const agent = ctx.agent;
+  const running = agent.status === 'running';
+  // The turn this message started is still running: it can't be forked or rewound yet.
+  const ownTurnRunning = running && after === 0;
+  const rewindBlocker = running
+    ? 'Rewind when the agent is idle'
+    : agent.queue.length > 0
+      ? 'Rewind when nothing is queued'
+      : ctx.asks > 0
+        ? 'Answer the permission request first'
+        : null;
+
+  const fork = async () => {
+    if (!item.uuid || busy) return;
+    setBusy(true);
+    await ctx.run(async () => {
+      const rec = await commands.fork(agent.id, item.uuid!);
+      store.upsert(rec);
+      ctx.onSelect(rec.id);
+    });
+    setBusy(false);
+  };
+
+  const rewind = async () => {
+    if (!item.uuid || busy) return;
+    setBusy(true);
+    await ctx.run(async () => {
+      const rec = await commands.rewind(agent.id, item.uuid!);
+      store.upsert(rec);
+      if (item.source.kind === 'user') composerFill.set({ agentId: agent.id, text: item.text });
+    });
+    setBusy(false);
+    setConfirming(false);
+  };
   const body = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const el = body.current;
@@ -212,12 +257,42 @@ function Message({ item, ctx }: { item: PromptItem; ctx: Ctx }) {
     speaker = 'Manager';
   }
 
+  const canAct = item.uuid !== undefined && !ownTurnRunning;
   return (
-    <div className="message">
+    <div className={`message${confirming ? ' confirming' : ''}`}>
       <div className="speaker">
         {speaker}
         {item.at !== undefined && <span className="speaker-time">· {clock(item.at)}</span>}
+        {canAct && !confirming && (
+          <span className="message-tools">
+            <button className="icon-button small" disabled={busy} aria-label="Fork from here" title="Fork from here: a new agent with the conversation up to the end of this turn" onClick={() => void fork()}>
+              <ForkIcon size={14} />
+            </button>
+            <button
+              className="icon-button small"
+              disabled={busy || rewindBlocker !== null}
+              aria-label="Rewind to before this message"
+              title={rewindBlocker ?? 'Rewind: drop this turn and everything after it. Files are not changed.'}
+              onClick={() => setConfirming(true)}
+            >
+              <RewindIcon size={14} />
+            </button>
+          </span>
+        )}
       </div>
+      {confirming && (
+        <div className="rewind-confirm" role="group" aria-label="Rewind">
+          <span>
+            Drop this turn{after > 0 ? ` and the ${after} after it` : ''}? {item.source.kind === 'user' ? 'The message goes back into the composer. ' : ''}Files are not changed.
+          </span>
+          <button className="button secondary small" disabled={busy} onClick={() => setConfirming(false)}>
+            Cancel
+          </button>
+          <button className="button primary small" disabled={busy || rewindBlocker !== null} title={rewindBlocker ?? undefined} autoFocus onClick={() => void rewind()}>
+            Rewind
+          </button>
+        </div>
+      )}
       <div className={`message-body${open ? ' open' : ''}`} ref={body} style={{ ['--fold-lines' as string]: FOLD_LINES }}>
         {item.text}
       </div>
@@ -382,7 +457,11 @@ function SubagentView({ block, ctx }: { block: Extract<RenderBlock, { kind: 'sub
     const doing = sub?.summary ?? (current?.kind === 'tool' ? `Running ${displayName(current.name)}` : 'Working');
     status = [doing, toolCount, duration(ctx.now - tool.startedAt)].filter(Boolean).join(' · ');
   } else if (failed) {
-    const why = (tool.denied ?? tool.result ?? '').replace(/<\/?tool_use_error>/g, '').trim().split('\n')[0];
+    // A background subagent that failed later says why in its notification, not in the tool result.
+    const why =
+      tool.isError || tool.denied
+        ? (tool.denied ?? tool.result ?? '').replace(/<\/?tool_use_error>/g, '').trim().split('\n')[0]
+        : (block.ended?.summary ?? '');
     status = why ? `Failed · ${why}` : 'Failed';
   } else if (background) {
     status = sub?.summary ? `In the background · ${sub.summary}` : 'Running in the background';

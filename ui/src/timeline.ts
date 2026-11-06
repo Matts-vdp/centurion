@@ -6,7 +6,7 @@ export type Source =
   | { kind: 'orchestrator'; name: string }
   | { kind: 'manager' }
   /** Claude Code itself: a background subagent ended (`<task-notification>`) or handed back its report. */
-  | { kind: 'task'; toolUseId: string; status: string; summary: string }
+  | { kind: 'task'; toolUseId: string; taskId: string; status: string; summary: string }
   | { kind: 'handback'; agentId: string; report: string };
 
 /** One `[Manager notification]` about an expert, parsed from a manager prompt. */
@@ -38,6 +38,8 @@ export type PromptItem = {
   at?: number;
   /** Set for manager prompts: the notifications they carry. */
   notifications?: Notification[];
+  /** The session's uuid for this prompt, where fork and rewind cut. */
+  uuid?: string;
 };
 
 export type Item =
@@ -95,7 +97,7 @@ export function parsePrompt(raw: string): { source: Source; text: string; notifi
   const task = TASK_NOTIFICATION.exec(raw.trim());
   if (task) {
     const body = task[1];
-    const source: Source = { kind: 'task', toolUseId: tag(body, 'tool-use-id'), status: tag(body, 'status'), summary: tag(body, 'summary') };
+    const source: Source = { kind: 'task', toolUseId: tag(body, 'tool-use-id'), taskId: tag(body, 'task-id'), status: tag(body, 'status'), summary: tag(body, 'summary') };
     return { source, text: source.summary || 'A background task ended' };
   }
   const handback = HANDBACK.exec(raw.trim());
@@ -151,7 +153,7 @@ const MODEL_SET = /^Set model to (\S+)(?: \(([^)]+)\))?/;
 /** A slash command the user typed (e.g. a skill: `/orchestrate …`), as Claude Code stores it. */
 const SLASH_COMMAND = /^<command-message>[\s\S]*?<\/command-message>\s*<command-name>([^<]*)<\/command-name>(?:\s*<command-args>([\s\S]*?)<\/command-args>)?/;
 
-function pushPrompt(t: Pick<Transcript, 'items'>, raw: string, fromHistory: boolean, at: number | undefined): void {
+function pushPrompt(t: Pick<Transcript, 'items'>, raw: string, fromHistory: boolean, at: number | undefined, uuid?: string): void {
   if (INTERRUPT_MARKER.test(raw)) return;
   const slash = SLASH_COMMAND.exec(raw.trim());
   if (slash) raw = [slash[1].trim(), slash[2]?.trim()].filter(Boolean).join(' ');
@@ -166,19 +168,19 @@ function pushPrompt(t: Pick<Transcript, 'items'>, raw: string, fromHistory: bool
     return;
   }
   const { source, text, notifications } = parsePrompt(raw);
-  t.items.push({ kind: 'prompt', key: nextKey('prompt'), text, source, fromHistory, at, notifications });
+  t.items.push({ kind: 'prompt', key: nextKey('prompt'), text, source, fromHistory, at, notifications, uuid });
 }
 
 /**
  * Add one user or assistant message. Mutates `t`; callers copy `items` before handing it to React.
  * `fromHistory`: user prompts only come from history; live prompts come from `delivered` events.
  */
-function addBody(t: Pick<Transcript, 'items' | 'tools'>, type: string, message: unknown, fromHistory: boolean, at: number): void {
+function addBody(t: Pick<Transcript, 'items' | 'tools'>, type: string, message: unknown, fromHistory: boolean, at: number, uuid?: string): void {
   const blocks = blocksOf(message);
   if (blocks === null) return;
   if (type === 'user') {
     if (typeof blocks === 'string') {
-      if (fromHistory) pushPrompt(t, blocks, true, at);
+      if (fromHistory) pushPrompt(t, blocks, true, at, uuid);
       return;
     }
     for (const b of blocks) {
@@ -188,7 +190,7 @@ function addBody(t: Pick<Transcript, 'items' | 'tools'>, type: string, message: 
         const tool = t.items[index] as ToolItem;
         t.items[index] = { ...tool, result: toolResultText(b.content), isError: b.is_error === true || tool.isError, endedAt: at };
       } else if (b.type === 'text' && fromHistory) {
-        pushPrompt(t, String(b.text ?? ''), true, at);
+        pushPrompt(t, String(b.text ?? ''), true, at, uuid);
       }
     }
     return;
@@ -234,7 +236,7 @@ export function fromHistory(messages: HistoryMessage[]): Transcript {
   for (const m of messages) {
     if (m.parent_tool_use_id) continue; // subagent transcripts load on demand (fromSubagent)
     if (m.uuid) t.seen.add(m.uuid);
-    addBody(t, m.type, m.message, true, timeOf(m));
+    addBody(t, m.type, m.message, true, timeOf(m), m.uuid);
   }
   return t;
 }
@@ -250,7 +252,7 @@ export function applyLive(
     const last = [...next.items].reverse().find((i) => i.kind === 'prompt');
     const { text } = parsePrompt(e.message.text);
     if (last?.kind === 'prompt' && last.fromHistory && last.text === text && next.items.at(-1) === last) return t;
-    pushPrompt(next, e.message.text, false, Date.now());
+    pushPrompt(next, e.message.text, false, Date.now(), e.message.uuid);
     return next;
   }
   const m = e.message;

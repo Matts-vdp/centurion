@@ -1493,6 +1493,59 @@ button.crumb:hover {
   text-underline-offset: 3px;
 }
 
+/* Fork and rewind: on hover of a message (and while focused within it), at the end of its speaker line. */
+.message-tools {
+  margin: -4px 0 -4px auto;
+  display: inline-flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+.message:hover .message-tools,
+.message:focus-within .message-tools {
+  opacity: 1;
+}
+
+.icon-button.small {
+  width: 24px;
+  height: 24px;
+}
+
+.icon-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.rewind-confirm {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 10px 8px 12px;
+  border-radius: 10px;
+  background: var(--raised);
+  box-shadow: inset 0 0 0 1px var(--line);
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.rewind-confirm > span {
+  flex: 1 1 240px;
+}
+
+/* A plan or question set that belongs to another chat (seen in a fork), or was rewound away. */
+.foreign-object {
+  font-size: 13px;
+  color: var(--text-3);
+}
+
+@media (hover: none) {
+  .message-tools {
+    opacity: 1;
+  }
+}
+
 .message-body {
   background: var(--fill);
   border-radius: 12px;

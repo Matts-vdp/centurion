@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   query,
   type Options,
@@ -116,6 +117,7 @@ export class AgentRuntime {
     if (this.busy || this.stopping || this.hibernating || this.rec.queue.length === 0) return;
     this.clearIdleTimer();
     const next = this.takeNext();
+    next.uuid = randomUUID();
     this.busy = true;
     this.interrupting = false;
     this.lastCallInput = null;
@@ -137,6 +139,7 @@ export class AgentRuntime {
         type: 'user',
         message: { role: 'user', content: next.text },
         parent_tool_use_id: null,
+        uuid: next.uuid as `${string}-${string}-${string}-${string}-${string}`,
       });
     if (this.settingsChanged && this.q) {
       this.settingsChanged = false;

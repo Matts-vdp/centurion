@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import {
+  forkSession,
   getSessionMessages,
   getSubagentMessages,
   listSubagents,
@@ -151,6 +152,87 @@ export class Manager extends EventEmitter<ManagerEvents> {
       if (owner === toolUseId) return messages;
     }
     return [];
+  }
+
+  // ---------- fork and rewind ----------
+
+  /**
+   * Fork: a new agent with the conversation up to the end of the turn that `promptUuid` starts. Same kind,
+   * folder, parent, model and effort. The original is not touched and may keep running.
+   */
+  async fork(id: string, promptUuid: string): Promise<AgentRecord> {
+    const rt = this.runtime(id);
+    const rec = rt.rec;
+    const { messages, next } = await this.findTurn(rec, promptUuid);
+    if (next < 0 && rt.isBusy) throw new Error('This turn is still running. Fork from an earlier turn, or wait for it to end.');
+    const name = `${rec.name} (fork)`;
+    const forked = await forkSession(rec.sessionId!, {
+      dir: rec.cwd,
+      ...(next >= 0 ? { upToMessageId: messages[next - 1].uuid } : {}),
+      title: name,
+    });
+    const until = next >= 0 ? timeOf(messages[next]) : Infinity;
+    const copy = this.createAgent(rec.kind, name, rec.cwd, rec.parentId, { model: rec.model, effort: rec.effort });
+    copy.sessionId = forked.sessionId;
+    copy.forkedFrom = rec.id;
+    // What the original runs on, so the model chip is right before the fork's first turn.
+    copy.activeModel = rec.activeModel;
+    copy.activeEffort = rec.activeEffort;
+    copy.replies = rec.replies.filter((r) => Date.parse(r.at) < until).map((r) => ({ ...r }));
+    copy.context = next < 0 ? rec.context : null;
+    copy.lastActivityAt = copy.replies.at(-1)?.at ?? copy.createdAt;
+    this.changed(copy);
+    return copy;
+  }
+
+  /**
+   * Rewind: drop the turn `promptUuid` starts and every turn after it. The agent switches to a fork of its
+   * session cut just before that prompt (or a fresh session for the first turn); files are not touched,
+   * and the old session stays on disk. Only when the agent is idle with nothing queued.
+   */
+  async rewind(id: string, promptUuid: string): Promise<AgentRecord> {
+    const rt = this.runtime(id);
+    const rec = rt.rec;
+    if (rt.isBusy) throw new Error('Cannot rewind while the agent is running');
+    if (rec.queue.length > 0) throw new Error('Cannot rewind with queued messages');
+    const { messages, start } = await this.findTurn(rec, promptUuid);
+    if (rt.isBusy || rec.queue.length > 0) throw new Error('The agent started a turn; try again when it is idle');
+    const from = timeOf(messages[start]);
+    let sessionId: string | null = null;
+    if (start > 0) {
+      sessionId = (await forkSession(rec.sessionId!, { dir: rec.cwd, upToMessageId: messages[start - 1].uuid, title: rec.name })).sessionId;
+    }
+    rt.release();
+    rec.sessionId = sessionId;
+    rec.replies = rec.replies.filter((r) => Date.parse(r.at) < from);
+    rec.context = null;
+    rec.status = 'idle';
+    rec.lastError = null;
+    // A plan or question set from the dropped turns would keep the chat in Needs you.
+    for (const plan of this.plans) {
+      if (plan.orchestratorId === rec.id && plan.status === 'waiting' && Date.parse(plan.createdAt) >= from) {
+        plan.status = 'dropped';
+        this.planChanged(plan);
+      }
+    }
+    for (const set of this.questionSets) {
+      if (set.orchestratorId === rec.id && set.status === 'open' && Date.parse(set.createdAt) >= from) {
+        set.status = 'dropped';
+        this.questionsChanged(set);
+      }
+    }
+    this.changed(rec);
+    return rec;
+  }
+
+  /** The session's messages, the index of the prompt, and of the next prompt (-1 when it is the last turn). */
+  private async findTurn(rec: AgentRecord, promptUuid: string): Promise<{ messages: SessionMessage[]; start: number; next: number }> {
+    if (!rec.sessionId) throw new Error('This agent has no conversation yet');
+    const messages = await getSessionMessages(rec.sessionId, { dir: rec.cwd });
+    const start = messages.findIndex((m) => m.uuid === promptUuid);
+    if (start < 0) throw new Error('That message is not in the session. Reload the page and try again.');
+    const next = messages.findIndex((m, i) => i > start && isPrompt(m));
+    return { messages, start, next };
   }
 
   // ---------- commands ----------
@@ -457,7 +539,7 @@ export class Manager extends EventEmitter<ManagerEvents> {
   /** Start: the checked and skipped tracks go to the orchestrator as one message, nothing else. */
   startPlan(planId: string, start: string[], skip: string[]): Plan {
     const plan = this.plan(planId);
-    if (plan.status !== 'waiting') throw new Error('This plan was already started');
+    if (plan.status !== 'waiting') throw new Error(plan.status === 'dropped' ? 'This plan was rewound away' : 'This plan was already started');
     const ids = currentVersion(plan).tracks.map((t) => t.id);
     checkUniqueIds([...start, ...skip], 'track');
     for (const id of [...start, ...skip]) if (!ids.includes(id)) throw new Error(`Unknown track "${id}"`);
@@ -868,6 +950,26 @@ export class Manager extends EventEmitter<ManagerEvents> {
     this.store.save(() => this.state());
     this.emit('agent', rec);
   }
+}
+
+/** A message that starts a turn: user text, not a tool result, an interrupt marker or command output. */
+function isPrompt(m: SessionMessage): boolean {
+  if (m.type !== 'user' || m.parent_tool_use_id) return false;
+  const content = (m.message as { content?: unknown } | null)?.content;
+  let text: string;
+  if (typeof content === 'string') text = content;
+  else if (Array.isArray(content)) {
+    if (content.some((b: { type?: string }) => b.type === 'tool_result')) return false;
+    const first = content.find((b: { type?: string }) => b.type === 'text') as { text?: string } | undefined;
+    if (!first) return false;
+    text = String(first.text ?? '');
+  } else return false;
+  return !/^\s*(\[Request interrupted|<local-command-stdout>|<local-command-caveat>)/.test(text);
+}
+
+function timeOf(m: SessionMessage): number {
+  const t = Date.parse(String((m as { timestamp?: unknown }).timestamp ?? ''));
+  return Number.isNaN(t) ? Date.now() : t;
 }
 
 function toModelOption(m: ModelOption): ModelOption {

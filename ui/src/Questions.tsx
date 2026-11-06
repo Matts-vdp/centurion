@@ -36,6 +36,15 @@ export function QuestionSetView({ setId, orchestrator, agents, now, onSelect, ru
   useEffect(() => writeDrafts(setId, drafts, corrections), [setId, drafts, corrections]);
 
   if (!set) return null;
+  // In a fork, the questions stay with the chat that asked them.
+  if (set.orchestratorId !== orchestrator.id || set.status === 'dropped') {
+    const owner = agents.get(set.orchestratorId);
+    return (
+      <div className="foreign-object">
+        Questions{set.status === 'dropped' ? ', rewound away' : owner ? ` from ${owner.name}` : ''} · {set.title}
+      </div>
+    );
+  }
   const answeredCount = set.questions.filter((q) => q.answer).length;
   const total = set.questions.length;
 

@@ -3,7 +3,7 @@ import { commands, type AgentRecord, type QueuedMessage } from './api';
 import { useNow } from './hooks';
 import { CloseIcon, SendIcon } from './icons';
 import { agentState } from './status';
-import { lastSeen, pendingFor, useManager } from './store';
+import { composerFill, lastSeen, pendingFor, useManager } from './store';
 import { parsePrompt } from './timeline';
 
 type Props = {
@@ -31,6 +31,14 @@ export function Composer({ agent, agents, focused, run, onInterrupt }: Props) {
       : null;
 
   useEffect(() => writeDraft(agent.id, text), [agent.id, text]);
+  // A rewound message comes back here to edit and resend.
+  const fill = composerFill.use();
+  useEffect(() => {
+    if (!fill || fill.agentId !== agent.id) return;
+    composerFill.set(null);
+    setText(fill.text);
+    box.current?.focus();
+  }, [fill, agent.id]);
   useEffect(() => {
     if (focused && !document.activeElement?.closest('.pane.focused')) box.current?.focus();
   }, [agent.id, focused]);

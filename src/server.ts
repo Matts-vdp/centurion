@@ -162,6 +162,11 @@ async function route(manager: Manager, config: Config, req: http.IncomingMessage
     const cwd = typeof body.cwd === 'string' && body.cwd.trim() ? body.cwd.trim() : undefined;
     return manager.createExpert(id, { name: str(body.name, 'name'), cwd, message }, 'user');
   }
+  if ((parts[2] === 'fork' || parts[2] === 'rewind') && method === 'POST') {
+    const body = await readJson(req);
+    const promptUuid = str(body.promptUuid, 'promptUuid');
+    return parts[2] === 'fork' ? manager.fork(id, promptUuid) : manager.rewind(id, promptUuid);
+  }
   if (parts[2] === 'stop' && method === 'POST') {
     await manager.stop(id, 'user');
     return manager.get(id);

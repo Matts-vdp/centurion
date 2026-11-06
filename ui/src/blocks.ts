@@ -159,7 +159,8 @@ function promptBlocks(
 ): RenderBlock[] {
   // Claude Code's own messages about background subagents fold into the subagent's line.
   if (p.source.kind === 'task') {
-    const sub = subs.byTool.get(p.source.toolUseId);
+    // A subagent's task id is its agent id; notifications written after a restart carry only that.
+    const sub = subs.byTool.get(p.source.toolUseId) ?? subs.byAgent.get(p.source.taskId);
     if (sub) {
       sub.ended = { status: p.source.status, summary: p.source.summary };
       return [];

@@ -36,6 +36,8 @@ export type QueuedMessage = {
   track?: { planId: string; trackId: string };
   /** The routed question this message asks (message_expert with question_id). */
   question?: { setId: string; questionId: string };
+  /** The uuid the session stores the prompt under, set on delivery. Fork and rewind cut at it. */
+  uuid?: string;
 };
 
 export type Reply = {
@@ -91,6 +93,8 @@ export type AgentRecord = {
   /** What the process last reported: the model of the last main-loop call and the effort from init. */
   activeModel: string | null;
   activeEffort: EffortLevel | null;
+  /** The agent this one was forked from. */
+  forkedFrom?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -159,8 +163,8 @@ export type Plan = {
   round: number;
   /** Oldest first; the last one is current. */
   versions: PlanVersion[];
-  /** waiting: for the user. started: tracks are being or were started. */
-  status: 'waiting' | 'started';
+  /** waiting: for the user. started: tracks are being or were started. dropped: rewound away before Start. */
+  status: 'waiting' | 'started' | 'dropped';
   startedAt: string | null;
   /** The user's choice from Start (absent when the plan was started from the chat). */
   chosen: string[] | null;
@@ -220,8 +224,8 @@ export type QuestionSet = {
   questions: UserQuestion[];
   resolved: ResolvedQuestion[];
   routed: RoutedQuestion[];
-  /** open: some questions for the user are unanswered. */
-  status: 'open' | 'answered';
+  /** open: some questions for the user are unanswered. dropped: rewound away while open. */
+  status: 'open' | 'answered' | 'dropped';
   toolUseId?: string;
   createdAt: string;
   updatedAt: string;

@@ -20,7 +20,14 @@ type Props = {
 };
 
 export function AgentView({ agent, agents, epoch, focused, onSelect, onClose, onOpenDrawer }: Props) {
-  const { transcript, loading, loadError } = useTranscript(agent, epoch);
+  // A rewind switches the agent to another session: load its history again.
+  const [generation, setGeneration] = useState(0);
+  const sessionRef = useRef(agent.sessionId);
+  useEffect(() => {
+    if (sessionRef.current && sessionRef.current !== agent.sessionId) setGeneration((g) => g + 1);
+    sessionRef.current = agent.sessionId;
+  }, [agent.sessionId]);
+  const { transcript, loading, loadError } = useTranscript(agent, `${epoch}:${generation}`);
   const [error, setError] = useState('');
   const parent = agent.parentId ? agents.get(agent.parentId) : undefined;
 
@@ -88,7 +95,7 @@ export function AgentView({ agent, agents, epoch, focused, onSelect, onClose, on
  * History from /history, then live events for this agent. Live events that arrive while the history
  * loads are buffered and applied afterwards (duplicates are dropped by uuid). Reloads on reconnect.
  */
-function useTranscript(agent: AgentRecord, epoch: number) {
+function useTranscript(agent: AgentRecord, reloadKey: string) {
   const [transcript, setTranscript] = useState<T>(emptyTranscript);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -135,7 +142,7 @@ function useTranscript(agent: AgentRecord, epoch: number) {
       cancelled = true;
       off();
     };
-  }, [agent.id, epoch]);
+  }, [agent.id, reloadKey]);
 
   return { transcript, loading, loadError };
 }

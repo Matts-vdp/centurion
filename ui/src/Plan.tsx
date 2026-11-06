@@ -27,6 +27,16 @@ export function PlanView({ planId, version, orchestrator, agents, now, onSelect,
   useModels();
   const plan = plans.get(planId);
   if (!plan) return null;
+  // In a fork, the plan stays with the chat it was made in.
+  if (plan.orchestratorId !== orchestrator.id || plan.status === 'dropped') {
+    const owner = agents.get(plan.orchestratorId);
+    const title = plan.versions[version - 1]?.title ?? '';
+    return (
+      <div className="foreign-object">
+        Track plan{plan.status === 'dropped' ? ', rewound away' : owner ? ` from ${owner.name}` : ''} · Round {plan.round} · {title}
+      </div>
+    );
+  }
   const v = plan.versions[version - 1];
   if (!v) return null;
   if (version < plan.versions.length) return <ReplacedVersion plan={plan} version={version} orchestrator={orchestrator} agents={agents} />;
