@@ -3,6 +3,7 @@
   "port": 4317,
   "token": "change-me",
   "stateFile": ".agent-manager/state.json",
+  "orchestratorFolder": null,
   "permissionMode": "auto",
   "model": null,
   "env": {},

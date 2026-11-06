@@ -17,7 +17,7 @@ The agents have to run where the repositories and their tooling are (language ru
 - **`node_modules` on a container volume.** The Agent SDK installs a platform-specific Claude binary, so a Linux install must not overwrite the Windows `node_modules` in a shared checkout (or the other way round).
 - **`~/.claude` on a volume**, so the login and session transcripts survive rebuilds. Without them, sessions can't be resumed.
 - **Mounts for every repo** the experts need. Agents can only use paths that exist inside the container (e.g. `/workspaces/...`).
-- **`postCreateCommand`** that runs `npm ci` and copies a container config if none exists.
+- **`postCreateCommand`** that runs `npm ci` and `npm run build`, and copies a container config if none exists.
 
 ## 3. Auth inside the container
 
@@ -40,8 +40,8 @@ Add `agent-manager.config.devcontainer.example.json`, copied to `agent-manager.c
 
 ## 5. Verify
 
-1. `npm start` inside the container. The page opens on the host at the forwarded URL.
-2. Start an orchestrator in a mounted repo folder and have it create an expert in another one. The expert can read the files there and write its findings file.
+1. `npm start` inside the container. The UI opens on the host at the forwarded URL.
+2. Set `orchestratorFolder` to a mounted folder, start an orchestrator, and have it create an expert in another one. The expert can read the files there and write its findings file.
 3. Restart the manager. Agents resume their sessions.
 4. Open the same checkout on Windows. It still runs, with its own `node_modules` and state.
 
