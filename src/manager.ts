@@ -55,8 +55,9 @@ export class Manager extends EventEmitter<ManagerEvents> {
 
   // ---------- commands ----------
 
-  createOrchestrator(input: { name: string; cwd: string; message?: string }): AgentRecord {
-    const rec = this.createAgent('orchestrator', input.name, input.cwd, null);
+  /** Orchestrators all run in the configured `orchestratorFolder`. */
+  createOrchestrator(input: { name: string; message?: string }): AgentRecord {
+    const rec = this.createAgent('orchestrator', input.name, this.config.orchestratorFolder, null);
     if (input.message) this.sendMessage(rec.id, input.message, 'user', false);
     return rec;
   }
@@ -86,8 +87,28 @@ export class Manager extends EventEmitter<ManagerEvents> {
       notify: notify && rt.rec.parentId !== null,
       queuedAt: new Date().toISOString(),
     };
+    // A message to an archived expert brings it back into the tree.
+    if (rt.rec.archived) rt.rec.archived = false;
     rt.enqueue(message);
     return message;
+  }
+
+  /** Cancel the running turn but keep the queue; the next queued message is delivered afterwards. */
+  async interrupt(id: string): Promise<void> {
+    if (!(await this.runtime(id).interrupt())) throw new Error('The agent is not running');
+  }
+
+  removeQueued(id: string, messageId: string): void {
+    if (!this.runtime(id).removeQueued(messageId)) throw new Error('That message is no longer queued');
+  }
+
+  setArchived(id: string, archived: boolean): AgentRecord {
+    const rt = this.runtime(id);
+    if (rt.rec.kind !== 'expert') throw new Error('Only experts can be archived');
+    if (archived && (rt.isBusy || rt.rec.queue.length > 0)) throw new Error('Cannot archive a running agent');
+    rt.rec.archived = archived;
+    this.changed(rt.rec);
+    return rt.rec;
   }
 
   async stop(id: string, by: MessageSource): Promise<void> {
@@ -121,6 +142,9 @@ export class Manager extends EventEmitter<ManagerEvents> {
       replies: [],
       current: null,
       costUsd: 0,
+      archived: false,
+      lastActivityAt: now,
+      context: null,
       createdAt: now,
       updatedAt: now,
     };
@@ -159,6 +183,10 @@ export class Manager extends EventEmitter<ManagerEvents> {
 
   private onTurnEnd(rec: AgentRecord, handled: QueuedMessage, reply: Reply): void {
     if (!handled.notify) return;
+    if (reply.interrupted) {
+      this.notifyParent(rec, 'was interrupted by the user. Send it a message to continue.');
+      return;
+    }
     const preview = reply.text.length > PREVIEW_CHARS ? `${reply.text.slice(0, PREVIEW_CHARS)}…` : reply.text;
     const outcome = reply.isError ? 'finished its turn with an error' : 'finished its turn';
     this.notifyParent(rec, `${outcome}. Read the full reply with get_expert_output.\nPreview: ${preview}`);

@@ -6,9 +6,19 @@ import {
   type SDKResultMessage,
   type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
-import type { AgentRecord, QueuedMessage, Reply } from './types.js';
+import type { AgentRecord, ContextUsage, QueuedMessage, Reply } from './types.js';
 
 const MAX_REPLIES = 20;
+
+type InputUsage = {
+  input_tokens: number;
+  cache_read_input_tokens?: number | null;
+  cache_creation_input_tokens?: number | null;
+};
+
+function inputTokens(u: InputUsage): number {
+  return u.input_tokens + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
+}
 
 /** Async iterable the SDK reads user messages from; we push one per turn. */
 class InputChannel implements AsyncIterable<SDKUserMessage> {
@@ -64,6 +74,11 @@ export class AgentRuntime {
   private idleTimer: NodeJS.Timeout | null = null;
   /** total_cost_usd is cumulative per query() call; we add the per-turn difference. */
   private lastTotalCost = 0;
+  /** Set by interrupt(); the turn's result is then recorded as interrupted, not as an error. */
+  private interrupting = false;
+  /** Main model (from the init message) and the input size of the turn's last main-loop model call. */
+  private model: string | null = null;
+  private lastCallInput: number | null = null;
 
   constructor(
     public readonly rec: AgentRecord,
@@ -88,6 +103,8 @@ export class AgentRuntime {
     this.clearIdleTimer();
     const next = this.takeNext();
     this.busy = true;
+    this.interrupting = false;
+    this.lastCallInput = null;
     this.rec.current = next;
     this.rec.status = 'running';
     this.rec.lastError = null;
@@ -104,6 +121,27 @@ export class AgentRuntime {
       message: { role: 'user', content: next.text },
       parent_tool_use_id: null,
     });
+  }
+
+  /** Cancel the current turn only. The queue and the process stay; the next queued message follows. */
+  async interrupt(): Promise<boolean> {
+    if (!this.busy || !this.q) return false;
+    this.interrupting = true;
+    try {
+      await this.q.interrupt();
+    } catch {
+      // the turn may have just ended
+    }
+    return true;
+  }
+
+  /** Remove a message that is still waiting in the queue. */
+  removeQueued(messageId: string): boolean {
+    const index = this.rec.queue.findIndex((m) => m.id === messageId);
+    if (index < 0) return false;
+    this.rec.queue.splice(index, 1);
+    this.changed();
+    return true;
   }
 
   /** Stop the agent process. The queue is cleared; the next message resumes the session. */
@@ -179,6 +217,10 @@ export class AgentRuntime {
           this.rec.sessionId = message.session_id;
           this.changed();
         }
+        if (message.type === 'system' && message.subtype === 'init') this.model = message.model;
+        if (message.type === 'assistant' && message.parent_tool_use_id === null && message.message.usage) {
+          this.lastCallInput = inputTokens(message.message.usage);
+        }
         this.hooks.onMessage(this.rec, message);
         if (message.type === 'result') this.finishTurn(message);
       }
@@ -189,17 +231,39 @@ export class AgentRuntime {
   }
 
   private finishTurn(result: SDKResultMessage): void {
-    const isError = result.is_error || result.subtype !== 'success';
-    const text =
-      result.subtype === 'success'
+    const interrupted = this.interrupting;
+    this.interrupting = false;
+    const isError = !interrupted && (result.is_error || result.subtype !== 'success');
+    const text = interrupted
+      ? 'Interrupted by the user.'
+      : result.subtype === 'success'
         ? result.result
         : `Turn ended with ${result.subtype}${'errors' in result && result.errors?.length ? `: ${result.errors.join('; ')}` : ''}`;
     const total = result.total_cost_usd ?? this.lastTotalCost;
     this.rec.costUsd += Math.max(0, total - this.lastTotalCost);
     this.lastTotalCost = total;
-    this.endTurn({ text, at: new Date().toISOString(), isError }, isError ? 'error' : 'idle');
+    this.rec.context = this.contextUsage(result) ?? this.rec.context;
+    const reply: Reply = { text, at: new Date().toISOString(), isError };
+    if (interrupted) reply.interrupted = true;
+    this.endTurn(reply, isError ? 'error' : 'idle');
     this.pump();
     if (!this.busy) this.scheduleIdleClose();
+  }
+
+  /**
+   * Context in use after this turn. The result's `usage` adds up every model call of the turn, so it
+   * overcounts once tools ran; the input of the last main-loop call is what is actually in the window.
+   */
+  private contextUsage(result: SDKResultMessage): ContextUsage | null {
+    const entries = Object.entries(result.modelUsage ?? {});
+    const size = (u: (typeof entries)[number][1]) => u.inputTokens + u.cacheReadInputTokens + u.cacheCreationInputTokens;
+    const main =
+      entries.find(([key]) => key === this.model) ??
+      entries.find(([key]) => !!this.model && (key.startsWith(this.model) || this.model.startsWith(key))) ??
+      entries.sort((a, b) => size(b[1]) - size(a[1]))[0];
+    const windowTokens = main?.[1].contextWindow;
+    if (!windowTokens) return null;
+    return { usedTokens: this.lastCallInput ?? inputTokens(result.usage), windowTokens };
   }
 
   private failTurn(err: unknown): void {
@@ -213,6 +277,7 @@ export class AgentRuntime {
     this.busy = false;
     this.rec.status = status;
     this.rec.lastError = reply.isError ? reply.text : null;
+    this.rec.lastActivityAt = reply.at;
     this.rec.replies.push(reply);
     if (this.rec.replies.length > MAX_REPLIES) this.rec.replies.splice(0, this.rec.replies.length - MAX_REPLIES);
     if (handled) this.hooks.onTurnEnd(this.rec, handled, reply);

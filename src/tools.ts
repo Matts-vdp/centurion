@@ -22,6 +22,7 @@ function summary(rec: AgentRecord) {
     queued: rec.queue.length,
     replies: rec.replies.length,
     lastError: rec.lastError,
+    archived: rec.archived,
   };
 }
 

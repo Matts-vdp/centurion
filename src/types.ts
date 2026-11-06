@@ -23,6 +23,15 @@ export type Reply = {
   text: string;
   at: string;
   isError: boolean;
+  /** The user interrupted the turn (Esc). Not an error. */
+  interrupted?: boolean;
+};
+
+/** Context window use after the last turn. */
+export type ContextUsage = {
+  /** Input tokens of the last model call (including cache reads and writes). */
+  usedTokens: number;
+  windowTokens: number;
 };
 
 export type AgentRecord = {
@@ -42,6 +51,11 @@ export type AgentRecord = {
   /** Message currently being handled (removed from queue when delivered). */
   current: QueuedMessage | null;
   costUsd: number;
+  /** Hidden in the tree's "Archived" group. Only experts can be archived. */
+  archived: boolean;
+  /** When a turn last ended or failed. The UI compares it with its own "last seen" time. */
+  lastActivityAt: string;
+  context: ContextUsage | null;
   createdAt: string;
   updatedAt: string;
 };

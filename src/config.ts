@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import type { PermissionMode } from '@anthropic-ai/claude-agent-sdk';
 
@@ -20,10 +20,12 @@ export type Config = {
   removeEnv: string[];
   /** Close an agent's process after this many idle minutes (0 = never). The next message resumes it. */
   idleMinutes: number;
+  /** Absolute folder every orchestrator runs in. Defaults to the folder the manager was started from. */
+  orchestratorFolder: string;
   /** Folder holding the orchestrator/expert instruction files. */
   promptsDir: string;
-  /** Folder holding the static test page. */
-  publicDir: string;
+  /** Folder holding the built UI (`npm run build`). */
+  uiDir: string;
 };
 
 const projectRoot = path.resolve(import.meta.dirname, '..');
@@ -60,10 +62,16 @@ export function loadConfig(argv = process.argv.slice(2)): Config {
   if (process.env.AGENT_MANAGER_HOST) merged.host = process.env.AGENT_MANAGER_HOST;
   if (process.env.AGENT_MANAGER_TOKEN !== undefined) merged.token = process.env.AGENT_MANAGER_TOKEN;
 
+  const orchestratorFolder = path.resolve(base, merged.orchestratorFolder ?? process.cwd());
+  if (!existsSync(orchestratorFolder) || !statSync(orchestratorFolder).isDirectory()) {
+    throw new Error(`orchestratorFolder does not exist: ${orchestratorFolder}`);
+  }
+
   return {
     ...merged,
     stateFile: path.resolve(base, merged.stateFile),
+    orchestratorFolder,
     promptsDir: path.join(projectRoot, 'prompts'),
-    publicDir: path.join(projectRoot, 'public'),
+    uiDir: path.join(projectRoot, 'dist', 'ui'),
   };
 }

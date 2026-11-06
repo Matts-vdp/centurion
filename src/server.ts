@@ -50,12 +50,11 @@ export function startServer(manager: Manager, config: Config): http.Server {
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     try {
-      if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
-        const html = await readFile(path.join(config.publicDir, 'index.html'));
-        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(html);
+      if (!url.pathname.startsWith('/api/')) {
+        if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(404, 'Not found');
+        await serveUi(config.uiDir, url.pathname, res);
         return;
       }
-      if (!url.pathname.startsWith('/api/')) throw new HttpError(404, 'Not found');
       if (!authorized(req, url)) throw new HttpError(401, 'Missing or wrong token');
 
       if (req.method === 'GET' && url.pathname === '/api/events') {
@@ -89,6 +88,7 @@ export function startServer(manager: Manager, config: Config): http.Server {
     const token = config.token ? `?token=${encodeURIComponent(config.token)}` : '';
     console.log(`Agent manager listening on http://${shown}:${config.port}/${token}`);
     console.log(`Permission mode: ${config.permissionMode}. State: ${config.stateFile}`);
+    console.log(`Orchestrators run in: ${config.orchestratorFolder}`);
   });
   return server;
 }
@@ -98,14 +98,19 @@ async function route(manager: Manager, config: Config, req: http.IncomingMessage
   const method = req.method ?? 'GET';
 
   if (parts[0] === 'info' && method === 'GET') {
-    return { permissionMode: config.permissionMode, cwd: process.cwd(), platform: process.platform };
+    return {
+      permissionMode: config.permissionMode,
+      orchestratorFolder: config.orchestratorFolder,
+      platform: process.platform,
+    };
   }
   if (parts[0] !== 'agents') throw new HttpError(404, 'Not found');
 
   if (parts.length === 1 && method === 'GET') return manager.list();
   if (parts.length === 1 && method === 'POST') {
     const body = await readJson(req);
-    return manager.createOrchestrator({ name: str(body.name, 'name'), cwd: str(body.cwd, 'cwd'), message: body.message });
+    const message = typeof body.message === 'string' && body.message.trim() ? body.message : undefined;
+    return manager.createOrchestrator({ name: str(body.name, 'name'), message });
   }
 
   const id = parts[1];
@@ -119,7 +124,56 @@ async function route(manager: Manager, config: Config, req: http.IncomingMessage
     await manager.stop(id, 'user');
     return manager.get(id);
   }
+  if (parts[2] === 'interrupt' && method === 'POST') {
+    await manager.interrupt(id);
+    return manager.get(id);
+  }
+  if (parts[2] === 'queue' && parts.length === 4 && method === 'DELETE') {
+    manager.removeQueued(id, parts[3]);
+    return manager.get(id);
+  }
+  if (parts[2] === 'archive' && method === 'POST') {
+    const body = await readJson(req);
+    if (typeof body.archived !== 'boolean') throw new HttpError(400, '"archived" must be true or false');
+    return manager.setArchived(id, body.archived);
+  }
   throw new HttpError(404, 'Not found');
+}
+
+const CONTENT_TYPES: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.ico': 'image/x-icon',
+  '.json': 'application/json',
+  '.woff2': 'font/woff2',
+};
+
+const NOT_BUILT = `<!doctype html><meta charset="utf-8"><title>Agent manager</title>
+<body style="font:15px system-ui;padding:40px">
+<h1 style="font-size:18px">The UI is not built yet</h1>
+<p>Run <code>npm run build</code> and reload this page, or use <code>npm run dev</code> while working on the UI.</p>`;
+
+/** Serve the built UI from dist/ui. Unknown paths get index.html (single-page app). */
+async function serveUi(dir: string, pathname: string, res: http.ServerResponse): Promise<void> {
+  const root = path.resolve(dir);
+  const wanted = path.resolve(root, `.${decodeURIComponent(pathname)}`);
+  const inside = wanted === root || wanted.startsWith(root + path.sep);
+  const candidates = inside && pathname !== '/' ? [wanted, path.join(root, 'index.html')] : [path.join(root, 'index.html')];
+  for (const file of candidates) {
+    try {
+      const body = await readFile(file);
+      const type = CONTENT_TYPES[path.extname(file)] ?? 'application/octet-stream';
+      const cache = file.includes(`${path.sep}assets${path.sep}`) ? 'public, max-age=31536000, immutable' : 'no-cache';
+      res.writeHead(200, { 'content-type': type, 'cache-control': cache }).end(body);
+      return;
+    } catch {
+      // try the next candidate
+    }
+  }
+  res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(NOT_BUILT);
 }
 
 function str(value: unknown, field: string): string {

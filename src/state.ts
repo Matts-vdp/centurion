@@ -14,7 +14,13 @@ export class StateStore {
   load(): AgentRecord[] {
     if (!existsSync(this.file)) return [];
     const data = JSON.parse(readFileSync(this.file, 'utf8')) as StateFile;
-    return data.agents ?? [];
+    // Records from older state files lack the newer fields.
+    return (data.agents ?? []).map((rec) => ({
+      ...rec,
+      archived: rec.archived ?? false,
+      lastActivityAt: rec.lastActivityAt ?? rec.updatedAt,
+      context: rec.context ?? null,
+    }));
   }
 
   /** Schedule a save; `getAgents` is read when the write actually happens. */
