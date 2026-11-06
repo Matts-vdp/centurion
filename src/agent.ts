@@ -207,16 +207,21 @@ export class AgentRuntime {
     this.q?.close();
   }
 
+  /** Close an idle process; the record stays as it is and the next message resumes the session. */
+  release(): void {
+    this.clearIdleTimer();
+    if (this.busy || !this.q) return;
+    this.hibernating = true;
+    this.input?.close();
+    this.q.close();
+  }
+
   private scheduleIdleClose(): void {
     this.clearIdleTimer();
     if (!this.idleMs || !this.q) return;
     this.idleTimer = setTimeout(() => {
       this.idleTimer = null;
-      if (this.busy || !this.q) return;
-      // Free the process; the session is resumed on the next message.
-      this.hibernating = true;
-      this.input?.close();
-      this.q.close();
+      this.release();
     }, this.idleMs);
     this.idleTimer.unref();
   }

@@ -6,7 +6,18 @@ import { agentState, folderName } from './status';
 import { lastSeen, useManager } from './store';
 
 /** Ctrl+K: jump to any agent by name, folder or orchestrator. */
-export function Switcher({ agents, onSelect, onClose }: { agents: Map<string, AgentRecord>; onSelect: (id: string) => void; onClose: () => void }) {
+export function Switcher({
+  agents,
+  onSelect,
+  onSplit,
+  onClose,
+}: {
+  agents: Map<string, AgentRecord>;
+  onSelect: (id: string) => void;
+  /** Shift+Enter: open next to the current agent. */
+  onSplit: (id: string) => void;
+  onClose: () => void;
+}) {
   const { activity } = useManager();
   const seen = lastSeen.use();
   const [query, setQuery] = useState('');
@@ -32,9 +43,9 @@ export function Switcher({ agents, onSelect, onClose }: { agents: Map<string, Ag
     list.current?.querySelector(`[data-index="${index}"]`)?.scrollIntoView({ block: 'nearest' });
   }, [index]);
 
-  const pick = (a: AgentRecord | undefined) => {
+  const pick = (a: AgentRecord | undefined, split = false) => {
     if (!a) return;
-    onSelect(a.id);
+    (split ? onSplit : onSelect)(a.id);
     onClose();
   };
 
@@ -59,7 +70,7 @@ export function Switcher({ agents, onSelect, onClose }: { agents: Map<string, Ag
                 setIndex((i) => Math.max(i - 1, 0));
               } else if (e.key === 'Enter') {
                 e.preventDefault();
-                pick(matches[index]);
+                pick(matches[index], e.shiftKey);
               } else if (e.key === 'Escape') {
                 e.preventDefault();
                 e.stopPropagation();
@@ -69,6 +80,7 @@ export function Switcher({ agents, onSelect, onClose }: { agents: Map<string, Ag
           />
           <kbd>Esc</kbd>
         </div>
+        <div className="switcher-hint">Enter opens · Shift+Enter opens in a split</div>
         <div className="switcher-list" id="switcher-list" role="listbox" ref={list}>
           {matches.length === 0 && <div className="switcher-empty">No agent matches “{query}”.</div>}
           {matches.map((a, i) => {
@@ -83,7 +95,7 @@ export function Switcher({ agents, onSelect, onClose }: { agents: Map<string, Ag
                 aria-selected={i === index}
                 className={`switcher-item${i === index ? ' active' : ''}${a.archived ? ' dim' : ''}`}
                 onMouseMove={() => setIndex(i)}
-                onClick={() => pick(a)}
+                onClick={(e) => pick(a, e.shiftKey)}
               >
                 <AgentMark agent={a} state={st.key} size={22} />
                 <span className="switcher-name">{a.name}</span>

@@ -77,8 +77,10 @@ export type AgentRecord = {
   /** When the current turn started (the message was delivered); null between turns. */
   turnStartedAt: string | null;
   costUsd: number;
-  /** Hidden in the tree's "Archived" group. Only experts can be archived. */
+  /** Out of sight in an "Archived" group. A new message brings it back. */
   archived: boolean;
+  /** The chat this expert was archived with; unarchiving that chat brings it back too. */
+  archivedWith: string | null;
   /** When a turn last ended or failed. The UI compares it with its own "last seen" time. */
   lastActivityAt: string;
   context: ContextUsage | null;

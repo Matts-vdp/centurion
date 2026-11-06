@@ -9,12 +9,14 @@ import { parsePrompt } from './timeline';
 type Props = {
   agent: AgentRecord;
   agents: Map<string, AgentRecord>;
+  /** The focused pane: it takes the keyboard focus and Esc. */
+  focused: boolean;
   run: (a: () => Promise<unknown>) => Promise<void>;
   onInterrupt: () => void;
 };
 
 /** The floating composer: live status line above it, queued messages inside its top, the message box. */
-export function Composer({ agent, agents, run, onInterrupt }: Props) {
+export function Composer({ agent, agents, focused, run, onInterrupt }: Props) {
   const [text, setText] = useState(() => readDraft(agent.id));
   const [sending, setSending] = useState(false);
   const box = useRef<HTMLTextAreaElement>(null);
@@ -29,7 +31,9 @@ export function Composer({ agent, agents, run, onInterrupt }: Props) {
       : null;
 
   useEffect(() => writeDraft(agent.id, text), [agent.id, text]);
-  useEffect(() => box.current?.focus(), [agent.id]);
+  useEffect(() => {
+    if (focused && !document.activeElement?.closest('.pane.focused')) box.current?.focus();
+  }, [agent.id, focused]);
 
   // Grow with the text; CSS caps the height.
   useLayoutEffect(() => {
@@ -41,7 +45,7 @@ export function Composer({ agent, agents, run, onInterrupt }: Props) {
 
   // Esc interrupts the running turn (the queue stays), unless something else handles it.
   useEffect(() => {
-    if (!running) return;
+    if (!running || !focused) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented) return;
       if ((e.target as HTMLElement | null)?.closest('.sidebar, .menu, .switcher')) return;
@@ -50,7 +54,7 @@ export function Composer({ agent, agents, run, onInterrupt }: Props) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [running, onInterrupt]);
+  }, [running, focused, onInterrupt]);
 
   const send = async () => {
     const value = text.trim();

@@ -104,6 +104,18 @@ export function needsYou(a: AgentRecord, state: AgentState): boolean {
   return a.kind === 'orchestrator' && state.key === 'unread';
 }
 
+/** Why an agent can't be archived right now, or null. A chat can't while one of its experts is busy. */
+export function archiveBlocker(a: AgentRecord, agents: Map<string, AgentRecord>): string | null {
+  if (a.archived) return null;
+  const busy = (x: AgentRecord) => x.status === 'running' || x.queue.length > 0;
+  if (busy(a)) return 'Only an idle or stopped agent can be archived';
+  if (a.kind === 'orchestrator') {
+    const child = [...agents.values()].find((c) => c.parentId === a.id && !c.archived && busy(c));
+    if (child) return `Can't archive while ${child.name} is running`;
+  }
+  return null;
+}
+
 export function monogram(name: string): string {
   const parts = name.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
   if (parts.length === 0) return '?';

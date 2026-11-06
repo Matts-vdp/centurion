@@ -11,11 +11,15 @@ type Props = {
   agent: AgentRecord;
   agents: Map<string, AgentRecord>;
   epoch: number;
+  /** The focused pane: keyboard shortcuts act here only. */
+  focused: boolean;
   onSelect: (id: string) => void;
+  /** Close this pane of a split. */
+  onClose?: () => void;
   onOpenDrawer?: () => void;
 };
 
-export function AgentView({ agent, agents, epoch, onSelect, onOpenDrawer }: Props) {
+export function AgentView({ agent, agents, epoch, focused, onSelect, onClose, onOpenDrawer }: Props) {
   const { transcript, loading, loadError } = useTranscript(agent, epoch);
   const [error, setError] = useState('');
   const parent = agent.parentId ? agents.get(agent.parentId) : undefined;
@@ -39,7 +43,7 @@ export function AgentView({ agent, agents, epoch, onSelect, onOpenDrawer }: Prop
 
   // Alt+← goes to the parent orchestrator.
   useEffect(() => {
-    if (!parent) return;
+    if (!parent || !focused) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.altKey && e.key === 'ArrowLeft' && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
@@ -48,11 +52,11 @@ export function AgentView({ agent, agents, epoch, onSelect, onOpenDrawer }: Prop
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [parent, onSelect]);
+  }, [parent, focused, onSelect]);
 
   return (
     <div className="agent-view">
-      <Header agent={agent} parent={parent} agents={agents} run={run} onSelect={onSelect} onOpenDrawer={onOpenDrawer} />
+      <Header agent={agent} parent={parent} agents={agents} run={run} onSelect={onSelect} onClose={onClose} onOpenDrawer={onOpenDrawer} />
       {error && (
         <div className="banner error">
           {error}
@@ -67,10 +71,11 @@ export function AgentView({ agent, agents, epoch, onSelect, onOpenDrawer }: Prop
         loadError={loadError}
         agent={agent}
         agents={agents}
+        focused={focused}
         onSelect={onSelect}
         run={run}
       />
-      <Composer agent={agent} agents={agents} run={run} onInterrupt={interrupt} />
+      <Composer agent={agent} agents={agents} focused={focused} run={run} onInterrupt={interrupt} />
     </div>
   );
 }

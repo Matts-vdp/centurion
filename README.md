@@ -82,7 +82,7 @@ Use `--config <path>` or `AGENT_MANAGER_CONFIG` to point at another config file.
 | POST | `/api/agents/:id/interrupt` | Cancels the current turn; keeps the queue and the process |
 | DELETE | `/api/agents/:id/queue/:messageId` | Removes a queued message |
 | POST | `/api/agents/:id/model` | `{ model?, effort? }`; a missing field stays, `null` goes back to the default. Applies from the next turn |
-| POST | `/api/agents/:id/archive` | `{ archived }`; experts only, refused while running |
+| POST | `/api/agents/:id/archive` | `{ archived }`; refused while running. A chat takes its idle experts with it, and unarchiving it brings those back. Archiving closes the process; a new message unarchives |
 | POST | `/api/agents/:id/stop` | Cancels the turn, clears the queue and closes the process |
 | GET | `/api/plans` | Track plans |
 | POST | `/api/plans/:id/start` | `{ start: trackIds, skip?: trackIds }`; sends the orchestrator only these ids |
@@ -91,4 +91,4 @@ Use `--config <path>` or `AGENT_MANAGER_CONFIG` to point at another config file.
 | POST | `/api/questions/:id/answer` | `{ answers: [{ questionId, choices?, text? }], corrections?: [{ questionId, text }] }` |
 | GET | `/api/events` | Server-sent events: `snapshot`, `agent`, `delivered`, `message`, `plan`, `questions` (all plans and question sets follow each snapshot) |
 
-Agent records carry `model` and `effort` (set, or `null`), `activeModel` and `activeEffort` (what the process last reported; effort is only known when Claude Code reports it), `archived`, `lastActivityAt` (when a turn last ended or failed), `turnStartedAt` (while a turn runs) and `context: { usedTokens, windowTokens } | null`, besides the queue, replies, status and cost. Each reply has `durationMs` and `costUsd` for its turn.
+Agent records carry `model` and `effort` (set, or `null`), `activeModel` and `activeEffort` (what the process last reported; effort is only known when Claude Code reports it), `archived` and `archivedWith` (the chat an expert was archived with), `lastActivityAt` (when a turn last ended or failed), `turnStartedAt` (while a turn runs) and `context: { usedTokens, windowTokens } | null`, besides the queue, replies, status and cost. Each reply has `durationMs` and `costUsd` for its turn.

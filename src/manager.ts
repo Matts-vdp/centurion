@@ -160,8 +160,7 @@ export class Manager extends EventEmitter<ManagerEvents> {
       ...(links.track ? { track: links.track } : {}),
       ...(links.question ? { question: links.question } : {}),
     };
-    // A message to an archived expert brings it back into the tree.
-    if (rt.rec.archived) rt.rec.archived = false;
+    this.unarchive(rt.rec);
     rt.enqueue(message);
     return message;
   }
@@ -200,13 +199,46 @@ export class Manager extends EventEmitter<ManagerEvents> {
     return this.modelProbe;
   }
 
+  /**
+   * Archive or unarchive an agent. A chat takes its experts with it, and unarchiving the chat brings
+   * back the ones that went with it. Archiving closes the processes; the next message resumes them.
+   */
   setArchived(id: string, archived: boolean): AgentRecord {
     const rt = this.runtime(id);
-    if (rt.rec.kind !== 'expert') throw new Error('Only experts can be archived');
-    if (archived && (rt.isBusy || rt.rec.queue.length > 0)) throw new Error('Cannot archive a running agent');
-    rt.rec.archived = archived;
-    this.changed(rt.rec);
-    return rt.rec;
+    const rec = rt.rec;
+    if (!archived) {
+      this.unarchive(rec);
+      if (rec.kind === 'orchestrator') {
+        for (const child of this.childrenOf(rec.id)) {
+          if (child.archivedWith === rec.id) this.unarchive(child);
+        }
+      }
+      return rec;
+    }
+    if (rec.archived) return rec;
+    const children = rec.kind === 'orchestrator' ? this.childrenOf(rec.id).filter((c) => !c.archived) : [];
+    const busy = [rec, ...children].find((a) => this.runtime(a.id).isBusy || a.queue.length > 0);
+    if (busy) {
+      throw new Error(busy === rec ? 'Cannot archive a running agent' : `Cannot archive this chat while its expert "${busy.name}" is running`);
+    }
+    for (const a of [rec, ...children]) {
+      a.archived = true;
+      a.archivedWith = a === rec ? null : rec.id;
+      this.runtime(a.id).release();
+      this.changed(a);
+    }
+    return rec;
+  }
+
+  /** A message to an archived agent brings it back, and an expert's archived chat with it. */
+  private unarchive(rec: AgentRecord): void {
+    if (rec.archived) {
+      rec.archived = false;
+      rec.archivedWith = null;
+      this.changed(rec);
+    }
+    const parent = rec.parentId ? this.runtimes.get(rec.parentId)?.rec : undefined;
+    if (parent?.archived) this.unarchive(parent);
   }
 
   async stop(id: string, by: MessageSource): Promise<void> {
@@ -515,6 +547,7 @@ export class Manager extends EventEmitter<ManagerEvents> {
       turnStartedAt: null,
       costUsd: 0,
       archived: false,
+      archivedWith: null,
       lastActivityAt: now,
       context: null,
       model: settings.model,
@@ -610,6 +643,7 @@ export class Manager extends EventEmitter<ManagerEvents> {
 
   private enqueueNotification(orchestratorId: string, text: string): void {
     if (!this.runtimes.has(orchestratorId)) return;
+    this.unarchive(this.get(orchestratorId));
     const message: QueuedMessage = {
       id: newId('msg'),
       text,

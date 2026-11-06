@@ -39,11 +39,13 @@ type Props = {
   loadError: string;
   agent: AgentRecord;
   agents: Map<string, AgentRecord>;
+  /** Only the focused pane handles Ctrl+O, so two panes don't toggle it twice. */
+  focused: boolean;
   onSelect: (id: string) => void;
   run: (a: () => Promise<unknown>) => Promise<void>;
 };
 
-export function Transcript({ transcript, loading, loadError, agent, agents, onSelect, run }: Props) {
+export function Transcript({ transcript, loading, loadError, agent, agents, focused, onSelect, run }: Props) {
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const running = agent.status === 'running';
@@ -52,6 +54,7 @@ export function Transcript({ transcript, loading, loadError, agent, agents, onSe
 
   // Ctrl+O toggles verbose mode: every work log open, with inputs and outputs.
   useEffect(() => {
+    if (!focused) return;
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'o') {
         e.preventDefault();
@@ -60,7 +63,7 @@ export function Transcript({ transcript, loading, loadError, agent, agents, onSe
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [focused]);
 
   // Keep the view pinned to the bottom while new items arrive, unless the user scrolled up.
   useLayoutEffect(() => {

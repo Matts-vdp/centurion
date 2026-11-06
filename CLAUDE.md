@@ -28,7 +28,7 @@ A local manager for Claude agents, replacing a terminal "herder". The user runs 
 - **Every top-level chat is the same:** it always has the `manager` tools, and orchestrating is opt-in through the `orchestrate` skill. Internally the kind is still `orchestrator`; the UI calls it a chat.
 - **Agents load their own folder's setup:** `settingSources: ['user', 'project', 'local']`, so CLAUDE.md, skills and settings come from the agent's folder and `~/.claude`.
 - **Folders are absolute paths**, checked on create. Chats all run in the configured `orchestratorFolder` (no folder choice in the UI). An expert's folder defaults to its orchestrator's folder.
-- **Interrupt keeps the queue; stop clears it.** An interrupted turn is recorded as "Interrupted by the user." with `interrupted: true`, not as an error. Only experts can be archived, and only when not running; a new message unarchives them.
+- **Interrupt keeps the queue; stop clears it.** An interrupted turn is recorded as "Interrupted by the user." with `interrupted: true`, not as an error. Chats and experts can be archived, only when not running; a chat takes its experts with it. Archiving closes the process, and a new message unarchives.
 - **Unread is per browser:** the record has `lastActivityAt`; the UI keeps `lastSeen` in `localStorage`.
 - **Restarts and idle processes:** after a restart, an agent that was mid-turn becomes `interrupted` and its parent is notified. Idle processes close after `idleMinutes`, and the next message resumes the same session.
 

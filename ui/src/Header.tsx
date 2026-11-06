@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { commands, type AgentRecord } from './api';
 import { useNow } from './hooks';
-import { CheckIcon, FolderIcon, MenuIcon, MoreIcon } from './icons';
+import { CheckIcon, CloseIcon, FolderIcon, MenuIcon, MoreIcon } from './icons';
 import { AgentMark, StateDot } from './Mark';
 import { ModelPicker } from './ModelPicker';
-import { agentState, folderName, money } from './status';
+import { agentState, archiveBlocker, folderName, money } from './status';
 import { lastSeen, useManager } from './store';
 
 type Props = {
@@ -13,17 +13,19 @@ type Props = {
   agents: Map<string, AgentRecord>;
   run: (a: () => Promise<unknown>) => Promise<void>;
   onSelect: (id: string) => void;
+  /** Close this pane of a split. */
+  onClose?: () => void;
   onOpenDrawer?: () => void;
 };
 
 /** Two lines: the breadcrumb as the title with the agent's tools, then its status as a sentence. */
-export function Header({ agent, parent, agents, run, onSelect, onOpenDrawer }: Props) {
+export function Header({ agent, parent, agents, run, onSelect, onClose, onOpenDrawer }: Props) {
   const { activity } = useManager();
   const seen = lastSeen.use();
   const [menu, setMenu] = useState(false);
   const [copied, setCopied] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
-  const busy = agent.status === 'running' || agent.queue.length > 0;
+  const blocker = archiveBlocker(agent, agents);
   const now = useNow(true, agent.status === 'running' ? 1000 : 30_000);
   const state = agentState(agent, agents, seen, activity.get(agent.id), now);
   const parentState = parent ? agentState(parent, agents, seen, activity.get(parent.id), now) : null;
@@ -93,19 +95,18 @@ export function Header({ agent, parent, agents, run, onSelect, onOpenDrawer }: P
             </button>
             {menu && (
               <div className="menu" role="menu">
-                {agent.kind === 'expert' && (
-                  <button
-                    role="menuitem"
-                    disabled={!agent.archived && busy}
-                    title={!agent.archived && busy ? 'Only an idle or stopped agent can be archived' : undefined}
-                    onClick={() => {
-                      setMenu(false);
-                      void run(() => commands.setArchived(agent.id, !agent.archived));
-                    }}
-                  >
-                    {agent.archived ? 'Unarchive' : 'Archive'}
-                  </button>
-                )}
+                <button
+                  role="menuitem"
+                  disabled={blocker !== null}
+                  title={blocker ?? undefined}
+                  onClick={() => {
+                    setMenu(false);
+                    void run(() => commands.setArchived(agent.id, !agent.archived));
+                  }}
+                >
+                  {agent.archived ? 'Unarchive' : 'Archive'}
+                  {!agent.archived && agent.kind === 'orchestrator' && <span className="menu-hint">Moves the chat and its experts to Archived</span>}
+                </button>
                 <button
                   role="menuitem"
                   className="danger"
@@ -120,6 +121,11 @@ export function Header({ agent, parent, agents, run, onSelect, onOpenDrawer }: P
               </div>
             )}
           </div>
+          {onClose && (
+            <button className="icon-button" title="Close this pane" aria-label="Close this pane" onClick={onClose}>
+              <CloseIcon size={16} />
+            </button>
+          )}
         </div>
       </div>
       <div className={`header-status state-${state.key}`}>

@@ -20,6 +20,7 @@ export class StateStore {
     const agents = (data.agents ?? []).map((rec) => ({
       ...rec,
       archived: rec.archived ?? false,
+      archivedWith: rec.archivedWith ?? null,
       lastActivityAt: rec.lastActivityAt ?? rec.updatedAt,
       context: rec.context ?? null,
       turnStartedAt: rec.turnStartedAt ?? null,
