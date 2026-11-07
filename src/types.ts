@@ -138,6 +138,12 @@ export type AgentRecord = {
   /** Orchestrator that owns this expert; null for orchestrators. */
   parentId: string | null;
   cwd: string;
+  /**
+   * Experts only: the folder of the expert's task, inside its orchestrator's folder. When set, it is the only
+   * part of the orchestrator's folder the expert may read and write (file tools, outside its own folder);
+   * absent = the whole orchestrator folder.
+   */
+  taskFolder?: string;
   /** Claude session ID, set after the first turn starts. Used to resume and to read history. */
   sessionId: string | null;
   status: AgentStatus;
@@ -215,7 +221,7 @@ export type PermissionDecision = 'allow' | 'allowSession' | 'deny';
 // ---------- track plans (docs/ui-design.md, section 8) ----------
 
 export type TrackTarget =
-  | { kind: 'new_expert'; name: string; folder?: string }
+  | { kind: 'new_expert'; name: string; folder?: string; taskFolder?: string }
   | { kind: 'existing_expert'; expertId: string }
   | { kind: 'subagent' };
 

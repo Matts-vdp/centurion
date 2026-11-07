@@ -61,6 +61,15 @@ export function managerTools(manager: Manager, orchestratorId: string) {
     {
       name: z.string().describe('Short name, e.g. "api-research"'),
       folder: z.string().optional().describe('Absolute path of the folder the expert works in. Defaults to your own folder.'),
+      task_folder: z
+        .string()
+        .optional()
+        .describe(
+          'Absolute path of the folder of this task, anywhere inside your folder (it must exist: write the prompt file there first). ' +
+            'Then the expert can read and write only this folder besides its own (the file tools; Bash is not restricted), ' +
+            'not the rest of your folder or other tasks\' folders. Default: the task folder of the plan track, else your whole folder. ' +
+            'No effect if the expert\'s own folder is your folder (it can reach everything in it anyway).',
+        ),
       message: z.string().optional().describe('First task for the expert'),
       notify: z.boolean().optional().describe('Wake you with a notification when it finishes this message. Default true.'),
       track_id: z.string().optional().describe('The id of the plan track this expert works on (from propose_tracks)'),
@@ -74,6 +83,7 @@ export function managerTools(manager: Manager, orchestratorId: string) {
       const rec = manager.createExpert(orchestratorId, {
         name: args.name,
         cwd: args.folder,
+        taskFolder: args.task_folder,
         message: args.message,
         notify: args.notify ?? true,
         trackId: args.track_id,
@@ -143,7 +153,15 @@ export function managerTools(manager: Manager, orchestratorId: string) {
             title: z.string(),
             summary: z.string().describe('One or two sentences for the user. Not the handoff prompt.'),
             target: z.discriminatedUnion('kind', [
-              z.object({ kind: z.literal('new_expert'), name: z.string(), folder: z.string().optional() }),
+              z.object({
+                kind: z.literal('new_expert'),
+                name: z.string(),
+                folder: z.string().optional(),
+                taskFolder: z
+                  .string()
+                  .optional()
+                  .describe('Absolute path of the task\'s folder inside your folder; see create_expert. Used when you start the track with track_id.'),
+              }),
               z.object({ kind: z.literal('existing_expert'), expertId: z.string() }),
               z.object({ kind: z.literal('subagent') }),
             ]),

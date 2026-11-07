@@ -560,7 +560,9 @@ function rootsOf(manager: Manager, id: string): { name: string; path: string }[]
   const rec = manager.get(id);
   const roots = [rec.cwd];
   const parent = rec.parentId ? manager.get(rec.parentId) : undefined;
-  if (parent && path.resolve(parent.cwd) !== path.resolve(rec.cwd)) roots.push(parent.cwd);
+  // An expert with a task folder is given only that, not its orchestrator's whole folder.
+  const shared = rec.taskFolder ?? parent?.cwd;
+  if (shared && path.resolve(shared) !== path.resolve(rec.cwd)) roots.push(shared);
   return roots.map((p) => ({ name: path.basename(p) || p, path: p }));
 }
 

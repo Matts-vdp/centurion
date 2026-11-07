@@ -53,8 +53,10 @@ export function PlanView({ planId, version, orchestrator, agents, now, onSelect,
 function targetLine(t: Track, orchestrator: AgentRecord, agents: Map<string, AgentRecord>): string {
   const parts: string[] = [];
   let runsOn: AgentRecord | undefined = orchestrator;
-  if (t.target.kind === 'new_expert') parts.push('New expert', folderName(t.target.folder ?? orchestrator.cwd));
-  else if (t.target.kind === 'existing_expert') {
+  if (t.target.kind === 'new_expert') {
+    parts.push('New expert', folderName(t.target.folder ?? orchestrator.cwd));
+    if (t.target.taskFolder) parts.push(`only ${folderName(t.target.taskFolder)} of ${orchestrator.name}'s folder`);
+  } else if (t.target.kind === 'existing_expert') {
     const e = agents.get(t.target.expertId);
     parts.push(`${e?.name ?? t.target.expertId} (existing)`);
     if (e) parts.push(folderName(e.cwd));

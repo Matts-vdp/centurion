@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import {
   forkSession,
@@ -33,6 +33,7 @@ import {
   type ProposeInput,
 } from './decisions.js';
 import { KeepWarm, active as keepWarmActive } from './keepwarm.js';
+import { isInside } from './files.js';
 import { StateStore, type State } from './state.js';
 import { createDisplayTools } from './display.js';
 import { createManagerTools } from './tools.js';
@@ -205,6 +206,7 @@ export class Manager extends EventEmitter<ManagerEvents> {
     });
     const until = next >= 0 ? timeOf(messages[next]) : Infinity;
     const copy = this.createAgent(rec.kind, name, rec.cwd, rec.parentId, { model: rec.model, effort: rec.effort });
+    if (rec.taskFolder) copy.taskFolder = rec.taskFolder;
     copy.sessionId = forked.sessionId;
     copy.forkedFrom = rec.id;
     // What the original runs on, so the model chip is right before the fork's first turn.
@@ -285,7 +287,17 @@ export class Manager extends EventEmitter<ManagerEvents> {
    */
   createExpert(
     parentId: string,
-    input: { name: string; cwd?: string; message?: string; notify?: boolean; trackId?: string; model?: string; effort?: EffortLevel },
+    input: {
+      name: string;
+      cwd?: string;
+      /** Confine the expert to this folder inside the orchestrator's (default: the plan track's, else no confinement). */
+      taskFolder?: string;
+      message?: string;
+      notify?: boolean;
+      trackId?: string;
+      model?: string;
+      effort?: EffortLevel;
+    },
     /** Who sends the first message: the orchestrator (create_expert) or the user (the UI, which tells no one). */
     from: 'orchestrator' | 'user' = 'orchestrator',
   ): AgentRecord {
@@ -297,7 +309,12 @@ export class Manager extends EventEmitter<ManagerEvents> {
       model: input.model ?? planned?.model,
       effort: input.effort ?? planned?.effort,
     });
+    const planTarget = planned?.target.kind === 'new_expert' ? planned.target : undefined;
+    const taskFolder = input.taskFolder ?? planTarget?.taskFolder;
+    // Checked before the agent exists, so a wrong folder leaves nothing behind.
+    const confined = taskFolder ? checkTaskFolder(parent.cwd, taskFolder, true) : undefined;
     const rec = this.createAgent('expert', input.name, input.cwd ?? parent.cwd, parent.id, settings);
+    if (confined) rec.taskFolder = confined;
     if (track) this.linkTrack(track, rec.id);
     if (input.message) this.sendMessage(rec.id, input.message, from, from === 'orchestrator' && (input.notify ?? true), { track });
     return rec;
@@ -678,6 +695,8 @@ export class Manager extends EventEmitter<ManagerEvents> {
         throw new Error(`Track "${t.id}": expert ${t.target.expertId} is not one of yours`);
       }
       if (t.target.kind === 'new_expert' && t.target.folder) validateDir(t.target.folder);
+      // The folder may not exist yet: the orchestrator writes the handoff files when it starts the track.
+      if (t.target.kind === 'new_expert' && t.target.taskFolder) checkTaskFolder(orch.cwd, t.target.taskFolder, false);
     }
     const now = new Date().toISOString();
     let plan = this.plans.find((p) => p.orchestratorId === orchestratorId && p.round === input.round);
@@ -1137,9 +1156,17 @@ export class Manager extends EventEmitter<ManagerEvents> {
       options.mcpServers.centurion = createManagerTools(this, rec.id);
       options.allowedTools.push('mcp__centurion');
     } else if (rec.parentId) {
-      // Experts read prompt files from and write findings to the orchestrator's folder.
+      // Experts read prompt files from and write findings to the orchestrator's folder, or only to their task's
+      // folder when they have one. blockReads/WritesOutsideWorkingDirectories make the file tools refuse every
+      // other path (in any permission mode); Bash is not restricted.
       const parent = this.get(rec.parentId);
-      if (parent.cwd !== rec.cwd) options.additionalDirectories = [parent.cwd];
+      if (rec.taskFolder) {
+        options.additionalDirectories = [rec.taskFolder];
+        options.settings = {
+          ...(typeof options.settings === 'object' ? options.settings : {}),
+          permissions: { blockReadsOutsideWorkingDirectories: true, blockWritesOutsideWorkingDirectories: true },
+        };
+      } else if (parent.cwd !== rec.cwd) options.additionalDirectories = [parent.cwd];
     }
     return options;
   }
@@ -1159,6 +1186,7 @@ export class Manager extends EventEmitter<ManagerEvents> {
       cwd: rec.cwd,
       orchestratorName: parent?.name ?? '',
       orchestratorCwd: parent?.cwd ?? '',
+      taskFolder: rec.taskFolder ?? parent?.cwd ?? '',
     };
     return template.replace(/\{\{(\w+)\}\}/g, (all, key: string) => (key in values ? values[key as PromptPlaceholder] : all));
   }
@@ -1235,6 +1263,26 @@ function validateDir(dir: string): string {
   return resolved;
 }
 
+/**
+ * A task folder: absolute and inside the orchestrator's folder, links included. It must exist when
+ * `mustExist` (an expert starts in it); a plan only names it, and the orchestrator creates it later.
+ * Returns the real path of an existing folder.
+ */
+function checkTaskFolder(orchestratorCwd: string, folder: string, mustExist: boolean): string {
+  if (!folder || !path.isAbsolute(folder)) throw new Error(`task_folder must be an absolute path: "${folder}"`);
+  const resolved = path.resolve(folder);
+  const exists = existsSync(resolved);
+  if (exists && !statSync(resolved).isDirectory()) throw new Error(`task_folder is not a folder: ${resolved}`);
+  if (!exists && mustExist) {
+    throw new Error(`task_folder does not exist: ${resolved}. Create it first (write the prompt file there), then start the expert.`);
+  }
+  const real = exists ? realpathSync(resolved) : resolved;
+  if (!isInside(realpathSync(orchestratorCwd), real)) {
+    throw new Error(`task_folder must be inside your folder (${orchestratorCwd}): ${resolved}`);
+  }
+  return real;
+}
+
 function slug(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24);
 }
@@ -1250,6 +1298,8 @@ export const PROMPT_PLACEHOLDERS = {
   cwd: "The agent's folder (absolute)",
   orchestratorName: "The name of the agent's chat (empty for a chat)",
   orchestratorCwd: "The folder of the agent's chat (empty for a chat): where task files usually go",
+  taskFolder:
+    "The folder of the expert's task: the one place besides its own folder where it reads prompts and writes findings. The chat's folder when the task has no folder of its own (empty for a chat)",
 } as const;
 
 export type PromptPlaceholder = keyof typeof PROMPT_PLACEHOLDERS;

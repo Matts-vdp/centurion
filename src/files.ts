@@ -82,7 +82,7 @@ export async function resolveInside(root: string, rel: string, mustExist = true)
   return full;
 }
 
-function isInside(root: string, p: string): boolean {
+export function isInside(root: string, p: string): boolean {
   const a = process.platform === 'win32' ? root.toLowerCase() : root;
   const b = process.platform === 'win32' ? p.toLowerCase() : p;
   return b === a || b.startsWith(a.endsWith(path.sep) ? a : a + path.sep);
