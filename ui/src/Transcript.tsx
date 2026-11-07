@@ -1,4 +1,5 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import type { Element as HastElement } from 'hast';
 import ReactMarkdown from 'react-markdown';
 import { fileLinks } from './fileStore';
 import rehypeHighlight from 'rehype-highlight';
@@ -24,13 +25,16 @@ import {
   ThinkIcon,
   TodoIcon,
   ToolIcon,
+  VisualIcon,
   WebIcon,
   WriteIcon,
 } from './icons';
 import { DelegationView } from './Delegation';
 import { AgentMark } from './Mark';
+import { MermaidBlock } from './Mermaid';
 import { PlanView } from './Plan';
 import { QuestionSetView } from './Questions';
+import { VisualView } from './Visual';
 import { clock, duration, money } from './status';
 import { composerFill, pendingPermissions, permissionFor, store, useManager, viewPrefs } from './store';
 import { displayName, shortPath, summarize } from './tools';
@@ -173,6 +177,8 @@ function BlockView({ block, ctx, after }: { block: RenderBlock; ctx: Ctx; after?
       return <QuestionSetView setId={block.setId} orchestrator={ctx.agent} agents={ctx.agents} now={ctx.now} onSelect={ctx.onSelect} run={ctx.run} />;
     case 'subagent':
       return <SubagentView block={block} ctx={ctx} />;
+    case 'visual':
+      return <VisualView title={block.title} markup={block.markup} agent={ctx.agent} agents={ctx.agents} onSelect={ctx.onSelect} />;
     case 'delegation':
       return (
         <DelegationView
@@ -348,7 +354,14 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
       rehypePlugins={[[rehypeHighlight, { detect: false }]]}
       components={{
         a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer" />,
-        pre: ({ node: _node, children }) => <CodeBlock>{children}</CodeBlock>,
+        pre: ({ node, children }) => {
+          const mermaid = mermaidSource(node);
+          return mermaid !== null ? (
+            <MermaidBlock code={mermaid} fallback={<CodeBlock>{children}</CodeBlock>} />
+          ) : (
+            <CodeBlock>{children}</CodeBlock>
+          );
+        },
         table: ({ node: _node, ...props }) => (
           <div className="table-wrap">
             <table {...props} />
@@ -360,6 +373,17 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
     </ReactMarkdown>
   );
 });
+
+/** The source of a ```mermaid block, from the `pre` element's `code` child; null for any other block. */
+function mermaidSource(pre: HastElement | undefined): string | null {
+  const code = pre?.children[0];
+  if (!code || code.type !== 'element' || code.tagName !== 'code') return null;
+  const cls = code.properties.className;
+  if (!Array.isArray(cls) || !cls.includes('language-mermaid')) return null;
+  const text = (n: HastElement['children'][number]): string =>
+    n.type === 'text' ? n.value : n.type === 'element' ? n.children.map(text).join('') : '';
+  return code.children.map(text).join('');
+}
 
 function CodeBlock({ children }: { children: ReactNode }) {
   const pre = useRef<HTMLPreElement>(null);
@@ -661,6 +685,12 @@ function stepView(step: Step, agents: Map<string, AgentRecord>): StepView {
     case 'Task':
     case 'Agent':
       return { icon: <BotIcon size={14} />, label: 'Subagent', detail: firstLine(i.description, 80) };
+    case 'show_visual':
+      return {
+        icon: <VisualIcon size={14} />,
+        label: step.result === undefined ? 'Drawing a visual' : step.isError ? 'Visual not shown' : 'Showed a visual',
+        detail: firstLine(i.title, 80),
+      };
     case 'TodoWrite':
       return { icon: <TodoIcon size={14} />, label: 'Updated the to-do list', meta: Array.isArray(i.todos) ? `${i.todos.length} items` : undefined };
     default:

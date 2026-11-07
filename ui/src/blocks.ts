@@ -16,6 +16,8 @@ export type RenderBlock =
   | Delegation
   | { kind: 'plan'; key: string; planId: string; version: number }
   | { kind: 'questions'; key: string; setId: string }
+  /** A show_visual call the tool accepted: drawn in place of its step. */
+  | { kind: 'visual'; key: string; title?: string; markup: string }
   /** An Agent / Task call: a subagent gets its own line instead of hiding in a work log. */
   | SubagentBlock;
 
@@ -97,6 +99,12 @@ export function toBlocks(items: Item[], replies: Reply[], running: boolean): Ren
             blocks.push({ kind: 'questions', key: `questions-${item.id}`, setId: parsed.questionSetId });
             continue;
           }
+        }
+        if (name === 'show_visual' && item.result !== undefined && !item.isError && typeof item.input.markup === 'string') {
+          flush(false);
+          const title = typeof item.input.title === 'string' && item.input.title.trim() ? item.input.title.trim() : undefined;
+          blocks.push({ kind: 'visual', key: `visual-${item.id}`, title, markup: item.input.markup });
+          continue;
         }
         if (name === 'get_expert_output' && typeof item.input.expert_id === 'string' && !item.isError) {
           const d = latest.get(item.input.expert_id);

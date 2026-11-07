@@ -32,6 +32,7 @@ export {
   Search as SearchIcon,
   Square as StopIcon,
   Undo2 as RewindIcon,
+  Shapes as VisualIcon,
   SquareTerminal as TerminalIcon,
   Wrench as ToolIcon,
   X as CloseIcon,

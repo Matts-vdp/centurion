@@ -34,6 +34,7 @@ import {
 } from './decisions.js';
 import { KeepWarm, active as keepWarmActive } from './keepwarm.js';
 import { StateStore, type State } from './state.js';
+import { createDisplayTools } from './display.js';
 import { createManagerTools } from './tools.js';
 import {
   EFFORT_LEVELS,
@@ -1087,9 +1088,12 @@ export class Manager extends EventEmitter<ManagerEvents> {
     // Idle compaction would rewrite the conversation that keep-warm keeps cached (applies from the next process).
     if (keepWarmActive(rec)) options.settings = { idleCompaction: false };
 
+    // Every agent can show visuals (show_visual); chats also get the manager tools.
+    options.mcpServers = { display: createDisplayTools(this, rec.id) };
+    options.allowedTools = ['mcp__display'];
     if (rec.kind === 'orchestrator') {
-      options.mcpServers = { manager: createManagerTools(this, rec.id) };
-      options.allowedTools = ['mcp__manager'];
+      options.mcpServers.manager = createManagerTools(this, rec.id);
+      options.allowedTools.push('mcp__manager');
     } else if (rec.parentId) {
       // Experts read prompt files from and write findings to the orchestrator's folder.
       const parent = this.get(rec.parentId);

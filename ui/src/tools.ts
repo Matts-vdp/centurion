@@ -1,10 +1,12 @@
 import type { AgentRecord } from './api';
 import type { ToolItem } from './timeline';
 
-const MANAGER_PREFIX = 'mcp__manager__';
+// The manager's own MCP servers: their tools show by their bare names.
+const OWN_PREFIXES = ['mcp__manager__', 'mcp__display__'];
 
 export function displayName(name: string): string {
-  if (name.startsWith(MANAGER_PREFIX)) return name.slice(MANAGER_PREFIX.length);
+  const own = OWN_PREFIXES.find((p) => name.startsWith(p));
+  if (own) return name.slice(own.length);
   const mcp = /^mcp__([^_]+(?:_[^_]+)*)__(.+)$/.exec(name);
   return mcp ? `${mcp[2]} (${mcp[1]})` : name;
 }

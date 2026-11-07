@@ -184,10 +184,10 @@ type VisualNode =
 
 | # | Step | Status |
 |---|---|---|
-| 1 | `src/visual.ts`: markup parser, limits, icon list and error messages, checked with a script over good and broken examples | todo |
-| 2 | `display` MCP server with `show_visual` for every agent; README (tools, config) | todo |
-| 3 | `Visual.tsx` and the `visual` block in the transcript; links; `ui-design.md` | todo |
-| 4 | Mermaid blocks in `Markdown` | todo |
+| 1 | `src/visual.ts`: markup parser, limits, icon list and error messages, checked with a script over good and broken examples | done |
+| 2 | `display` MCP server with `show_visual` for every agent (`src/display.ts`); README | done |
+| 3 | `Visual.tsx` and the `visual` block in the transcript; links; `ui-design.md` | done |
+| 4 | Mermaid blocks in `Markdown` (`Mermaid.tsx`) | done |
 | 5 | Try it with real agents, tune the tool description and the limits | todo |
 
 **Later:** clicking a card to ask the agent about it (the interactive step), see question 1 below. An SVG/HTML escape hatch in a sandboxed iframe, built on the MCP Apps ideas in section 2, only if the three elements prove too limited.
