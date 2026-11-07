@@ -20,7 +20,7 @@ export const configSchema = z.strictObject({
     ),
   stateFile: z
     .string()
-    .default('.agent-manager/state.json')
+    .default('.centurion/state.json')
     .describe('JSON state file, relative to the config file. Keep one per environment: session IDs only exist on the machine that created them.'),
   orchestratorFolder: z
     .string()
@@ -96,8 +96,8 @@ function typeName(prop: JsonType): string {
 const projectRoot = path.resolve(import.meta.dirname, '..');
 
 /**
- * Loads config from (in order): --config <path>, AGENT_MANAGER_CONFIG, or
- * agent-manager.config.json in the project root. Missing file means defaults.
+ * Loads config from (in order): --config <path>, CENTURION_CONFIG, or
+ * centurion.config.json in the project root. Missing file means defaults.
  * Relative paths in the file resolve against the file's own folder.
  */
 export function loadConfig(argv = process.argv.slice(2)): Config {
@@ -105,15 +105,15 @@ export function loadConfig(argv = process.argv.slice(2)): Config {
   const file = path.resolve(
     flag >= 0 && argv[flag + 1]
       ? argv[flag + 1]
-      : process.env.AGENT_MANAGER_CONFIG ?? path.join(projectRoot, 'agent-manager.config.json'),
+      : process.env.CENTURION_CONFIG ?? path.join(projectRoot, 'centurion.config.json'),
   );
   const exists = existsSync(file);
   const merged = parseFile(file, exists ? readFileSync(file, 'utf8') : '{}');
   const base = exists ? path.dirname(file) : projectRoot;
 
-  if (process.env.AGENT_MANAGER_PORT) merged.port = Number(process.env.AGENT_MANAGER_PORT);
-  if (process.env.AGENT_MANAGER_HOST) merged.host = process.env.AGENT_MANAGER_HOST;
-  if (process.env.AGENT_MANAGER_TOKEN !== undefined) merged.token = process.env.AGENT_MANAGER_TOKEN;
+  if (process.env.CENTURION_PORT) merged.port = Number(process.env.CENTURION_PORT);
+  if (process.env.CENTURION_HOST) merged.host = process.env.CENTURION_HOST;
+  if (process.env.CENTURION_TOKEN !== undefined) merged.token = process.env.CENTURION_TOKEN;
 
   const orchestratorFolder = path.resolve(base, merged.orchestratorFolder ?? process.cwd());
   if (!existsSync(orchestratorFolder) || !statSync(orchestratorFolder).isDirectory()) {

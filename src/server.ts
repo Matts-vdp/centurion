@@ -112,7 +112,7 @@ export function startServer(manager: Manager, config: Config): http.Server {
   server.listen(config.port, config.host, () => {
     const shown = config.host === '0.0.0.0' ? 'localhost' : config.host;
     const token = config.token ? `?token=${encodeURIComponent(config.token)}` : '';
-    console.log(`Agent manager listening on http://${shown}:${config.port}/${token}`);
+    console.log(`Centurion listening on http://${shown}:${config.port}/${token}`);
     console.log(`Permission mode: ${config.permissionMode}. State: ${config.stateFile}`);
     console.log(`Orchestrators run in: ${config.orchestratorFolder}`);
   });
@@ -575,7 +575,7 @@ const CONTENT_TYPES: Record<string, string> = {
   '.woff2': 'font/woff2',
 };
 
-const NOT_BUILT = `<!doctype html><meta charset="utf-8"><title>Agent manager</title>
+const NOT_BUILT = `<!doctype html><meta charset="utf-8"><title>Centurion</title>
 <body style="font:15px system-ui;padding:40px">
 <h1 style="font-size:18px">The UI is not built yet</h1>
 <p>Run <code>npm run build</code> and reload this page, or use <code>npm run dev</code> while working on the UI.</p>`;

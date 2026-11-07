@@ -47,7 +47,7 @@ export function createManagerTools(manager: Manager, orchestratorId: string): Mc
     };
 
   return createSdkMcpServer({
-    name: 'manager',
+    name: 'centurion',
     version: '0.1.0',
     alwaysLoad: true,
     tools: [

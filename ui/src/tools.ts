@@ -2,7 +2,7 @@ import type { AgentRecord } from './api';
 import type { ToolItem } from './timeline';
 
 // The manager's own MCP servers: their tools show by their bare names.
-const OWN_PREFIXES = ['mcp__manager__', 'mcp__display__'];
+const OWN_PREFIXES = ['mcp__centurion__', 'mcp__display__'];
 
 export function displayName(name: string): string {
   const own = OWN_PREFIXES.find((p) => name.startsWith(p));

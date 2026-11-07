@@ -498,7 +498,7 @@ function Queue({ agent, run }: { agent: AgentRecord; run: (a: () => Promise<unkn
 
 function readDraft(id: string): string {
   try {
-    return sessionStorage.getItem(`agent-manager-draft:${id}`) ?? '';
+    return sessionStorage.getItem(`centurion-draft:${id}`) ?? '';
   } catch {
     return '';
   }
@@ -506,8 +506,8 @@ function readDraft(id: string): string {
 
 function writeDraft(id: string, text: string): void {
   try {
-    if (text) sessionStorage.setItem(`agent-manager-draft:${id}`, text);
-    else sessionStorage.removeItem(`agent-manager-draft:${id}`);
+    if (text) sessionStorage.setItem(`centurion-draft:${id}`, text);
+    else sessionStorage.removeItem(`centurion-draft:${id}`);
   } catch {
     // drafts are a convenience only
   }

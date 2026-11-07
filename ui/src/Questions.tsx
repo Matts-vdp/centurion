@@ -393,7 +393,7 @@ function RoutedStatus({
 // Drafts survive switching agents and reloads within the tab.
 function readDrafts(setId: string): { drafts: Record<string, Draft>; corrections: Record<string, string> } {
   try {
-    const raw = sessionStorage.getItem(`agent-manager-answers:${setId}`);
+    const raw = sessionStorage.getItem(`centurion-answers:${setId}`);
     if (raw) return JSON.parse(raw);
   } catch {
     // ignore
@@ -404,8 +404,8 @@ function readDrafts(setId: string): { drafts: Record<string, Draft>; corrections
 function writeDrafts(setId: string, drafts: Record<string, Draft>, corrections: Record<string, string>): void {
   try {
     if (Object.keys(drafts).length || Object.keys(corrections).length) {
-      sessionStorage.setItem(`agent-manager-answers:${setId}`, JSON.stringify({ drafts, corrections }));
-    } else sessionStorage.removeItem(`agent-manager-answers:${setId}`);
+      sessionStorage.setItem(`centurion-answers:${setId}`, JSON.stringify({ drafts, corrections }));
+    } else sessionStorage.removeItem(`centurion-answers:${setId}`);
   } catch {
     // drafts are a convenience only
   }

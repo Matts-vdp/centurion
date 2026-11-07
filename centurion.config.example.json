@@ -2,7 +2,7 @@
   "host": "127.0.0.1",
   "port": 4317,
   "token": "change-me",
-  "stateFile": ".agent-manager/state.json",
+  "stateFile": ".centurion/state.json",
   "orchestratorFolder": null,
   "permissionMode": "auto",
   "model": null,

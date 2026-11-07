@@ -1,7 +1,7 @@
 node_modules/
 dist/
 # Per-environment config and state (session IDs only exist on the machine that made them)
-agent-manager.config.json
-.agent-manager/
+centurion.config.json
+.centurion/
 # Handoff files orchestrators and experts write while working
 handoffs/

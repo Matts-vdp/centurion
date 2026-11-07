@@ -1,6 +1,6 @@
 # UI design: "quiet instrument"
 
-The design language and the main UI patterns of the agent manager. All UI work follows this guide. It replaces the v1 look (a VS Code clone with default styling: blue selection, uppercase labels, raw paths, tinted message boxes with a coloured left border). Where a pattern needs data the backend lacks, the section says so.
+The design language and the main UI patterns of Centurion, the agent manager. All UI work follows this guide. It replaces the v1 look (a VS Code clone with default styling: blue selection, uppercase labels, raw paths, tinted message boxes with a coloured left border). Where a pattern needs data the backend lacks, the section says so.
 
 How to use it:
 - **The rules here are the source of truth; the code holds the values.** Once a step is implemented, `ui/src/styles.css` is where colours, sizes and radii live. This guide keeps the rules (what each surface and colour is for, what to avoid) and should not repeat values that already exist in the CSS.
@@ -28,7 +28,7 @@ What it deliberately avoids: coloured left borders, a tinted box per role, cards
 
 ```
 ┌──────────────────────┬──────────────────────────────────────────────────────┐
-│ Agent manager      + │ [TS] test2 / [RS] restaurant-summary   restaurant  $0.009  ◔ 3%  ⋯ │
+│ Centurion          + │ [TS] test2 / [RS] restaurant-summary   restaurant  $0.009  ◔ 3%  ⋯ │
 │ ⌕ Search or jump  ^K │ Idle · replied 4 min ago                                │
 │                      │──────────────────────────────────────────────────────│
 │ Needs you            │           ┌ You · 11:20 ───────────────────┐          │

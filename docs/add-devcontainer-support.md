@@ -31,7 +31,7 @@ Check that no stray `ANTHROPIC_API_KEY` is set. If one is, it takes precedence a
 
 ## 4. A config for the container
 
-Add `agent-manager.config.devcontainer.example.json`, copied to `agent-manager.config.json` on create, with:
+Add `centurion.config.devcontainer.example.json`, copied to `centurion.config.json` on create, with:
 
 - `"permissionMode": "bypassPermissions"`, since the container is the sandbox.
 - **A separate `stateFile`** (e.g. `state.devcontainer.json`). Session IDs only exist in the `~/.claude` that created them, so state from Windows can't be resumed in the container, or the other way round.

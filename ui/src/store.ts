@@ -259,9 +259,9 @@ export function recentFolders(agents: Map<string, AgentRecord>): string[] {
 }
 
 /** agentId → the lastActivityAt the user has seen. */
-export const lastSeen = new PersistedMap<string>('agent-manager-last-seen');
+export const lastSeen = new PersistedMap<string>('centurion-last-seen');
 /** orchestratorId → collapsed in the tree; `archived:<id>` → archived group expanded. */
-export const treeState = new PersistedMap<boolean>('agent-manager-tree');
+export const treeState = new PersistedMap<boolean>('centurion-tree');
 
 /** Open the New expert form under a chat, with the chat expanded in the tree. */
 export function openNewExpert(chatId: string): void {
@@ -274,7 +274,7 @@ export function isUnread(a: AgentRecord, seen: Record<string, string>): boolean 
   return a.status !== 'running' && Date.parse(a.lastActivityAt) > Date.parse(since);
 }
 /** View preferences: `verbose` (Ctrl+O, every work log open). */
-export const viewPrefs = new PersistedMap<boolean>('agent-manager-view');
+export const viewPrefs = new PersistedMap<boolean>('centurion-view');
 
 /** An agent's permission requests that wait for the user, oldest first. */
 export function pendingPermissions(agentId: string, state: Pick<State, 'permissions'> = store.getState()): PermissionRequest[] {

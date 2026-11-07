@@ -1,5 +1,5 @@
 {
-  "name": "agent-manager",
+  "name": "centurion",
   "version": "0.1.0",
   "description": "Local manager for orchestrator and expert Claude agents across repositories",
   "private": true,

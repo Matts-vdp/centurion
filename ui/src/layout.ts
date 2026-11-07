@@ -10,7 +10,7 @@ export type Layout = {
   ratio: number;
 };
 
-const KEY = 'agent-manager-layout';
+const KEY = 'centurion-layout';
 export const MIN_RATIO = 0.25;
 export const MAX_RATIO = 0.75;
 

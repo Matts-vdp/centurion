@@ -306,7 +306,7 @@ function Welcome({
         </button>
       )}
       {state === 'connecting' ? (
-        <p>Connecting to the agent manager…</p>
+        <p>Connecting to Centurion…</p>
       ) : state === 'gone' ? (
         <p>
           That agent no longer exists. Pick one from the sidebar.
@@ -321,7 +321,7 @@ function Welcome({
         </p>
       ) : (
         <>
-          <h1>Agent manager</h1>
+          <h1>Centurion</h1>
           <p>Pick an agent in the sidebar, or start a new chat with the + button. Drag a second one onto this area to see them side by side.</p>
         </>
       )}

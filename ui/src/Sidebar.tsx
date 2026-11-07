@@ -139,7 +139,7 @@ export function Sidebar({ agents, selected, open: openIds, onSelect, onOpenInSpl
     <div className="sidebar-inner">
       <div className="sidebar-head">
         <LogoIcon />
-        <span className="app-name">Agent manager</span>
+        <span className="app-name">Centurion</span>
         <button className="icon-button" title="New chat" aria-label="New chat" onClick={() => setCreating(true)}>
           <PlusIcon size={16} />
         </button>

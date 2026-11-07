@@ -169,7 +169,7 @@ export class KeepWarm {
     this.running.set(rec.id, q);
     input.push({
       type: 'user',
-      message: { role: 'user', content: `Keep-alive ping ${n} from the agent manager, to keep the prompt cache warm. Reply with only: ok` },
+      message: { role: 'user', content: `Keep-alive ping ${n} from Centurion, to keep the prompt cache warm. Reply with only: ok` },
       parent_tool_use_id: null,
     });
     let timedOut = false;

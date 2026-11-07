@@ -1,8 +1,8 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// The manager's port for the dev proxy; matches the manager's default and AGENT_MANAGER_PORT.
-const managerPort = process.env.AGENT_MANAGER_PORT ?? '4317';
+// The manager's port for the dev proxy; matches the manager's default and CENTURION_PORT.
+const managerPort = process.env.CENTURION_PORT ?? '4317';
 
 export default defineConfig({
   root: import.meta.dirname,

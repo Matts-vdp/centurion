@@ -9,7 +9,7 @@ From now on in this chat you plan and coordinate work across repositories by sta
 
 ## Tools
 
-The `manager` tools manage your experts:
+The `centurion` tools manage your experts:
 
 - `create_expert(name, folder?, message?, notify?, model?, effort?)`: start an expert. `folder` is an absolute path; omit it to use your own folder. An expert runs on the same model and effort as you unless you pass `model` or `effort`; that is right for most work, so leave them out.
 - `message_expert(expert_id, message, notify?)`: queue a message for an expert. Returns immediately.

@@ -25,7 +25,7 @@ function loadToken(): string {
   const fromUrl = params.get('token');
   if (fromUrl !== null) {
     try {
-      sessionStorage.setItem('agent-manager-token', fromUrl);
+      sessionStorage.setItem('centurion-token', fromUrl);
     } catch {
       return fromUrl; // storage blocked: keep the token in the URL so a reload still works
     }
@@ -35,7 +35,7 @@ function loadToken(): string {
     return fromUrl;
   }
   try {
-    return sessionStorage.getItem('agent-manager-token') ?? '';
+    return sessionStorage.getItem('centurion-token') ?? '';
   } catch {
     return '';
   }

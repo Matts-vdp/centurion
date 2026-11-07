@@ -117,7 +117,7 @@ export type PanelState = {
   viewWidth: number | null;
 };
 
-const PANEL_KEY = 'agent-manager-files-panel';
+const PANEL_KEY = 'centurion-files-panel';
 export const PANEL_DEFAULT: PanelState = { open: false, width: 300, viewWidth: null };
 
 function readPanels(): PanelState[] {
@@ -165,7 +165,7 @@ export function usePanel(pane: number): PanelState {
 
 /** Expanded folders per root folder, so a tree opens the way you left it. */
 export const expanded = {
-  key: (rootPath: string) => `agent-manager-files-open:${norm(rootPath)}`,
+  key: (rootPath: string) => `centurion-files-open:${norm(rootPath)}`,
   read(rootPath: string): Set<string> {
     try {
       const raw = JSON.parse(localStorage.getItem(this.key(rootPath)) ?? '[]');

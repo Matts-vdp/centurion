@@ -1,4 +1,4 @@
-# Agent manager
+# Centurion
 
 A local manager for Claude agents. You start **chats** in a central project (the managing folder). A chat always has a small set of tools to start **expert** agents in other folders, and it gets notified when the experts finish. Run `/orchestrate` in a chat to make it an **orchestrator** that plans work as rounds of parallel tracks. A VS Code-style web UI shows every agent in a tree, its live transcript with tool calls collapsed, and a box to message any agent directly.
 
@@ -6,7 +6,7 @@ A local manager for Claude agents. You start **chats** in a central project (the
 
 ```bash
 npm install
-cp agent-manager.config.example.json agent-manager.config.json   # then set a token
+cp centurion.config.example.json centurion.config.json   # then set a token
 npm run build
 npm start
 ```
@@ -21,7 +21,7 @@ Auth comes from your normal Claude Code login (`claude` → `/login`), a `CLAUDE
 |---|---|
 | `npm start` | Runs the manager and serves the built UI from `dist/ui` at `/`. |
 | `npm run build` | Builds the UI (`ui/`, Vite + React) into `dist/ui`. |
-| `npm run dev` | Runs the manager (restarting on changes) and the Vite dev server together. Open `http://localhost:5173/?token=...`; `/api` is proxied to the manager's port (`AGENT_MANAGER_PORT`, default 4317). Use `AGENT_MANAGER_CONFIG` to pick a config file. |
+| `npm run dev` | Runs the manager (restarting on changes) and the Vite dev server together. Open `http://localhost:5173/?token=...`; `/api` is proxied to the manager's port (`CENTURION_PORT`, default 4317). Use `CENTURION_CONFIG` to pick a config file. |
 | `npm run typecheck` | Type-checks the backend and the UI. |
 
 ## The UI
@@ -36,7 +36,7 @@ Auth comes from your normal Claude Code login (`claude` → `/login`), a `CLAUDE
 - **Composer:** Enter sends, Shift+Enter adds a line. While the agent runs, a status line shows what it is doing, messages queue (listed in the composer, each removable), and **Esc** or the stop button interrupts the current turn and keeps the queue.
 - Light and dark themes follow the system setting. Unread state and collapsed tree nodes are kept per browser.
 
-## Config (`agent-manager.config.json`)
+## Config (`centurion.config.json`)
 
 | Field | Meaning |
 |---|---|
@@ -51,14 +51,14 @@ Auth comes from your normal Claude Code login (`claude` → `/login`), a `CLAUDE
 
 The file is checked at startup: an unknown field or a wrong type stops the manager with a message naming the field and the file.
 
-Use `--config <path>` or `AGENT_MANAGER_CONFIG` to point at another config file. `AGENT_MANAGER_PORT`, `AGENT_MANAGER_HOST` and `AGENT_MANAGER_TOKEN` override the file.
+Use `--config <path>` or `CENTURION_CONFIG` to point at another config file. `CENTURION_PORT`, `CENTURION_HOST` and `CENTURION_TOKEN` override the file.
 
 ## How it works
 
 - **One agent = one Claude session** (Agent SDK `query()` with streaming input) in its own folder. Each agent has a **queue**, and the manager delivers one message per turn.
-- **Chats and orchestrators:** every top-level agent is a chat in `orchestratorFolder` with the `manager` tools; nothing about orchestration is added to its prompt. The `orchestrate` skill (`.claude/skills/orchestrate/SKILL.md` in the managing folder) holds the workflow: rounds of tracks, handoff files, triaging questions. Edit it to change how orchestrators work. Experts get `prompts/expert.md` appended to their system prompt.
+- **Chats and orchestrators:** every top-level agent is a chat in `orchestratorFolder` with the `centurion` tools; nothing about orchestration is added to its prompt. The `orchestrate` skill (`.claude/skills/orchestrate/SKILL.md` in the managing folder) holds the workflow: rounds of tracks, handoff files, triaging questions. Edit it to change how orchestrators work. Experts get `prompts/expert.md` appended to their system prompt.
 - **Settings and skills:** every agent loads the user, project and local settings of its own folder (`settingSources: ['user', 'project', 'local']`, `skills: 'all'`): your `~/.claude`, plus the folder's CLAUDE.md, `.claude/skills` and settings. Chats get the managing folder's, experts their repo's.
-- **Manager tools** (MCP server `manager`, top-level chats only):
+- **Centurion tools** (MCP server `centurion`, top-level chats only):
   `create_expert(name, folder?, message?, notify?, track_id?, model?, effort?)`, `message_expert(expert_id, message, notify?, track_id?, question_id?)`, `get_expert_output(expert_id, last_n?)`, `list_experts()`, `stop_expert(expert_id)`, `propose_tracks(round, title, tracks, later?)`, `ask_user(title, questions, resolved?, routed?)`.
   `folder` defaults to the orchestrator's own folder. `notify` defaults to true. `model` and `effort` default to the track's (with `track_id`), else to the orchestrator's (see below). `list_experts` includes archived experts with `archived: true`.
 - **Visuals** (MCP server `display`, every agent): `show_visual(title?, markup)` shows a small visual in the transcript: boxes (`Row`, `Column`, `Card` with `title`, `icon`, `tone`, `badge`, `meta`, `value`, `change`, `progress`, `repo`, `link`, `arrow`, and the `arrows` flag), lines (`Tree` and `Timeline` with `Item`), collapsed details (`More`), code excerpts (`Code` with `file`, `line`, `mark`, `lang`), `Bars` and `Image`. The markup is parsed by `src/visual.ts` (limits, the icon list); errors, unknown experts in `expert:` links and missing files in `file:` links, `Code` and `Image` go back to the agent, which tries again, and a `Code` excerpt that doesn't match its file gets a warning. `file:path:42` links open the Files panel at that line. The tool description is the whole guide, so no prompt mentions it. The UI draws the markup with its own components. Bigger diagrams go in ` ```mermaid ` blocks in replies, which the UI renders too. See `docs/visuals-research.md`.

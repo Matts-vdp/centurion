@@ -1135,8 +1135,8 @@ export class Manager extends EventEmitter<ManagerEvents> {
     options.mcpServers = { display: createDisplayTools(this, rec.id) };
     options.allowedTools = ['mcp__display'];
     if (rec.kind === 'orchestrator') {
-      options.mcpServers.manager = createManagerTools(this, rec.id);
-      options.allowedTools.push('mcp__manager');
+      options.mcpServers.centurion = createManagerTools(this, rec.id);
+      options.allowedTools.push('mcp__centurion');
     } else if (rec.parentId) {
       // Experts read prompt files from and write findings to the orchestrator's folder.
       const parent = this.get(rec.parentId);
