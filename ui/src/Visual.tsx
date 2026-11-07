@@ -341,7 +341,9 @@ function CardView({ card, inCard, ctx }: { card: VisualCard; inCard: boolean; ct
     </span>
   ) : null;
   const title = <LinkedTitle card={card} ctx={ctx} />;
-  const cls = `${inCard ? 'v-item' : 'v-card'}${card.tone ? ` tone-${card.tone}` : ''}${card.value !== undefined ? ' value' : ''}${icon ? ' has-icon' : ''}`;
+  // Inside a card, a one-line item stays a plain line; one with a body, children or a number is a sub-card on a tile.
+  const tile = inCard && (card.text !== undefined || card.children.length > 0 || card.value !== undefined);
+  const cls = `${inCard ? 'v-item' : 'v-card'}${tile ? ' v-tile' : ''}${card.tone ? ` tone-${card.tone}` : ''}${card.value !== undefined ? ' value' : ''}${icon ? ' has-icon' : ''}`;
   return (
     <div className={cls}>
       {card.value !== undefined ? (

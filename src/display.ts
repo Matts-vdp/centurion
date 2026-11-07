@@ -13,7 +13,7 @@ const DESCRIPTION = `Show the user a small visual in the chat, drawn in the app'
 Markup: three elements, JSX-like but only string attributes and flags, never code.
 - <Column> children top to bottom. <Row> children side by side (at most ${L.rowChildren}; they stack on narrow screens).
   Both take the flag arrows (an arrow from each child to the next). A Row directly inside an arrowed Column is a branch: the arrow fans out to each of its children.
-- <Card title="…"> a box. Optional: icon, tone, badge="short tag", value="42" (a key number; the title becomes its label), repo="repo name", link, arrow. Text inside the tag is its body (plain text, \`code\` allowed, under ${L.text} characters). Cards inside a card become its rows (no box of their own): use that for lists, findings and grouped items.
+- <Card title="…"> a box. Optional: icon, tone, badge="short tag", value="42" (a key number; the title becomes its label), repo="repo name", link, arrow. Text inside the tag is its body (plain text, \`code\` allowed, under ${L.text} characters). Cards inside a card become its rows (a one-line card is a plain line, one with text a soft tile): use that for lists, findings and grouped items.
 - arrow="label" labels the arrow coming INTO that element from the previous sibling (so never on the first child), or on each child of a branch Row its own arrow. Keep labels under ${L.arrow} characters.
 - tone: ${VISUAL_TONES.join(', ')} (no tone means neutral). Use it only for meaning: ok = done/good, bad = failed/risk, warn = caution, running = in progress, accent = the recommended or new thing. Never pick colours yourself.
 - link: expert:<name> (one of your experts, or your chat), file:<path> (relative to your folder), or an https URL. The user can click it.

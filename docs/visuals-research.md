@@ -167,7 +167,7 @@ type VisualNode =
 
 - `blocks.ts` lifts a successful `show_visual` call out of the work log into a `visual` block, as it does for plans. Failed calls stay in the work log as ordinary failed steps.
 - `Visual.tsx` draws the tree with React and CSS flexbox, plus small SVG arrows with their labels.
-- **The look comes from depth, not from the agent.** A top-level card gets a hairline border. Cards inside a card draw as rows (icon, title, text) without a box. Value cards show a large number over a small label. Spacing and type sizes come from `styles.css`. Colour appears only through `tone` and `repo`.
+- **The look comes from depth, not from the agent.** A top-level card gets a hairline border. Cards inside a card draw as rows without a box when they are one line, and on a soft tile when they have a body, children or a number. Value cards show a large number over a small label. Spacing and type sizes come from `styles.css`. Colour appears only through `tone` and `repo`.
 - A visual is as wide as the transcript column. Rows stack below a set width, so the narrow layout and split view work.
 - A quiet title line with a "Source" toggle that shows the markup.
 - Links: `expert:` selects the agent, `file:` opens the Files panel through the existing link events in `fileStore.ts`, and URLs open a new tab.

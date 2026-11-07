@@ -2785,6 +2785,27 @@ button.crumb:hover {
   min-width: 0;
 }
 
+/* A nested card with content: a tile a step darker than the card, a step lighter again inside a tile. */
+.v-tile {
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--sunken) 55%, var(--raised));
+}
+
+.v-tile .v-tile {
+  background: var(--raised);
+}
+
+/* The tile already shows the nesting; children line up with a title that has no icon. */
+.v-tile:not(.has-icon) > .v-children {
+  padding-left: 0;
+}
+
+.v-tile.tone-accent {
+  box-shadow: inset 0 0 0 1px var(--accent-line);
+}
+
 .v-head {
   display: flex;
   align-items: center;
