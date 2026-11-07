@@ -66,7 +66,7 @@ npm run typecheck
 npm run check:docs    # fails when a route, config field or tool has no docs
 ```
 
-To release, set the version in `package.json` and push a tag `v<version>`. The release workflow builds the package and attaches `centurion.tgz` to the GitHub release. Design notes and plans are in [docs/](docs/) and [CLAUDE.md](CLAUDE.md).
+To release, run `npm run release -- patch` (or `minor`, `major`, or an exact version like `1.2.0`) on a clean `master` that is in sync with `origin`. It runs the typecheck and `check:docs`, bumps `package.json`, commits, tags `v<version>` and pushes; the release workflow then builds the package and attaches `centurion.tgz` to the GitHub release. If the push fails, the script prints how to finish or undo it. Design notes and plans are in [docs/](docs/) and [CLAUDE.md](CLAUDE.md).
 
 ## License
 

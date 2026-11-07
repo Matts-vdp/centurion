@@ -31,7 +31,10 @@
     "build:server": "tsc -p tsconfig.build.json",
     "prepare": "npm run build",
     "typecheck": "tsc --noEmit && tsc --noEmit -p ui",
-    "check:docs": "tsx src/check-docs.ts"
+    "check:docs": "tsx src/check-docs.ts",
+    "release": "npm version",
+    "preversion": "node scripts/release-check.mjs && npm run typecheck && npm run check:docs",
+    "postversion": "node scripts/release-push.mjs"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.318",
