@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import {
   Check as LucideCheck,
   X as LucideX,
@@ -92,19 +92,38 @@ import {
   TrendingUp as LucideTrendingUp,
   TrendingDown as LucideTrendingDown,
   Coins as LucideCoins,
+  CircleDot as LucideCircleDot,
+  CircleSlash as LucideCircleSlash,
+  History as LucideHistory,
+  SquareFunction as LucideSquareFunction,
+  GitCompare as LucideGitCompare,
+  FileJson as LucideFileJson,
+  FolderOpen as LucideFolderOpen,
+  Image as LucideImage,
+  Route as LucideRoute,
+  ListTree as LucideListTree,
   type LucideIcon,
 } from 'lucide-react';
 import type { AgentRecord } from './api';
-import { fileLinks, joinPath } from './fileStore';
-import { OpenIcon } from './icons';
+import { baseName, fileLinks, filesApi, joinPath, locate, type Root } from './fileStore';
+import { highlight, language, languageOf } from './highlight';
+import { Chevron, FileCodeIcon, OpenIcon } from './icons';
 import { nameHue } from './status';
 import {
   parseVisual,
+  splitFileLink,
+  type VisualBars,
   type VisualCard,
+  type VisualCode,
   type VisualContainer,
   type VisualIcon,
+  type VisualImage,
+  type VisualItem,
+  type VisualMore,
   type VisualNode,
+  type VisualTimeline,
   type VisualTone,
+  type VisualTree,
 } from '../../src/visual';
 
 /** The icons visual markup may name (`VISUAL_ICONS` in src/visual.ts); the type keeps the two lists equal. */
@@ -201,6 +220,16 @@ const ICONS: Record<VisualIcon, LucideIcon> = {
   'trending-up': LucideTrendingUp,
   'trending-down': LucideTrendingDown,
   coins: LucideCoins,
+  'circle-dot': LucideCircleDot,
+  'circle-slash': LucideCircleSlash,
+  'history': LucideHistory,
+  'square-function': LucideSquareFunction,
+  'git-compare': LucideGitCompare,
+  'file-json': LucideFileJson,
+  'folder-open': LucideFolderOpen,
+  'image': LucideImage,
+  'route': LucideRoute,
+  'list-tree': LucideListTree,
 };
 
 // ---------- the visual block ----------
@@ -221,8 +250,8 @@ const TONE_ICON: Partial<Record<VisualTone, VisualIcon>> = {
 
 /**
  * A show_visual call, drawn from its markup (docs/visuals-research.md). The look comes from the renderer:
- * cards that sit in a row or column get a hairline box, cards inside a card are rows without one, and
- * colour only comes from tone and repo.
+ * cards that sit in a row or column get a hairline box, cards inside a card are rows without one, trees and
+ * timelines are lines, and colour only comes from tone and repo.
  */
 export function VisualView({ title, markup, ...ctx }: { title?: string; markup: string } & Ctx) {
   const parsed = useMemo(() => parseVisual(markup), [markup]);
@@ -253,9 +282,24 @@ export function VisualView({ title, markup, ...ctx }: { title?: string; markup: 
 }
 
 function NodeView({ node, inCard, ctx }: { node: VisualNode; inCard: boolean; ctx: Ctx }) {
-  if (node.type === 'card') return <CardView card={node} inCard={inCard} ctx={ctx} />;
-  if (node.type === 'column') return <ColumnView column={node} inCard={inCard} ctx={ctx} />;
-  return <RowView row={node} inCard={inCard} ctx={ctx} />;
+  switch (node.type) {
+    case 'card':
+      return <CardView card={node} inCard={inCard} ctx={ctx} />;
+    case 'column':
+      return <ColumnView column={node} inCard={inCard} ctx={ctx} />;
+    case 'row':
+      return <RowView row={node} inCard={inCard} ctx={ctx} />;
+    case 'tree':
+      return <TreeView tree={node} inCard={inCard} ctx={ctx} />;
+    case 'timeline':
+      return <TimelineView timeline={node} ctx={ctx} />;
+    case 'bars':
+      return <BarsView bars={node} />;
+    case 'image':
+      return <ImageView image={node} ctx={ctx} />;
+    case 'code':
+      return <CodeView code={node} ctx={ctx} />;
+  }
 }
 
 function ColumnView({ column, inCard, ctx }: { column: VisualContainer; inCard: boolean; ctx: Ctx }) {
@@ -330,38 +374,65 @@ function Arrow({ dir, label }: { dir: 'down' | 'right'; label?: string }) {
   );
 }
 
+/** Click and Enter / Space on something that isn't a button. */
+function pressable(onPress: () => void, expanded?: boolean) {
+  return {
+    role: 'button',
+    tabIndex: 0,
+    'aria-expanded': expanded,
+    onClick: onPress,
+    onKeyDown: (e: ReactKeyboardEvent) => {
+      if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return;
+      e.preventDefault();
+      onPress();
+    },
+  };
+}
+
+function toneIcon(icon: VisualIcon | undefined, tone: VisualTone | undefined): LucideIcon | null {
+  const name = icon ?? (tone ? TONE_ICON[tone] : undefined);
+  return name ? ICONS[name] : null;
+}
+
 function CardView({ card, inCard, ctx }: { card: VisualCard; inCard: boolean; ctx: Ctx }) {
-  const iconName = card.icon ?? (card.tone ? TONE_ICON[card.tone] : undefined);
-  const Icon = iconName ? ICONS[iconName] : null;
+  const [open, setOpen] = useState(false);
+  const Icon = toneIcon(card.icon, card.tone);
   const icon = Icon ? <Icon className="v-icon" size={16} aria-hidden="true" /> : null;
-  const badge = card.badge ? <span className="v-badge">{card.badge}</span> : null;
-  const repo = card.repo ? (
-    <span className="v-repo repo-hue" data-hue={nameHue(card.repo)}>
-      {card.repo}
-    </span>
-  ) : null;
-  const title = <LinkedTitle card={card} ctx={ctx} />;
+  const meta = card.meta ?? card.progress?.label;
+  const head = (
+    <div className={`v-head${card.more ? ' expandable' : ''}`} {...(card.more ? pressable(() => setOpen((o) => !o), open) : {})}>
+      {icon}
+      <LinkedTitle card={card} ctx={ctx} />
+      {card.repo && (
+        <span className="v-repo repo-hue" data-hue={nameHue(card.repo)}>
+          {card.repo}
+        </span>
+      )}
+      {(meta || card.badge || card.more) && (
+        // Wraps as one piece under a long title, and stays on the right.
+        <span className="v-head-end">
+          {meta && <span className="v-meta">{meta}</span>}
+          {card.badge && <span className="v-badge">{card.badge}</span>}
+          {card.more && <Chevron open={open} className="v-chevron" size={14} />}
+        </span>
+      )}
+    </div>
+  );
   // Inside a card, a one-line item stays a plain line; one with a body, children or a number is a sub-card on a tile.
   const tile = inCard && (card.text !== undefined || card.children.length > 0 || card.value !== undefined);
   const cls = `${inCard ? 'v-item' : 'v-card'}${tile ? ' v-tile' : ''}${card.tone ? ` tone-${card.tone}` : ''}${card.value !== undefined ? ' value' : ''}${icon ? ' has-icon' : ''}`;
   return (
     <div className={cls}>
-      {card.value !== undefined ? (
-        <>
+      {card.value !== undefined && (
+        <div className="v-value-line">
           <div className="v-value">{card.value}</div>
-          <div className="v-head">
-            {icon}
-            {title}
-            {repo}
-            {badge}
-          </div>
-        </>
-      ) : (
-        <div className="v-head">
-          {icon}
-          {title}
-          {repo}
-          {badge}
+          {card.change && <span className="v-change">{card.change}</span>}
+        </div>
+      )}
+      {head}
+      {card.progress && (
+        <div className="v-progress" role="progressbar" aria-valuenow={Math.round(card.progress.fraction * 100)} aria-valuemin={0} aria-valuemax={100}>
+          <span style={{ '--p': `${card.progress.fraction * 100}%` } as CSSProperties} />
         </div>
       )}
       {card.text && (
@@ -376,44 +447,117 @@ function CardView({ card, inCard, ctx }: { card: VisualCard; inCard: boolean; ct
           ))}
         </div>
       )}
+      {card.more && open && <MoreView more={card.more} ctx={ctx} />}
     </div>
   );
 }
 
+/** Collapsed details, once opened: text and code. */
+function MoreView({ more, ctx }: { more: VisualMore; ctx: Ctx }) {
+  return (
+    <div className="v-more">
+      {more.parts.map((p, i) =>
+        p.type === 'text' ? (
+          <p key={i}>
+            <Inline text={p.text} />
+          </p>
+        ) : (
+          <CodeView key={i} code={p} ctx={ctx} />
+        ),
+      )}
+    </div>
+  );
+}
+
+// ---------- links ----------
+
+/** Where a link goes: a label for it, a tooltip, and how to follow it. */
+type Target = { label: string; title: string; href?: string; open?: () => void };
+
+function absolutePath(p: string, ctx: Ctx): string {
+  return /^([a-zA-Z]:[\\/]|[\\/])/.test(p) ? p : joinPath(ctx.agent.cwd, p);
+}
+
+function fileTarget(p: string, line: number | undefined, ctx: Ctx): Target {
+  const full = absolutePath(p, ctx);
+  const name = baseName(p.replace(/\\/g, '/'));
+  return {
+    label: line ? `${name}:${line}` : name,
+    title: `${full}${line ? `:${line}` : ''}\nOpen in the Files panel`,
+    open: () => fileLinks.open({ agentId: ctx.agent.id, path: full, mode: 'file', line }),
+  };
+}
+
+function linkTarget(link: string | undefined, ctx: Ctx): Target | null {
+  if (!link) return null;
+  if (/^https?:\/\//.test(link)) {
+    let host = link;
+    try {
+      host = new URL(link).hostname;
+    } catch {
+      // keep the whole link
+    }
+    return { label: host, title: link, href: link };
+  }
+  if (link.startsWith('expert:')) {
+    const target = findAgent(link.slice(7).trim(), ctx);
+    return target ? { label: target.name, title: `Open ${target.name}`, open: () => ctx.onSelect(target.id) } : null;
+  }
+  if (link.startsWith('file:')) {
+    const { path, line } = splitFileLink(link);
+    return fileTarget(path, line, ctx);
+  }
+  return null;
+}
+
+function follow(t: Target): void {
+  if (t.open) t.open();
+  else if (t.href) window.open(t.href, '_blank', 'noopener,noreferrer');
+}
+
 /** A card's title, as a link when it has one the app can follow. */
 function LinkedTitle({ card, ctx }: { card: VisualCard; ctx: Ctx }) {
-  const link = card.link ?? '';
   const label = <span className="v-title">{card.title}</span>;
-  if (/^https?:\/\//.test(link)) {
+  const t = linkTarget(card.link, ctx);
+  if (!t) return label;
+  if (t.href) {
     return (
-      <a className="v-link" href={link} target="_blank" rel="noreferrer" title={link}>
+      <a className="v-link" href={t.href} target="_blank" rel="noreferrer" title={t.title} onClick={(e) => e.stopPropagation()}>
         {label}
         <OpenIcon size={12} aria-hidden="true" />
       </a>
     );
   }
-  if (link.startsWith('expert:')) {
-    const target = findAgent(link.slice(7).trim(), ctx);
-    if (target) {
-      return (
-        <button className="v-link" title={`Open ${target.name}`} onClick={() => ctx.onSelect(target.id)}>
-          {label}
-          <OpenIcon size={12} aria-hidden="true" />
-        </button>
-      );
-    }
-  }
-  if (link.startsWith('file:')) {
-    const p = link.slice(5).trim();
-    const full = /^([a-zA-Z]:[\\/]|[\\/])/.test(p) ? p : joinPath(ctx.agent.cwd, p);
-    return (
-      <button className="v-link" title={`${full}\nOpen the file in the Files panel`} onClick={() => fileLinks.open({ agentId: ctx.agent.id, path: full, mode: 'file' })}>
-        {label}
-        <OpenIcon size={12} aria-hidden="true" />
-      </button>
-    );
-  }
-  return label;
+  return (
+    <button
+      className="v-link"
+      title={t.title}
+      onClick={(e) => {
+        e.stopPropagation();
+        follow(t);
+      }}
+    >
+      {label}
+      <OpenIcon size={12} aria-hidden="true" />
+    </button>
+  );
+}
+
+/** The quiet link on the right of a tree or timeline line: a location like logout.ts:40, or an icon. */
+function LinkChip({ target, label }: { target: Target; label?: string }) {
+  return (
+    <button
+      className="v-loc"
+      title={target.title}
+      aria-label={label ? undefined : target.title.split('\n')[0]}
+      onClick={(e) => {
+        e.stopPropagation();
+        follow(target);
+      }}
+    >
+      {label ?? <OpenIcon size={12} aria-hidden="true" />}
+    </button>
+  );
 }
 
 /** An agent in the same chat (the chat itself or one of its experts), by id or name. */
@@ -425,6 +569,233 @@ function findAgent(nameOrId: string, ctx: Ctx): AgentRecord | null {
     if (a.id.toLowerCase() === wanted || a.name.toLowerCase() === wanted) return a;
   }
   return null;
+}
+
+// ---------- trees and timelines ----------
+
+const countItems = (it: VisualItem): number => it.children.reduce((n, c) => n + 1 + countItems(c), 0);
+
+function TreeView({ tree, inCard, ctx }: { tree: VisualTree; inCard: boolean; ctx: Ctx }) {
+  return (
+    <div className={`v-tree${inCard ? '' : ' boxed'}`} role="tree">
+      {tree.children.map((it, i) => (
+        <TreeItem key={i} item={it} depth={0} ctx={ctx} />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * A line of a tree. Items with children fold; a leaf with <More> opens its details; a leaf with a link opens it
+ * when clicked. The location of a link shows on the right unless the title already names the file.
+ */
+function TreeItem({ item, depth, ctx }: { item: VisualItem; depth: number; ctx: Ctx }) {
+  const kids = item.children.length > 0;
+  const [open, setOpen] = useState(!item.collapsed);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const target = linkTarget(item.link, ctx);
+  const folds = kids || item.more !== undefined;
+  const isOpen = kids ? open : moreOpen;
+  const opensLink = !folds && target !== null;
+  const showLabel = target !== null && target.label !== item.title;
+  const Icon = toneIcon(item.icon, item.tone);
+  const hidden = kids && !open ? countItems(item) : 0;
+  const press = folds ? () => (kids ? setOpen((o) => !o) : setMoreOpen((o) => !o)) : opensLink ? () => follow(target!) : null;
+  return (
+    <div className={`v-tree-node${item.tone ? ` tone-${item.tone}` : ''}`} role="treeitem" aria-expanded={kids ? open : undefined}>
+      <div
+        className={`v-tree-row${press ? ' pressable' : ''}`}
+        style={{ '--d': depth } as CSSProperties}
+        title={opensLink ? target!.title : undefined}
+        {...(press ? pressable(press, folds ? isOpen : undefined) : {})}
+      >
+        {folds ? <Chevron open={isOpen} className="v-tree-chevron" size={14} /> : <span className="v-tree-space" />}
+        {Icon ? <Icon className="v-icon" size={15} aria-hidden="true" /> : <span className="v-tree-noicon" />}
+        <span className="v-tree-title">
+          <Inline text={item.title} />
+        </span>
+        <span className="v-tree-note" title={item.text}>
+          {item.text && <Inline text={item.text} />}
+          {hidden > 0 && (
+            <span className="v-tree-hidden">
+              {item.text ? ' · ' : ''}
+              {hidden} item{hidden === 1 ? '' : 's'}
+            </span>
+          )}
+        </span>
+        {item.meta && <span className="v-meta">{item.meta}</span>}
+        {target && (showLabel || folds) && <LinkChip target={target} label={showLabel ? target.label : undefined} />}
+      </div>
+      {item.more && moreOpen && (
+        <div className="v-tree-more" style={{ '--d': depth } as CSSProperties}>
+          <MoreView more={item.more} ctx={ctx} />
+        </div>
+      )}
+      {kids && open && (
+        <div role="group">
+          {item.children.map((c, i) => (
+            <TreeItem key={i} item={c} depth={depth + 1} ctx={ctx} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TimelineView({ timeline, ctx }: { timeline: VisualTimeline; ctx: Ctx }) {
+  // Items after the running one are still to come.
+  const now = timeline.children.findIndex((it) => it.tone === 'running');
+  const when = Math.max(0, ...timeline.children.map((it) => it.when?.length ?? 0));
+  return (
+    <div className={`v-timeline${when ? '' : ' no-when'}`} style={{ '--when': `${Math.min(when, 12) + 1}ch` } as CSSProperties}>
+      {timeline.children.map((it, i) => (
+        <TimelineItem key={i} item={it} later={now >= 0 && i > now} ctx={ctx} />
+      ))}
+    </div>
+  );
+}
+
+function TimelineItem({ item, later, ctx }: { item: VisualItem; later: boolean; ctx: Ctx }) {
+  const [open, setOpen] = useState(false);
+  const target = linkTarget(item.link, ctx);
+  return (
+    <div className={`v-tl-item${item.tone ? ` tone-${item.tone}` : ''}${later ? ' later' : ''}`}>
+      <span className="v-tl-when">{item.when}</span>
+      <span className="v-tl-rail" aria-hidden="true">
+        <span className="v-tl-dot" />
+      </span>
+      <div className="v-tl-body">
+        <div className={`v-tl-head${item.more ? ' expandable' : ''}`} {...(item.more ? pressable(() => setOpen((o) => !o), open) : {})}>
+          <span className="v-title">
+            <Inline text={item.title} />
+          </span>
+          {item.meta && <span className="v-meta">{item.meta}</span>}
+          {target && <LinkChip target={target} label={target.label} />}
+          {item.more && <Chevron open={open} className="v-chevron" size={14} />}
+        </div>
+        {item.text && (
+          <p className="v-text">
+            <Inline text={item.text} />
+          </p>
+        )}
+        {item.more && open && <MoreView more={item.more} ctx={ctx} />}
+      </div>
+    </div>
+  );
+}
+
+// ---------- bars, images, code ----------
+
+function BarsView({ bars }: { bars: VisualBars }) {
+  const max = Math.max(0, ...bars.bars.map((b) => b.value)) || 1;
+  const unit = !bars.title && bars.unit ? ` ${bars.unit}` : '';
+  return (
+    <div className="v-bars">
+      {bars.title && (
+        <div className="v-bars-title">
+          {bars.title}
+          {bars.unit && <span> {bars.unit}</span>}
+        </div>
+      )}
+      {bars.bars.map((b, i) => (
+        <Fragment key={i}>
+          <span className="v-bar-label" title={b.label}>
+            {b.label}
+          </span>
+          <div className={`v-bar${b.tone ? ` tone-${b.tone}` : ''}`} style={{ '--f': b.value / max } as CSSProperties}>
+            <span className="v-bar-fill" />
+            <span className="v-bar-value">
+              {b.shown}
+              {unit}
+            </span>
+          </div>
+        </Fragment>
+      ))}
+    </div>
+  );
+}
+
+/** Each agent's file roots, fetched once, to turn an image path into the Files API's raw URL. */
+const rootsByAgent = new Map<string, Promise<Root[]>>();
+
+function ImageView({ image, ctx }: { image: VisualImage; ctx: Ctx }) {
+  const p = image.src.slice(5).trim();
+  const full = absolutePath(p, ctx);
+  const [url, setUrl] = useState<string | null>(null);
+  const [missing, setMissing] = useState(false);
+  useEffect(() => {
+    let live = true;
+    let roots = rootsByAgent.get(ctx.agent.id);
+    if (!roots) {
+      roots = filesApi.roots(ctx.agent.id).then((r) => r.roots);
+      roots.catch(() => rootsByAgent.delete(ctx.agent.id));
+      rootsByAgent.set(ctx.agent.id, roots);
+    }
+    roots.then(
+      (r) => {
+        if (!live) return;
+        const at = locate(r, full);
+        if (at) setUrl(filesApi.rawUrl(ctx.agent.id, at.root, at.path, 0));
+        else setMissing(true);
+      },
+      () => live && setMissing(true),
+    );
+    return () => {
+      live = false;
+    };
+  }, [ctx.agent.id, full]);
+  const target = fileTarget(p, undefined, ctx);
+  return (
+    <figure className="v-image">
+      {missing ? (
+        <div className="v-image-missing">{p} can't be shown.</div>
+      ) : (
+        <button className="v-image-frame" title={target.title} onClick={() => follow(target)}>
+          {url && <img src={url} alt={image.caption ?? baseName(p)} loading="lazy" onError={() => setMissing(true)} />}
+        </button>
+      )}
+      {image.caption && <figcaption>{image.caption}</figcaption>}
+    </figure>
+  );
+}
+
+function CodeView({ code, ctx }: { code: VisualCode; ctx: Ctx }) {
+  const diff = code.lang === 'diff';
+  const lang = diff ? null : (language(code.lang) ?? (code.file ? languageOf(code.file) : null));
+  const html = useMemo(() => highlight(code.code, lang), [code.code, lang]);
+  const lines = code.code.split('\n');
+  const first = code.start ?? 1;
+  const numbers = code.start !== undefined && !diff;
+  const marks = new Set(code.mark);
+  // The header opens the file at the first marked line, else at the excerpt's first line.
+  const target = code.file ? fileTarget(code.file, code.mark[0] ?? code.start, ctx) : null;
+  return (
+    <div className="v-code">
+      {target && (
+        <button className="v-code-head" title={target.title} onClick={() => follow(target)}>
+          <FileCodeIcon size={14} aria-hidden="true" />
+          <span>
+            {baseName(code.file!.replace(/\\/g, '/'))}
+            {code.start !== undefined && <span className="v-code-at">:{code.start}</span>}
+          </span>
+        </button>
+      )}
+      <div className="v-code-scroll">
+        <div className="v-code-body">
+          {lines.map((l, i) => {
+            const cls = diff ? (l.startsWith('+') ? 'add' : l.startsWith('-') ? 'del' : '') : marks.has(first + i) ? 'mark' : '';
+            return cls ? <div key={i} className={`v-code-line ${cls}`} style={{ top: `calc(6px + ${i} * 1.6em)` }} aria-hidden="true" /> : null;
+          })}
+          {numbers && (
+            <pre className="v-code-gutter" aria-hidden="true">
+              {lines.map((_, i) => first + i).join('\n')}
+            </pre>
+          )}
+          {html !== null ? <pre className="v-code-text hljs" dangerouslySetInnerHTML={{ __html: html }} /> : <pre className="v-code-text">{code.code}</pre>}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /** Plain text with `code` spans. */

@@ -1,6 +1,3 @@
-import hljs from 'highlight.js/lib/common';
-import dockerfile from 'highlight.js/lib/languages/dockerfile';
-import powershell from 'highlight.js/lib/languages/powershell';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import type { AgentRecord, LiveMessage } from './api';
 import {
@@ -27,12 +24,11 @@ import {
 } from './fileStore';
 import { BackIcon, CheckIcon, Chevron, CloseIcon, CopyIcon, FileCodeIcon, FileIcon, FileImageIcon, FolderIcon, FolderOpenIcon, ForkIcon, RefreshIcon } from './icons';
 import { store } from './store';
+import { highlight, languageOf } from './highlight';
 import { Markdown } from './Transcript';
 
-hljs.registerLanguage('dockerfile', dockerfile);
-hljs.registerLanguage('powershell', powershell);
-
-type View = { root: number; path: string; mode: 'file' | 'diff' };
+/** `line`: scroll to that line and mark it (a link from a visual). */
+type View = { root: number; path: string; mode: 'file' | 'diff'; line?: number };
 type Dir = { entries: Entry[]; truncated: boolean } | { error: string };
 
 const COMPACT_BELOW = 620;
@@ -215,9 +211,9 @@ export function FilesPanel({ agent, pane, request, onRequestDone }: Props) {
   const changed = useMemo(() => new Map((status?.files ?? []).map((f) => [f.path, f])), [status]);
 
   const openFile = useCallback(
-    (root: number, path: string, mode: 'file' | 'diff' = 'file') => {
+    (root: number, path: string, mode: 'file' | 'diff' = 'file', line?: number) => {
       setMissing('');
-      setView({ root, path, mode });
+      setView({ root, path, mode, line });
       reveal(root, path);
     },
     [reveal],
@@ -235,7 +231,7 @@ export function FilesPanel({ agent, pane, request, onRequestDone }: Props) {
     }
     setTab('files');
     const hasDiff = at.root === 0 && changed.has(at.path);
-    openFile(at.root, at.path, request.mode === 'diff' && hasDiff ? 'diff' : 'file');
+    openFile(at.root, at.path, request.mode === 'diff' && hasDiff && !request.line ? 'diff' : 'file', request.line);
   }, [request, roots, changed, openFile, onRequestDone, agent.name]);
 
   // Ctrl+P in the panel goes to the filter; Esc closes the file, then leaves the panel alone.
@@ -357,7 +353,7 @@ export function FilesPanel({ agent, pane, request, onRequestDone }: Props) {
             view &&
             roots && (
               <Viewer
-                key={`${view.root}:${view.path}`}
+                key={`${view.root}:${view.path}:${view.line ?? ''}`}
                 agentId={agent.id}
                 root={roots[view.root]}
                 view={view}
@@ -690,7 +686,8 @@ function Viewer({
   const [content, setContent] = useState<FileContent | null>(null);
   const [diff, setDiff] = useState<FileDiff | null>(null);
   const [error, setError] = useState('');
-  const [source, setSource] = useState(false);
+  // A link to a line shows a Markdown file's source, where the line is.
+  const [source, setSource] = useState(view.line !== undefined);
   const [copied, setCopied] = useState(false);
   const deleted = change?.status === 'D';
   const mode = deleted ? 'diff' : view.mode;
@@ -795,7 +792,7 @@ function Viewer({
                 <Markdown text={content.text} />
               </div>
             ) : (
-              <Code text={content.text} path={view.path} />
+              <Code text={content.text} path={view.path} line={view.line} />
             )}
           </>
         )}
@@ -804,50 +801,18 @@ function Viewer({
   );
 }
 
-const LANG_ALIASES: Record<string, string> = {
-  tsx: 'typescript',
-  mts: 'typescript',
-  cts: 'typescript',
-  jsx: 'javascript',
-  mjs: 'javascript',
-  cjs: 'javascript',
-  htm: 'xml',
-  html: 'xml',
-  svg: 'xml',
-  vue: 'xml',
-  svelte: 'xml',
-  ps1: 'powershell',
-  psm1: 'powershell',
-  yml: 'yaml',
-  toml: 'ini',
-  md: 'markdown',
-  mdx: 'markdown',
-};
-
-function languageOf(path: string): string | null {
-  const name = baseName(path).toLowerCase();
-  if (name === 'dockerfile' || name.endsWith('.dockerfile')) return 'dockerfile';
-  if (name === 'makefile') return 'makefile';
-  const ext = name.includes('.') ? name.slice(name.lastIndexOf('.') + 1) : '';
-  const lang = LANG_ALIASES[ext] ?? ext;
-  return lang && hljs.getLanguage(lang) ? lang : null;
-}
-
 /** Text with line numbers; highlighted when the language is known and the file isn't huge. */
-function Code({ text, path }: { text: string; path: string }) {
-  const html = useMemo(() => {
-    const lang = languageOf(path);
-    if (!lang || text.length > 300_000) return null;
-    try {
-      return hljs.highlight(text, { language: lang, ignoreIllegals: true }).value;
-    } catch {
-      return null;
-    }
-  }, [text, path]);
+function Code({ text, path, line }: { text: string; path: string; line?: number }) {
+  const html = useMemo(() => highlight(text, languageOf(path)), [text, path]);
+  const mark = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    mark.current?.scrollIntoView({ block: 'center' });
+  }, [line, html]);
   const lines = text.endsWith('\n') ? text.split('\n').length - 1 : text.split('\n').length;
   const numbers = useMemo(() => Array.from({ length: Math.max(1, lines) }, (_, i) => i + 1).join('\n'), [lines]);
   return (
     <div className="code-view">
+      {line !== undefined && line <= lines && <div ref={mark} className="code-line-mark" style={{ top: `calc(10px + ${line - 1} * 1.6em)` }} aria-hidden="true" />}
       <pre className="code-gutter mono" aria-hidden="true">
         {numbers}
       </pre>

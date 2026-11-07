@@ -12,10 +12,52 @@ const load = (): Promise<MermaidApi> => (loading ??= import('mermaid').then((m) 
 let queue: Promise<unknown> = Promise.resolve();
 let counter = 0;
 
-function themeVariables(): Record<string, string | boolean> {
+function themeVariables(): Record<string, unknown> {
   const css = getComputedStyle(document.documentElement);
   const v = (name: string) => css.getPropertyValue(name).trim();
+  // Series colours for charts (pie slices, xychart bars and lines): the repo identity hues, which tell things
+  // apart without meaning good or bad.
+  const series = ['--id-3-fg', '--id-2-fg', '--id-4-fg', '--id-5-fg', '--id-0-fg', '--id-1-fg'].map(v);
   return {
+    ...Object.fromEntries(series.map((c, i) => [`pie${i + 1}`, c])),
+    pieTitleTextSize: '14px',
+    pieTitleTextColor: v('--text'),
+    pieSectionTextColor: v('--id-on'),
+    pieSectionTextSize: '13px',
+    pieLegendTextColor: v('--text-2'),
+    pieLegendTextSize: '13px',
+    pieStrokeColor: v('--canvas'),
+    pieStrokeWidth: '2px',
+    pieOuterStrokeWidth: '0px',
+    pieOpacity: '1',
+    xyChart: {
+      backgroundColor: v('--canvas'),
+      titleColor: v('--text'),
+      xAxisLabelColor: v('--text-2'),
+      xAxisTitleColor: v('--text-2'),
+      xAxisTickColor: v('--text-3'),
+      xAxisLineColor: v('--text-3'),
+      yAxisLabelColor: v('--text-2'),
+      yAxisTitleColor: v('--text-2'),
+      yAxisTickColor: v('--text-3'),
+      yAxisLineColor: v('--text-3'),
+      plotColorPalette: series.join(', '),
+    },
+    quadrant1Fill: v('--sunken'),
+    quadrant2Fill: v('--sunken'),
+    quadrant3Fill: v('--sunken'),
+    quadrant4Fill: v('--sunken'),
+    quadrant1TextFill: v('--text-2'),
+    quadrant2TextFill: v('--text-2'),
+    quadrant3TextFill: v('--text-2'),
+    quadrant4TextFill: v('--text-2'),
+    quadrantPointFill: series[0],
+    quadrantPointTextFill: v('--text'),
+    quadrantXAxisTextFill: v('--text-2'),
+    quadrantYAxisTextFill: v('--text-2'),
+    quadrantInternalBorderStrokeFill: v('--line'),
+    quadrantExternalBorderStrokeFill: v('--text-3'),
+    quadrantTitleFill: v('--text'),
     darkMode: css.colorScheme === 'dark',
     background: v('--canvas'),
     fontFamily: v('--font'),

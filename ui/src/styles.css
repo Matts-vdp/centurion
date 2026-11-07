@@ -2808,9 +2808,17 @@ button.crumb:hover {
 
 .v-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 2px 8px;
   min-width: 0;
+}
+
+/* The title keeps room to read; meta, badge and chevron wrap under it when the card is narrow. */
+.v-head > .v-title,
+.v-head > .v-link {
+  flex: 1 1 0;
+  min-width: min(9em, calc(100% - 24px));
 }
 
 .v-icon {
@@ -2848,7 +2856,7 @@ button.crumb:hover {
   white-space: nowrap;
 }
 
-.tone-accent > .v-head > .v-badge {
+.tone-accent > .v-head .v-badge {
   background: var(--accent-soft);
   color: var(--accent-text);
 }
@@ -2898,7 +2906,7 @@ button.crumb:hover {
   font-variant-numeric: tabular-nums;
 }
 
-.v-item > .v-value {
+.v-item > .v-value-line > .v-value {
   font-size: 18px;
 }
 
@@ -2915,27 +2923,27 @@ button.crumb:hover {
 
 /* Tones colour only the icon and the number; the icon gives each one a shape too. */
 .tone-ok > .v-head > .v-icon,
-.tone-ok > .v-value {
+.tone-ok > .v-value-line > * {
   color: var(--done);
 }
 
 .tone-bad > .v-head > .v-icon,
-.tone-bad > .v-value {
+.tone-bad > .v-value-line > * {
   color: var(--failed);
 }
 
 .tone-warn > .v-head > .v-icon,
-.tone-warn > .v-value {
+.tone-warn > .v-value-line > * {
   color: var(--waiting);
 }
 
 .tone-running > .v-head > .v-icon,
-.tone-running > .v-value {
+.tone-running > .v-value-line > * {
   color: var(--running);
 }
 
 .tone-accent > .v-head > .v-icon,
-.tone-accent > .v-value {
+.tone-accent > .v-value-line > * {
   color: var(--accent-text);
 }
 
@@ -2967,6 +2975,673 @@ button.crumb:hover {
 .v-link svg {
   flex: none;
   color: var(--accent-text);
+}
+
+/* Collapsed details (<More>): the head folds them; a chevron at the end of the line. */
+.v-head.expandable,
+.v-tl-head.expandable {
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.v-head.expandable:focus-visible,
+.v-tl-head.expandable:focus-visible {
+  outline-offset: 2px;
+}
+
+.v-chevron {
+  flex: none;
+  margin-left: auto;
+  color: var(--text-3);
+}
+
+.expandable:hover .v-chevron {
+  color: var(--text);
+}
+
+.v-more {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.v-more p {
+  margin: 0;
+}
+
+.v-card > .v-more {
+  margin-top: 4px;
+  font-size: 13.5px;
+}
+
+.has-icon > .v-more {
+  padding-left: 24px;
+}
+
+.v-more code {
+  font-family: var(--mono);
+  font-size: 0.86em;
+  background: var(--fill);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.v-head-end {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.v-head-end > .v-meta,
+.v-head-end > .v-badge,
+.v-head-end > .v-chevron {
+  margin-left: 0;
+  padding-left: 0;
+}
+
+/* Quiet text on the right of a line: a time, a size, a location. */
+.v-meta {
+  flex: none;
+  margin-left: auto;
+  padding-left: 8px;
+  font: 12px var(--mono);
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.v-value-line {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+}
+
+.v-change {
+  font: 13px var(--mono);
+  color: var(--text-3);
+}
+
+.v-progress {
+  height: 4px;
+  margin-top: 4px;
+  border-radius: 2px;
+  background: var(--fill);
+  overflow: hidden;
+}
+
+.has-icon > .v-progress {
+  margin-left: 24px;
+}
+
+.v-progress > span {
+  display: block;
+  width: var(--p);
+  height: 100%;
+  border-radius: 2px;
+  color: var(--text-3);
+  background: currentColor;
+}
+
+.tone-ok > .v-progress > span {
+  color: var(--done);
+}
+
+.tone-bad > .v-progress > span {
+  color: var(--failed);
+}
+
+.tone-warn > .v-progress > span {
+  color: var(--waiting);
+}
+
+.tone-running > .v-progress > span {
+  color: var(--running);
+}
+
+.tone-accent > .v-progress > span {
+  color: var(--accent);
+}
+
+/* The quiet link at the end of a tree or timeline line (logout.ts:40), underlined only on hover. */
+.v-loc {
+  flex: none;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0 0 8px;
+  border: 0;
+  background: none;
+  font: 11.5px var(--mono);
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.v-meta + .v-loc,
+.v-tl-head .v-loc + .v-chevron,
+.v-tl-head .v-meta + .v-chevron {
+  margin-left: 0;
+}
+
+.v-loc:hover,
+.v-tree-row.pressable:not([aria-expanded]):hover .v-loc {
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-decoration-color: var(--accent-line);
+  text-underline-offset: 3px;
+}
+
+/* Trees: rows like the Files panel's tree; a row that does something gets its hover fill. */
+.v-tree {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.v-tree.boxed {
+  padding: 6px;
+  border-radius: 10px;
+  background: var(--raised);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.v-card > .v-children > .v-tree {
+  margin: 0 -8px;
+}
+
+.v-tree-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  min-width: 0;
+  padding: 0 8px 0 calc(4px + var(--d) * 16px);
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+/* Indent guides under each ancestor's chevron. */
+.v-tree-row::before,
+.v-tree-more::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 11px;
+  width: calc(var(--d) * 16px);
+  background: repeating-linear-gradient(to right, var(--line) 0 1px, transparent 1px 16px);
+  pointer-events: none;
+}
+
+.v-tree-row.pressable {
+  cursor: pointer;
+}
+
+.v-tree-row.pressable:hover {
+  background: color-mix(in srgb, var(--fill) 70%, transparent);
+}
+
+.v-tree-row.pressable:focus-visible {
+  outline-offset: -2px;
+}
+
+.v-tree-chevron {
+  flex: none;
+  color: var(--text-3);
+}
+
+.v-tree-row.pressable:hover .v-tree-chevron {
+  color: var(--text);
+}
+
+.v-tree-space {
+  flex: none;
+  width: 14px;
+}
+
+.v-tree-noicon {
+  flex: none;
+  width: 15px;
+}
+
+.v-tree-row .v-icon {
+  color: var(--text-3);
+}
+
+.v-tree-title {
+  flex: none;
+  max-width: 70%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.v-tree-title code,
+.v-tl-head code,
+.v-tree-note code {
+  font-family: var(--mono);
+  font-size: 0.9em;
+}
+
+.v-tree-note {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-left: 4px;
+  font-size: 12px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.v-tree-row .v-meta {
+  font-size: 11.5px;
+}
+
+.v-tree-more {
+  position: relative;
+  padding: 2px 8px 8px calc(4px + var(--d) * 16px + 41px);
+}
+
+.v-tree-node.tone-ok > .v-tree-row .v-icon {
+  color: var(--done);
+}
+
+.v-tree-node.tone-bad > .v-tree-row .v-icon {
+  color: var(--failed);
+}
+
+.v-tree-node.tone-warn > .v-tree-row .v-icon {
+  color: var(--waiting);
+}
+
+.v-tree-node.tone-running > .v-tree-row .v-icon {
+  color: var(--running);
+}
+
+.v-tree-node.tone-accent > .v-tree-row .v-icon {
+  color: var(--accent-text);
+}
+
+/* Timelines: a rail with a dot per item; items after the running one are hollow. */
+.visual {
+  --surface: var(--canvas);
+}
+
+.v-card {
+  --surface: var(--raised);
+}
+
+.v-tile {
+  --surface: color-mix(in srgb, var(--sunken) 55%, var(--raised));
+}
+
+.v-timeline {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.v-tl-item {
+  display: grid;
+  grid-template-columns: min(var(--when), 30%) 12px minmax(0, 1fr);
+  column-gap: 10px;
+}
+
+.v-timeline.no-when .v-tl-item {
+  grid-template-columns: 12px minmax(0, 1fr);
+}
+
+.v-timeline.no-when .v-tl-when {
+  display: none;
+}
+
+.v-tl-when {
+  font: 11.5px/21px var(--mono);
+  color: var(--text-3);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.v-tl-rail {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+.v-tl-rail::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: color-mix(in srgb, var(--text-3) 45%, transparent);
+}
+
+.v-tl-item:first-child .v-tl-rail::before {
+  top: 10px;
+}
+
+.v-tl-item:last-child .v-tl-rail::before {
+  bottom: auto;
+  height: 10px;
+}
+
+.v-tl-item:only-child .v-tl-rail::before {
+  display: none;
+}
+
+.v-tl-dot {
+  position: relative;
+  margin-top: 6px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--text-3);
+  box-shadow: 0 0 0 3px var(--surface);
+}
+
+.tone-ok > .v-tl-rail .v-tl-dot {
+  background: var(--done);
+}
+
+.tone-bad > .v-tl-rail .v-tl-dot {
+  background: var(--failed);
+}
+
+.tone-warn > .v-tl-rail .v-tl-dot {
+  background: var(--waiting);
+}
+
+.tone-running > .v-tl-rail .v-tl-dot {
+  background: var(--running);
+}
+
+.tone-accent > .v-tl-rail .v-tl-dot {
+  background: var(--accent);
+}
+
+.v-tl-item.later .v-tl-dot {
+  background: var(--surface);
+  box-shadow:
+    inset 0 0 0 1.5px var(--text-3),
+    0 0 0 3px var(--surface);
+}
+
+.v-tl-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding-bottom: 14px;
+}
+
+.v-tl-item:last-child .v-tl-body {
+  padding-bottom: 0;
+}
+
+.v-tl-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  min-height: 21px;
+}
+
+.v-tl-head .v-title {
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 21px;
+}
+
+.v-tl-head .v-chevron {
+  align-self: center;
+}
+
+.v-tl-item.later .v-tl-head .v-title {
+  color: var(--text-2);
+}
+
+.v-tl-body > .v-text {
+  font-size: 13px;
+}
+
+.v-tl-body > .v-more {
+  margin-top: 4px;
+}
+
+.v-card > .v-children > .v-timeline {
+  margin-top: 4px;
+}
+
+/* Bars: label, bar, number; grey unless a tone means something. */
+.v-bars {
+  display: grid;
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+  gap: 6px 12px;
+  align-items: center;
+  min-width: 0;
+}
+
+.v-bars-title {
+  grid-column: 1 / -1;
+  margin-bottom: 2px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.v-bars-title span {
+  font-weight: 400;
+  color: var(--text-3);
+}
+
+.v-bar-label {
+  max-width: 200px;
+  font-size: 13px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.v-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.v-bar-fill {
+  flex: none;
+  width: calc((100% - 72px) * var(--f));
+  min-width: 2px;
+  height: 14px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--text-3) 38%, transparent);
+}
+
+.v-bar-value {
+  font: 12px var(--mono);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.v-bar.tone-ok .v-bar-fill {
+  background: var(--done);
+}
+
+.v-bar.tone-bad .v-bar-fill {
+  background: var(--failed);
+}
+
+.v-bar.tone-warn .v-bar-fill {
+  background: var(--waiting);
+}
+
+.v-bar.tone-running .v-bar-fill {
+  background: var(--running);
+}
+
+.v-bar.tone-accent .v-bar-fill {
+  background: var(--accent);
+}
+
+.v-bar.tone-ok .v-bar-value {
+  color: var(--done);
+}
+
+.v-bar.tone-bad .v-bar-value {
+  color: var(--failed);
+}
+
+@container visual (max-width: 420px) {
+  .v-bar-label {
+    max-width: 110px;
+  }
+}
+
+/* Images from the agent's folder: open full size in the Files panel. */
+.v-image {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.v-image-frame {
+  display: block;
+  min-height: 48px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--sunken);
+  box-shadow: 0 0 0 1px var(--line);
+  cursor: zoom-in;
+  line-height: 0;
+}
+
+.v-image-frame img {
+  display: block;
+  width: 100%;
+  max-height: 420px;
+  object-fit: contain;
+}
+
+.v-image figcaption {
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--text-3);
+}
+
+.v-image-missing {
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--sunken);
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+/* Code excerpts: the transcript's code colours, line numbers from the file, marked lines tinted. */
+.v-code {
+  min-width: 0;
+  border-radius: 8px;
+  background: var(--sunken);
+  overflow: hidden;
+}
+
+.v-card > .v-children > .v-code,
+.v-more > .v-code {
+  margin-top: 2px;
+}
+
+.v-code-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 10px;
+  border: 0;
+  background: none;
+  box-shadow: inset 0 -1px 0 var(--line);
+  font-size: 12px;
+  color: var(--text-2);
+  text-align: left;
+}
+
+.v-code-head:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--fill) 50%, transparent);
+}
+
+.v-code-head svg {
+  color: var(--text-3);
+}
+
+.v-code-at {
+  color: var(--text-3);
+}
+
+.v-code-scroll {
+  overflow-x: auto;
+}
+
+.v-code-body {
+  position: relative;
+  display: flex;
+  min-width: max-content;
+  padding: 6px 0;
+  font: 12px/1.6 var(--mono);
+}
+
+.v-code-body pre {
+  position: relative;
+  margin: 0;
+  font: inherit;
+  background: none;
+  white-space: pre;
+}
+
+.v-code-gutter {
+  flex: none;
+  padding: 0 10px 0 12px;
+  text-align: right;
+  color: var(--text-3);
+  user-select: none;
+}
+
+.v-code-text {
+  flex: 1;
+  padding: 0 12px;
+  color: var(--text);
+}
+
+.v-code-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1.6em;
+  pointer-events: none;
+}
+
+.v-code-line.mark {
+  background: color-mix(in srgb, var(--text) 9%, transparent);
+}
+
+.v-code-line.add {
+  background: var(--diff-add);
+}
+
+.v-code-line.del {
+  background: var(--diff-del);
 }
 
 /* Mermaid diagrams (```mermaid in Markdown): themed from the variables above, no surface of their own. */
@@ -4847,6 +5522,7 @@ body.resizing .pane {
 }
 
 .code-view {
+  position: relative;
   display: flex;
   min-width: max-content;
   padding: 10px 0 24px;
@@ -4861,8 +5537,19 @@ body.resizing .pane {
   background: none;
 }
 
+/* The line a visual linked to. */
+.code-line-mark {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1.6em;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  pointer-events: none;
+}
+
 .code-gutter {
   flex: none;
+  z-index: 1;
   position: sticky;
   left: 0;
   min-width: 48px;
@@ -4874,6 +5561,7 @@ body.resizing .pane {
 }
 
 .code-text {
+  position: relative;
   padding-right: 24px;
   white-space: pre;
   color: var(--text);

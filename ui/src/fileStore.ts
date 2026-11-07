@@ -185,7 +185,8 @@ export const expanded = {
 
 // ---------- requests to open a file (from transcript links) ----------
 
-export type OpenRequest = { agentId: string; path: string; mode: 'file' | 'diff' };
+/** `line`: open the file at that line (links from visuals). */
+export type OpenRequest = { agentId: string; path: string; mode: 'file' | 'diff'; line?: number };
 const openListeners = new Set<(r: OpenRequest) => void>();
 
 export const fileLinks = {

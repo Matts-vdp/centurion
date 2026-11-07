@@ -188,7 +188,24 @@ type VisualNode =
 | 2 | `display` MCP server with `show_visual` for every agent (`src/display.ts`); README | done |
 | 3 | `Visual.tsx` and the `visual` block in the transcript; links; `ui-design.md` | done |
 | 4 | Mermaid blocks in `Markdown` (`Mermaid.tsx`) | done |
-| 5 | Try it with real agents, tune the tool description and the limits | todo |
+| 5 | Try it with real agents, tune the tool description and the limits | ongoing |
+| 6 | Second round of elements (5.7), from the mockup in `docs/mockups/visuals-proposals.html` | done |
+
+### 5.7 Second round: elements for planning and investigating
+
+The two main uses are planning an implementation with the user (options, reasoning, how it lands) and investigating a bug (hypotheses, evidence, where it breaks). The mockup `docs/mockups/visuals-proposals.html` shows each element; this round built them:
+
+- **`<More>`** in a Card or an Item: details the user opens with a chevron at the end of the line. Text and `<Code>` only, never boxes, so it never hides structure. An Item with children can't have one (its row folds the children).
+- **Card attributes:** `meta` (quiet text on the right), `change` (next to a `value`), `progress` (`60`, `60%` or `3/5`, a thin meter; its label shows as meta).
+- **`<Tree>` with nested `<Item>`:** folder layouts, call trees, component trees. Flat paths were considered and dropped: nested items work for any hierarchy, not only files. Rows fold (the `collapsed` flag starts one folded; a folded row says how many items it hides). Links are optional per item, so existing and planned code mix: a leaf with a link opens it when clicked, and a row with children shows the location (`logout.ts:40`) on the right. New things use `tone="accent"`; moves and removals are words in `meta`, not git letters. Six levels deep.
+- **`<Timeline>` with `<Item when>`:** incidents, runs, the PRs of a plan. Items after the `running` one get a hollow dot. Items don't nest.
+- **Separate elements, not `Column` flags:** a flag would give one tag three meanings and make attributes like `when` valid in one place only. A name says what gets drawn, and agents know `Tree` and `Timeline` from component libraries.
+- **`<Code file line mark lang>`:** an excerpt of at most 30 lines, taken literally up to `</Code>` (so `<` and `&` need no escaping) and dedented. `line` numbers it like the file; `mark` (`42`, `42-44`, `40, 43`) tints lines in the same numbers; `lang="diff"` tints `+` and `-` lines. The header opens the file at the first marked line. The tool compares the excerpt with the file and warns the agent when they differ (whitespace ignored, an `…` line stops the comparison), which catches made-up or stale evidence.
+- **`<Bars>` with `<Bar>`**, **`<Image src="file:…">`** (an image in the agent's folders, through the Files API's raw route), and Mermaid chart colours: pie slices and xychart series use the repo identity hues.
+- **File links take a line:** `file:src/a.ts:42` opens the Files panel at that line, marked in the accent tint.
+- **Limits:** titles 80 characters (60 made agents retry on timeline steps), 60 elements, `<More>` text 600 characters. `note="…"` on an Item is accepted, since agents guess it.
+
+Tested with Haiku on an investigation and a fix plan: it used every element, with a few retries for unknown attributes and long titles before the changes above. The tool description is now about 1,900 tokens.
 
 **Later:** clicking a card to ask the agent about it (the interactive step), see question 1 below. An SVG/HTML escape hatch in a sandboxed iframe, built on the MCP Apps ideas in section 2, only if the three elements prove too limited.
 
@@ -196,7 +213,7 @@ type VisualNode =
 
 - **Overuse.** Agents may draw when a sentence would do. The tool description says when not to, and step 5 is there to tune it.
 - **Round trips.** Each visual adds one model call to the turn. With the prompt cache this is a few seconds.
-- **Description length.** The tool description goes into every agent's context. It should stay under about 1,500 tokens, so it keeps to three examples and a short icon list.
+- **Description length.** The tool description goes into every agent's context. It is about 1,900 tokens after the second round (three examples: a flow, a plan, an investigation); keep it near that.
 - **Ugly compositions.** Deep nesting or crowded rows still look bad. The limits and the depth-based look keep that in check.
 - **Mermaid in the UI bundle.** It is large, hence the lazy load.
 
