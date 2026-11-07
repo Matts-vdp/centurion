@@ -160,7 +160,7 @@ type VisualNode =
 ### 5.3 The tool (`show_visual`)
 
 - A new in-process MCP server `display`, given to **every** agent (chats and experts) and allowed like `mcp__manager`. It is created per agent, so it can check `expert:` links against the caller's experts and `file:` links against its folders.
-- Input: `{ title?: string, markup: string }`. On errors it returns them with `isError`, and the agent tries again. On success it returns "Shown to the user." and nothing else, so it adds no context.
+- Input: `{ title?: string, markup: string }`. On errors it returns them with `isError`, and the agent tries again. On success it returns "Shown to the user." plus one line telling the agent not to repeat the visual's contents in its text (agents tended to explain everything twice), so it adds almost no context.
 - The description holds everything the agent needs: when to draw (structure, steps, results, comparisons; not decoration, not for one fact), the three elements and their attributes, the icon list, the limits, three short examples, and one line saying that bigger diagrams go in a ` ```mermaid ` block in the reply.
 
 ### 5.4 The renderer

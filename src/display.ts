@@ -10,7 +10,7 @@ import { formatIssues, parseVisual, splitFileLink, VISUAL_ICONS, VISUAL_LIMITS, 
 
 const L = VISUAL_LIMITS;
 
-const DESCRIPTION = `Show the user a small visual in the chat, drawn in the app's own style. Use it when structure is the point: options side by side while planning, hypotheses and evidence while investigating, a flow, a result, a folder layout or call tree, what happened when, a few numbers. Don't use it for decoration, for a single fact, or instead of an answer: write your explanation as usual and put the visual where it helps. It returns at once; carry on with your reply. For bigger diagrams (many nodes, arrows that loop back, sequence diagrams, state machines, data models, charts with axes, pies, gantt), write a \`\`\`mermaid code block in your reply instead; the app renders it.
+const DESCRIPTION = `Show the user a small visual in the chat, drawn in the app's own style. Use it when structure is the point: options side by side while planning, hypotheses and evidence while investigating, a flow, a result, a folder layout or call tree, what happened when, a few numbers. Don't use it for decoration, for a single fact, or instead of an answer. The visual and your text are read together, so don't say things twice: let the visual carry the structure (the options, steps, items, numbers) and don't list or restate them in your text. Your text says what the visual can't: what it means, why, your recommendation, what you need from the user, what happens next. Refer to it briefly ("the second option") instead of repeating it. It returns at once; carry on with your reply. For bigger diagrams (many nodes, arrows that loop back, sequence diagrams, state machines, data models, charts with axes, pies, gantt), write a \`\`\`mermaid code block in your reply instead; the app renders it.
 
 Markup: JSX-like, but only string attributes and flags, never code expressions.
 Boxes
@@ -108,7 +108,7 @@ export function displayTools(manager: Manager, agentId: string) {
         return text(`The visual was not shown. Fix these and call show_visual again:\n${formatIssues(errors)}`, true);
       }
       const notes = warnings.length ? `\nNotes (it was shown anyway):\n${formatIssues(warnings)}` : '';
-      return text(`Shown to the user.${notes}`);
+      return text(`Shown to the user. Don't repeat its contents in your text; add only what it doesn't say.${notes}`);
     },
   ),
   ];
