@@ -11,7 +11,7 @@ import { EFFORT_LEVELS, type AgentRecord, type ContextUsage, type EffortLevel, t
 
 const MAX_REPLIES = 20;
 
-type InputUsage = {
+export type InputUsage = {
   input_tokens: number;
   cache_read_input_tokens?: number | null;
   cache_creation_input_tokens?: number | null;
@@ -19,7 +19,7 @@ type InputUsage = {
 };
 
 /** The cache TTL a call wrote with, or null when it wrote nothing (a pure read keeps the entry's TTL). */
-function cacheTtl(u: InputUsage): number | null {
+export function cacheTtl(u: InputUsage): number | null {
   if ((u.cache_creation?.ephemeral_1h_input_tokens ?? 0) > 0) return 3600;
   if ((u.cache_creation?.ephemeral_5m_input_tokens ?? 0) > 0) return 300;
   return null;
@@ -27,6 +27,41 @@ function cacheTtl(u: InputUsage): number | null {
 
 function inputTokens(u: InputUsage): number {
   return u.input_tokens + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
+}
+
+/**
+ * Token counts in input-price units: output 5×, cache reads 0.1×, cache writes 1.25× (5 minutes) or
+ * 2× (1 hour). These ratios hold for every current Claude model.
+ */
+function weight(t: { input: number; output: number; read: number; write5m: number; write1h: number }): number {
+  return t.input + 5 * t.output + 0.1 * t.read + 1.25 * t.write5m + 2 * t.write1h;
+}
+
+/**
+ * What this process's calls cost, from a `result` whose `total_cost_usd` (and `modelUsage`) may include
+ * cost counters Claude Code restored from an earlier process of the same session. `result.usage` counts only
+ * this process's calls, so they get their weighted share of the total. Without restored counters the share
+ * is 1 and the total is returned as it is. An estimate when several models with different prices ran.
+ */
+export function ownCost(result: SDKResultMessage): number {
+  const total = result.total_cost_usd ?? 0;
+  const u = result.usage as InputUsage & { output_tokens?: number };
+  const write = u.cache_creation_input_tokens ?? 0;
+  const write1h = u.cache_creation?.ephemeral_1h_input_tokens ?? 0;
+  const own = weight({
+    input: u.input_tokens ?? 0,
+    output: u.output_tokens ?? 0,
+    read: u.cache_read_input_tokens ?? 0,
+    write5m: write - write1h,
+    write1h,
+  });
+  let all = 0;
+  for (const m of Object.values(result.modelUsage ?? {})) {
+    const w1h = m.cacheCreationEphemeral1hInputTokens ?? 0;
+    all += weight({ input: m.inputTokens, output: m.outputTokens, read: m.cacheReadInputTokens, write5m: m.cacheCreationInputTokens - w1h, write1h: w1h });
+  }
+  if (all <= 0 || own >= all * 0.999) return total;
+  return total * (own / all);
 }
 
 /** Async iterable the SDK reads user messages from; we push one per turn. */
@@ -90,8 +125,13 @@ export class AgentRuntime {
   private stopping = false;
   private hibernating = false;
   private idleTimer: NodeJS.Timeout | null = null;
-  /** total_cost_usd is cumulative per query() call; we add the per-turn difference. */
+  /**
+   * total_cost_usd is cumulative per query() call; we add the per-turn difference. A resumed process also
+   * starts from the cost counters Claude Code restored from the session's earlier process, so its first
+   * turn is priced from its own usage instead (`ownCost`).
+   */
   private lastTotalCost = 0;
+  private costBaseKnown = true;
   /** Set by interrupt(); the turn's result is then recorded as interrupted, not as an error. */
   private interrupting = false;
   /** Main model (from the init message) and the input size of the turn's last main-loop model call. */
@@ -274,7 +314,9 @@ export class AgentRuntime {
     this.input = new InputChannel();
     this.lastTotalCost = 0;
     this.settingsChanged = false; // the options carry the current values
-    this.q = query({ prompt: this.input, options: this.hooks.buildOptions(this.rec) });
+    const options = this.hooks.buildOptions(this.rec);
+    this.costBaseKnown = !options.resume;
+    this.q = query({ prompt: this.input, options });
     this.hooks.onStarted(this.rec, this.q);
     void this.consume(this.q);
   }
@@ -333,7 +375,8 @@ export class AgentRuntime {
         ? result.result
         : `Turn ended with ${result.subtype}${'errors' in result && result.errors?.length ? `: ${result.errors.join('; ')}` : ''}`;
     const total = result.total_cost_usd ?? this.lastTotalCost;
-    const turnCost = Math.max(0, total - this.lastTotalCost);
+    const turnCost = this.costBaseKnown ? Math.max(0, total - this.lastTotalCost) : ownCost(result);
+    this.costBaseKnown = true;
     this.rec.costUsd += turnCost;
     this.lastTotalCost = total;
     this.rec.context = this.contextUsage(result) ?? this.rec.context;

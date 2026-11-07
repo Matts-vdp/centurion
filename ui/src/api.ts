@@ -89,6 +89,8 @@ export const commands = {
     api<AgentRecord>(`/api/agents/${id}/queue/${messageId}`, { method: 'DELETE' }),
   setArchived: (id: string, archived: boolean) =>
     api<AgentRecord>(`/api/agents/${id}/archive`, { method: 'POST', body: { archived } }),
+  setKeepWarm: (id: string, settings: { minutes: number; experts: boolean }) =>
+    api<AgentRecord>(`/api/agents/${id}/keep-warm`, { method: 'POST', body: settings }),
   setModel: (id: string, change: { model?: string | null; effort?: EffortLevel | null }) =>
     api<AgentRecord>(`/api/agents/${id}/model`, { method: 'POST', body: change }),
   models: () => api<ModelOption[]>('/api/models'),

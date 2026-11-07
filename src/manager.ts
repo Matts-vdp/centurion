@@ -32,15 +32,18 @@ import {
   type CorrectionInput,
   type ProposeInput,
 } from './decisions.js';
+import { KeepWarm, active as keepWarmActive } from './keepwarm.js';
 import { StateStore, type State } from './state.js';
 import { createManagerTools } from './tools.js';
 import {
   EFFORT_LEVELS,
+  keepWarmCapMinutes,
   type AgentKind,
   type AgentRecord,
   type CommandOption,
   type EffortLevel,
   type ImageData,
+  type KeepWarmSettings,
   type MessageSource,
   type ModelOption,
   type PermissionDecision,
@@ -95,6 +98,14 @@ export class Manager extends EventEmitter<ManagerEvents> {
   private readonly permissions = new Map<string, PendingPermission | { request: PermissionRequest }>();
   /** Agent / Task tool call id → the subagent's id, learned while reading subagent transcripts. */
   private readonly subagentIds = new Map<string, string>();
+  /** Pings that keep prompt caches warm between turns. */
+  private readonly warmer = new KeepWarm({
+    get: (id) => this.runtimes.get(id)?.rec,
+    children: (id) => this.childrenOf(id),
+    isBusy: (id) => this.runtimes.get(id)?.isBusy ?? false,
+    options: (rec) => this.buildOptions(rec),
+    changed: (rec) => this.changed(rec),
+  });
 
   /** Images of queued messages, one folder per agent, next to the state file. */
   private readonly uploadsDir: string;
@@ -113,6 +124,7 @@ export class Manager extends EventEmitter<ManagerEvents> {
       this.notifyParent(rec, 'was interrupted because the manager restarted. Send it a message to continue.');
     }
     for (const rt of this.runtimes.values()) rt.pump();
+    for (const rt of this.runtimes.values()) this.warmer.check(rt.rec);
   }
 
   // ---------- queries ----------
@@ -430,6 +442,24 @@ export class Manager extends EventEmitter<ManagerEvents> {
     return rec;
   }
 
+  /**
+   * Keep the agent's prompt cache warm: for some minutes after each turn (capped by the cache's TTL), and
+   * for chats also while their experts work. Both off turns it off. Changing it gives a stopped episode
+   * another go.
+   */
+  setKeepWarm(id: string, settings: KeepWarmSettings): AgentRecord {
+    const rec = this.get(id);
+    const max = keepWarmCapMinutes(3600);
+    if (!Number.isInteger(settings.minutes) || settings.minutes < 0 || settings.minutes > max) {
+      throw new Error(`"minutes" must be a whole number from 0 to ${max}`);
+    }
+    const next: KeepWarmSettings = { minutes: settings.minutes, experts: settings.experts && rec.kind === 'orchestrator' };
+    rec.keepWarm = next.minutes > 0 || next.experts ? next : null;
+    if (rec.warm?.stopped) delete rec.warm.stopped;
+    this.changed(rec);
+    return rec;
+  }
+
   /** The supported models (aliases and ids), cached for the manager's lifetime. */
   async models(): Promise<ModelOption[]> {
     if (this.modelList) return this.modelList;
@@ -508,6 +538,7 @@ export class Manager extends EventEmitter<ManagerEvents> {
   }
 
   shutdown(): void {
+    this.warmer.dispose();
     for (const rt of this.runtimes.values()) rt.dispose();
     this.store.writeNow(this.state());
   }
@@ -961,6 +992,8 @@ export class Manager extends EventEmitter<ManagerEvents> {
 
   private onTurnEnd(rec: AgentRecord, handled: QueuedMessage, reply: Reply): void {
     this.cancelPermissions(rec.id, false);
+    // A new keep-warm episode starts with this turn's cache.
+    if (rec.warm) rec.warm = { nextAt: null, until: null, pings: 0, costUsd: 0, ...(rec.warm.last ? { last: rec.warm.last } : {}) };
     // A routed question: the expert's reply is its answer.
     if (handled.question && !reply.interrupted) {
       const set = this.questionSets.find((s) => s.id === handled.question!.setId);
@@ -1051,6 +1084,8 @@ export class Manager extends EventEmitter<ManagerEvents> {
     const { model, effort } = this.runSettings(rec);
     if (model) options.model = model;
     if (effort) options.effort = effort;
+    // Idle compaction would rewrite the conversation that keep-warm keeps cached (applies from the next process).
+    if (keepWarmActive(rec)) options.settings = { idleCompaction: false };
 
     if (rec.kind === 'orchestrator') {
       options.mcpServers = { manager: createManagerTools(this, rec.id) };
@@ -1085,6 +1120,10 @@ export class Manager extends EventEmitter<ManagerEvents> {
   private changed(rec: AgentRecord): void {
     this.store.save(() => this.state());
     this.emit('agent', rec);
+    // Keep-warm follows the record, and a chat's keep-warm also follows its experts' work.
+    this.warmer.check(rec);
+    const parent = rec.parentId ? this.runtimes.get(rec.parentId)?.rec : undefined;
+    if (parent?.keepWarm?.experts) this.warmer.check(parent);
   }
 }
 

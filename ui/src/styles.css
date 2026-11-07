@@ -1200,8 +1200,19 @@ button.crumb:hover {
 }
 
 .cache-tag {
+  height: 26px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
   color: var(--text-2);
+  font-size: 12px;
   white-space: nowrap;
+}
+
+.cache-tag:hover,
+.cache-tag[aria-expanded='true'] {
+  background: var(--fill);
 }
 
 .cache-tag.warn {
@@ -1210,6 +1221,89 @@ button.crumb:hover {
 
 .cache-tag.cold {
   color: var(--text-3);
+}
+
+/* Keep-warm is on: the accent marks a setting the user turned on. */
+.cache-kept {
+  color: var(--accent-text);
+}
+
+/* Narrow: no room for the word, so the countdown itself takes the accent. */
+.narrow .cache-kept {
+  display: none;
+}
+
+.narrow .cache-tag.kept:not(.warn):not(.cold) {
+  color: var(--accent-text);
+}
+
+/* ---------- the cache tag's keep-warm popover (shares .model-popover) ---------- */
+
+.cache-now {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 8px 2px;
+  color: var(--text);
+}
+
+.cache-ttl {
+  font-size: 11.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.cache-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 7px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.cache-check:hover {
+  background: var(--fill);
+}
+
+.cache-check input {
+  flex: none;
+  width: auto;
+  margin: 3px 0 0;
+  padding: 0;
+  box-shadow: none;
+  accent-color: var(--accent);
+}
+
+.cache-check input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.cache-check > span {
+  display: flex;
+  flex-direction: column;
+}
+
+.cache-check-name {
+  font-weight: 500;
+}
+
+.cache-status {
+  margin: 10px 8px 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.cache-status p {
+  margin: 0;
+}
+
+.cache-status p:first-child {
+  color: var(--text);
 }
 
 .menu-anchor {

@@ -214,6 +214,12 @@ async function route(manager: Manager, config: Config, req: http.IncomingMessage
     }
     return manager.setModel(id, change);
   }
+  if (parts[2] === 'keep-warm' && method === 'POST') {
+    const body = await readJson(req);
+    if (typeof body.minutes !== 'number') throw new HttpError(400, '"minutes" must be a number');
+    if (body.experts !== undefined && typeof body.experts !== 'boolean') throw new HttpError(400, '"experts" must be true or false');
+    return manager.setKeepWarm(id, { minutes: body.minutes, experts: body.experts === true });
+  }
   if (parts[2] === 'permission' && method === 'POST') {
     const body = await readJson(req);
     const decisions: PermissionDecision[] = ['allow', 'allowSession', 'deny'];

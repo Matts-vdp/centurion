@@ -76,6 +76,51 @@ export type ContextUsage = {
 
 export type CacheState = { at: string; ttlSeconds: number };
 
+/** Keeping the prompt cache warm between turns with cheap pings (src/keepwarm.ts). */
+export type KeepWarmSettings = {
+  /** Keep it warm for this many minutes after each turn; 0 = not by time. Capped by the cache's TTL. */
+  minutes: number;
+  /** Chats: keep it warm while any of its experts is working. */
+  experts: boolean;
+};
+
+/**
+ * The longest keep-warm episode after a turn, in minutes. A ping reads the context at about 0.1× the input
+ * price, and writing a cold cache again costs 1.25× (5 minute TTL) or 2× (1 hour TTL), so pinging stops
+ * paying after about 12 pings (45 minutes) or 20 pings (well past 8 hours).
+ */
+export function keepWarmCapMinutes(ttlSeconds: number): number {
+  return ttlSeconds >= 3600 ? 480 : 45;
+}
+
+/** The durations the cache tag offers, in minutes. */
+export function keepWarmChoices(ttlSeconds: number): number[] {
+  return ttlSeconds >= 3600 ? [120, 240, 480] : [15, 30, 45];
+}
+
+/** What keep-warm is doing. Pings and cost count since the agent's last turn. */
+export type KeepWarmState = {
+  /** When the next ping is due; null when none is planned. */
+  nextAt: string | null;
+  /** The latest time keep-warm pings for this episode (the window or the cap); null when off. */
+  until: string | null;
+  /** Why pinging stopped until the next turn (the cache missed, a ping failed, the cache went cold). */
+  stopped?: string;
+  pings: number;
+  costUsd: number;
+  last?: KeepWarmPing;
+};
+
+export type KeepWarmPing = {
+  at: string;
+  /** Tokens the ping read from the cache, and how many it expected to (the last turn's context). */
+  readTokens: number;
+  expectedTokens: number;
+  costUsd: number;
+  ok: boolean;
+  error?: string;
+};
+
 export type AgentRecord = {
   id: string;
   name: string;
@@ -107,6 +152,10 @@ export type AgentRecord = {
    * cache's time to live. Every request that reads the cache restarts the timer. Null: unknown or reset.
    */
   cache?: CacheState | null;
+  /** Keep-warm settings; null or absent = off. */
+  keepWarm?: KeepWarmSettings | null;
+  /** What keep-warm is doing now. */
+  warm?: KeepWarmState | null;
   /** Model chosen for this agent (alias or id); null uses `config.model` or Claude Code's default. */
   model: string | null;
   /** Effort chosen for this agent; null uses the model's default. */
