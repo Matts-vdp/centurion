@@ -29,7 +29,7 @@
     "build": "npm run build:ui && npm run build:server",
     "build:ui": "vite build --config ui/vite.config.ts",
     "build:server": "tsc -p tsconfig.build.json",
-    "prepare": "npm run build",
+    "prepare": "node scripts/prepare.mjs",
     "typecheck": "tsc --noEmit && tsc --noEmit -p ui",
     "check:docs": "tsx src/check-docs.ts"
   },
