@@ -5,10 +5,31 @@
   "license": "Apache-2.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "centurion": "dist/server/cli.js"
+  },
+  "files": [
+    "dist",
+    "prompts",
+    "guide",
+    "LICENSE",
+    "NOTICE",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20.11"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Matts-vdp/centurion.git"
+  },
   "scripts": {
-    "start": "tsx src/index.ts",
-    "dev": "concurrently -k -n manager,ui -c blue,magenta \"tsx watch src/index.ts\" \"vite --config ui/vite.config.ts\"",
-    "build": "vite build --config ui/vite.config.ts",
+    "start": "tsx src/cli.ts",
+    "dev": "concurrently -k -n manager,ui -c blue,magenta \"tsx watch src/cli.ts\" \"vite --config ui/vite.config.ts\"",
+    "build": "npm run build:ui && npm run build:server",
+    "build:ui": "vite build --config ui/vite.config.ts",
+    "build:server": "tsc -p tsconfig.build.json",
+    "prepare": "npm run build",
     "typecheck": "tsc --noEmit && tsc --noEmit -p ui",
     "check:docs": "tsx src/check-docs.ts"
   },

@@ -2,27 +2,73 @@
 
 A local manager for Claude agents. You start **chats** in a central project (the managing folder). A chat always has a small set of tools to start **expert** agents in other folders, and it gets notified when the experts finish. Run `/orchestrate` in a chat to make it an **orchestrator** that plans work as rounds of parallel tracks. A VS Code-style web UI shows every agent in a tree, its live transcript with tool calls collapsed, and a box to message any agent directly.
 
-## Run it (Windows or Linux)
+## Install
+
+Centurion is installed from GitHub, as the `centurion` command. Installing builds it, so it takes a minute; you need Node 20.11 or newer and `git`.
 
 ```bash
-npm install
-cp centurion.config.example.json centurion.config.json   # then set a token
-npm run build
-npm start
+npm i -g github:Matts-vdp/centurion#v0.1.0
 ```
 
-Open the URL it prints (it includes `?token=...`). Start a chat with the **+** button in the sidebar: it only needs a name and, optionally, a first message. Chats all run in `orchestratorFolder` (normally the folder you start the manager from). A chat is a plain Claude Code session; start a message with `/orchestrate` to load the orchestrator workflow from `.claude/skills/orchestrate/SKILL.md`.
+Pin a tag so an upgrade is a deliberate change. If GitHub can't be reached (a work network, say), build a tarball elsewhere (`git clone`, `npm ci`, `npm pack`) and install that file: `npm i -g ./centurion-0.1.0.tgz`.
 
-Auth comes from your normal Claude Code login (`claude` → `/login`), a `CLAUDE_CODE_OAUTH_TOKEN`, or provider variables such as Foundry. Put provider variables in the config's `env` or in your shell. If `ANTHROPIC_API_KEY` is set, it is used and billed instead of your subscription.
+## Set up a managing folder
 
-### Scripts
+The managing folder is the repo your chats run in: it holds the orchestration skill, the CLAUDE.md every chat loads, and Centurion's own folder.
+
+```bash
+cd path/to/managing-repo
+centurion init              # or: centurion init --container, in a repo that only runs in a dev container
+centurion
+```
+
+`init` creates `.centurion/` and never overwrites a file:
+
+| Path | What it is | Git |
+|---|---|---|
+| `.centurion/config.json` | Settings for this repo (see `centurion config`) | committed |
+| `.centurion/prompts/` | The prompts Centurion appends for each kind of agent, copied from the package so you can edit them. A file here replaces the packaged prompt; delete it to go back to the default | committed |
+| `.centurion/.gitignore` | Ignores `state/` | committed |
+| `.centurion/state/` | `state.json` (registry, queues, session IDs), `uploads/`, and the generated API `token` | ignored |
+
+`centurion` (or `centurion start`) finds `.centurion/config.json` in the current folder or a parent, and prints the URL with the token. Open it, start a chat with **+** in the sidebar, and run your orchestration skill in it (for example `/orchestrate`). Centurion ships no skill: the managing repo owns its workflow. This repository's `.claude/skills/orchestrate/SKILL.md` is an example.
+
+A managing folder runs in one environment, a dev container or the host, because session IDs only exist in the `~/.claude` of the machine that created them.
+
+Auth comes from your normal Claude Code login (`claude` → `/login`), a `CLAUDE_CODE_OAUTH_TOKEN`, or provider variables such as Foundry. Put provider variables in your shell or the config's `env`. If `ANTHROPIC_API_KEY` is set, it is used and billed instead of your subscription. Started from inside a Claude Code session, Centurion removes that session's variables for its agents (`stripHostEnv`).
+
+### Commands
+
+The CLI describes itself, for you and for agents that set it up or integrate with it. Everything below is generated from the code.
+
+| Command | What it does |
+|---|---|
+| `centurion` / `centurion start` | Starts the manager for the managing folder. |
+| `centurion init [--container]` | Creates `.centurion/` (above). `--container` sets `permissionMode: "bypassPermissions"`. |
+| `centurion config [--json]` | The resolved config, where each value came from, the files in use, and every field with its default and meaning. |
+| `centurion api [--json]` | Every HTTP endpoint, the server-sent events, auth and deep links. A running server serves the same at `GET /api/docs`. |
+| `centurion tools [--json]` | The tools agents get, with their arguments. |
+| `centurion help [--agent]` | Usage; with `--agent`, a full guide for an agent that sets up, changes or integrates Centurion. |
+| `centurion --version` | The version (also in `GET /api/info`). |
+
+`--config <file>` (or `CENTURION_CONFIG`) uses another config file. `CENTURION_PORT`, `CENTURION_HOST` and `CENTURION_TOKEN` override the file; `CENTURION_TOKEN=` (empty) turns the token check off.
+
+## Develop
+
+```bash
+npm install        # also builds (the prepare script)
+npm start          # runs src/cli.ts with tsx; finds .centurion/config.json like the installed command
+```
 
 | Script | What it does |
 |---|---|
-| `npm start` | Runs the manager and serves the built UI from `dist/ui` at `/`. |
-| `npm run build` | Builds the UI (`ui/`, Vite + React) into `dist/ui`. |
-| `npm run dev` | Runs the manager (restarting on changes) and the Vite dev server together. Open `http://localhost:5173/?token=...`; `/api` is proxied to the manager's port (`CENTURION_PORT`, default 4317). Use `CENTURION_CONFIG` to pick a config file. |
+| `npm start` | Runs the CLI from source (`tsx src/cli.ts`); add arguments after `--`, e.g. `npm start -- config`. |
+| `npm run build` | Builds the UI (`ui/`, Vite + React) into `dist/ui` and the server (`src/`) into `dist/server`. |
+| `npm run dev` | Runs the manager (restarting on changes) and the Vite dev server together. Open `http://localhost:5173/?token=...`; `/api` is proxied to the manager's port (`CENTURION_PORT`, default 4317). |
 | `npm run typecheck` | Type-checks the backend and the UI. |
+| `npm run check:docs` | Fails when a route, config field or tool has no docs. |
+
+A `centurion.config.json` in the folder you start from still works (the layout before `.centurion/`), with a note at start-up.
 
 ## The UI
 
@@ -36,27 +82,16 @@ Auth comes from your normal Claude Code login (`claude` → `/login`), a `CLAUDE
 - **Composer:** Enter sends, Shift+Enter adds a line. While the agent runs, a status line shows what it is doing, messages queue (listed in the composer, each removable), and **Esc** or the stop button interrupts the current turn and keeps the queue.
 - Light and dark themes follow the system setting. Unread state and collapsed tree nodes are kept per browser.
 
-## Config (`centurion.config.json`)
+## Config (`.centurion/config.json`)
 
-| Field | Meaning |
-|---|---|
-| `host`, `port` | Where the API and UI listen. Keep `127.0.0.1` unless you use plain `docker -p`. |
-| `token` | Required on every API call (`Authorization: Bearer` or `?token=`). Empty disables the check, so don't do that with `bypassPermissions`. |
-| `stateFile` | JSON state, relative to the config file. Keep one per environment: session IDs only exist on the machine that created them. |
-| `orchestratorFolder` | Folder every top-level chat runs in, relative to the config file or absolute. Default (`null` or missing): the folder the manager was started from. Checked at startup. |
-| `permissionMode` | `auto` (the classifier decides; what it can't decide is asked in the UI and waits for your answer) or `bypassPermissions` (dev containers). |
-| `model` | Default model for agents that have none set (see *Model and effort*), or `null` for the Claude Code default. |
-| `env` / `removeEnv` | Environment variables to add to or remove from agent processes. |
-| `idleMinutes` | Close an agent's process after this many idle minutes (default 10, `0` = never). The next message resumes the session. |
+`centurion config` lists every field with its type, default and meaning, and shows the values in use and where each came from. The most common ones: `port`, `permissionMode` (`auto`, or `bypassPermissions` in a dev container), `model` (the default for agents that have none set, see *Model and effort*), `env` / `removeEnv` (variables for agent processes) and `idleMinutes`. Relative paths resolve against the config file's folder. Leave `token` out of a committed config: the token is then generated into `.centurion/state/token` on first start.
 
 The file is checked at startup: an unknown field or a wrong type stops the manager with a message naming the field and the file.
-
-Use `--config <path>` or `CENTURION_CONFIG` to point at another config file. `CENTURION_PORT`, `CENTURION_HOST` and `CENTURION_TOKEN` override the file.
 
 ## How it works
 
 - **One agent = one Claude session** (Agent SDK `query()` with streaming input) in its own folder. Each agent has a **queue**, and the manager delivers one message per turn.
-- **Chats and orchestrators:** every top-level agent is a chat in `orchestratorFolder` with the `centurion` tools; nothing about orchestration is added to its prompt. The `orchestrate` skill (`.claude/skills/orchestrate/SKILL.md` in the managing folder) holds the workflow: rounds of tracks, handoff files, triaging questions. Edit it to change how orchestrators work. Experts get `prompts/expert.md` appended to their system prompt.
+- **Chats and orchestrators:** every top-level agent is a chat in `orchestratorFolder` with the `centurion` tools; nothing about orchestration is added to its prompt unless the repo adds `.centurion/prompts/orchestrator.md`. The managing repo's own skill (here `.claude/skills/orchestrate/SKILL.md`) holds the workflow: rounds of tracks, handoff files, triaging questions. Experts get the expert prompt appended to their system prompt: `.centurion/prompts/expert.md`, else the packaged `prompts/expert.md`. Placeholders such as `{{cwd}}` and `{{orchestratorCwd}}` are filled in per agent (`centurion help --agent` lists them).
 - **Settings and skills:** every agent loads the user, project and local settings of its own folder (`settingSources: ['user', 'project', 'local']`, `skills: 'all'`): your `~/.claude`, plus the folder's CLAUDE.md, `.claude/skills` and settings. Chats get the managing folder's, experts their repo's.
 - **Centurion tools** (MCP server `centurion`, top-level chats only):
   `create_expert(name, folder?, message?, notify?, track_id?, model?, effort?)`, `message_expert(expert_id, message, notify?, track_id?, question_id?)`, `get_expert_output(expert_id, last_n?)`, `list_experts()`, `stop_expert(expert_id)`, `propose_tracks(round, title, tracks, later?)`, `ask_user(title, questions, resolved?, routed?)`.
@@ -77,40 +112,7 @@ Use `--config <path>` or `CENTURION_CONFIG` to point at another config file. `CE
 
 ### API
 
-| Method | Path | Body |
-|---|---|---|
-| GET | `/api/info` | `{ permissionMode, orchestratorFolder, platform, defaultModel }` |
-| GET | `/api/models` | Supported models: `{ value, resolvedModel?, displayName, description, supportsEffort?, supportedEffortLevels? }[]` (cached; learned from the first agent process, or from a process started just to ask) |
-| GET | `/api/agents` | |
-| POST | `/api/agents` | `{ name, message? }` creates a chat in `orchestratorFolder` |
-| GET | `/api/agents/:id` | |
-| GET | `/api/agents/:id/history` | Transcript from Claude's session file |
-| GET | `/api/agents/:id/commands` | The skills and custom commands the agent's folder offers: `{ name, description, argumentHint }[]` (Claude Code's own commands left out; cached per folder, learned from the agent processes or a process started just to ask) |
-| GET | `/api/agents/:id/subagents/:toolUseId` | The transcript of the subagent started by that Agent / Task call |
-| GET | `/api/agents/:id/files/roots` | `{ roots: [{ name, path, git }] }`: the agent's folder, then its orchestrator's when that differs. `root` below is an index into this list |
-| GET | `/api/agents/:id/files/list?root=&path=` | One folder: `{ entries: [{ name, type, size, mtime, ignored, git?, changes? }], truncated }` (at most 5 000 entries) |
-| GET | `/api/agents/:id/files/all?root=` | `{ files, truncated }`: every tracked and untracked path (a walk outside git), at most 50 000 |
-| GET | `/api/agents/:id/files/read?root=&path=` | `{ kind: 'text', text, size, lines, truncated }` (first 1 MB), `{ kind: 'image', mediaType, size }` or `{ kind: 'binary', size }`; `&raw=1` returns an image's bytes |
-| GET | `/api/agents/:id/git/status?root=` | `{ status: { branch, ahead, behind, files: [{ path, status, added, removed }] } }`, or `{ status: null }` outside git |
-| GET | `/api/agents/:id/git/diff?root=&path=` | `{ diff, status, binary, truncated }`: the file's hunks against `HEAD` (untracked: all added). 400 outside git |
-| POST | `/api/agents/:id/experts` | `{ name, cwd?, message? }` starts an expert under a chat for the user; the chat isn't notified |
-| POST | `/api/agents/:id/fork` | `{ promptUuid }` copies the conversation up to the end of that turn into a new agent (same kind, folder, parent, model) |
-| POST | `/api/agents/:id/rewind` | `{ promptUuid }` drops that turn and everything after it; only when idle with nothing queued. Files are not touched |
-| POST | `/api/agents/:id/messages` | `{ text, images?, notify? }`. Sets the agent's open question sets aside (status `chat`). `images`: up to 10 of `{ mediaType: 'image/png' \| 'image/jpeg' \| 'image/gif' \| 'image/webp', data }` (base64, at most 5 MB each); `text` may be empty when there are images. Images of queued messages wait in `uploads/` next to the state file and are deleted on delivery |
-| POST | `/api/agents/:id/interrupt` | Cancels the current turn; keeps the queue and the process |
-| DELETE | `/api/agents/:id/queue/:messageId` | Removes a queued message |
-| POST | `/api/agents/:id/model` | `{ model?, effort? }`; a missing field stays, `null` goes back to the default. Applies from the next turn |
-| POST | `/api/agents/:id/notifications` | `{ paused }` (chats only): hold expert notifications in the queue, or let them through again as one combined message |
-| POST | `/api/agents/:id/keep-warm` | `{ minutes, experts? }`: keep the prompt cache warm for `minutes` after each turn (0 = not by time; capped at 45 for a 5 minute cache and 480 for a 1 hour cache), and for chats while their experts work. Both off turns it off. The record's `keepWarm` holds the settings and `warm` what it is doing (`nextAt`, `until`, `stopped?`, `pings`, `costUsd`, `last?`) |
-| POST | `/api/agents/:id/archive` | `{ archived }`; refused while running. A chat takes its idle experts with it, and unarchiving it brings those back. Archiving closes the process; a new message unarchives |
-| POST | `/api/agents/:id/permission` | `{ requestId, decision: 'allow' \| 'allowSession' \| 'deny', message? }` answers a waiting permission request. `allowSession` adds the SDK's suggested rules to this session only; `message` goes to the agent with a denial |
-| POST | `/api/agents/:id/stop` | Cancels the turn, clears the queue and closes the process |
-| GET | `/api/plans` | Track plans |
-| POST | `/api/plans/:id/start` | `{ start: trackIds, skip?: trackIds }`; sends the orchestrator only these ids |
-| POST | `/api/plans/:id/notify` | `{ mode: 'round' \| 'each' }` |
-| GET | `/api/questions` | Question sets |
-| POST | `/api/questions/:id/answer` | `{ answers: [{ questionId, choices?, text? }], corrections?: [{ questionId, text }] }` |
-| GET | `/api/events` | Server-sent events: `snapshot`, `agent`, `delivered`, `message` (including `task_started`, `task_progress` and `task_notification`), `plan`, `questions`, `permission` (all plans, question sets and permission requests follow each snapshot) |
+`centurion api` (or `GET /api/docs` on a running server, `?format=json` for data) lists every endpoint with its body and result, and the server-sent events. Every call needs the token: `Authorization: Bearer <token>` or `?token=`. `/?token=<token>#agent=<id>` opens the UI on one agent.
 
 Agent records carry `model` and `effort` (set, or `null`), `activeModel` and `activeEffort` (what the process last reported; effort is only known when Claude Code reports it), `archived` and `archivedWith` (the chat an expert was archived with), `lastActivityAt` (when a turn last ended or failed), `turnStartedAt` (while a turn runs) and `context: { usedTokens, windowTokens } | null`, besides the queue, replies, status and cost. Each reply has `durationMs` and `costUsd` for its turn.
 

@@ -36,6 +36,7 @@ import { KeepWarm, active as keepWarmActive } from './keepwarm.js';
 import { StateStore, type State } from './state.js';
 import { createDisplayTools } from './display.js';
 import { createManagerTools } from './tools.js';
+import { agentEnvironment } from './env.js';
 import {
   EFFORT_LEVELS,
   deliverable,
@@ -1099,9 +1100,7 @@ export class Manager extends EventEmitter<ManagerEvents> {
   }
 
   private agentEnv(): Record<string, string | undefined> {
-    const env: Record<string, string | undefined> = { ...process.env, ...this.config.env };
-    for (const key of this.config.removeEnv) delete env[key];
-    return env;
+    return agentEnvironment(process.env, { stripHostEnv: this.config.stripHostEnv, extra: this.config.env, remove: this.config.removeEnv });
   }
 
   private buildOptions(rec: AgentRecord): Options {
@@ -1145,17 +1144,23 @@ export class Manager extends EventEmitter<ManagerEvents> {
     return options;
   }
 
-  /** Only experts get appended instructions; a top-level chat becomes an orchestrator through the orchestrate skill. */
+  /**
+   * The instructions appended to an agent's system prompt: the repo's `.centurion/prompts/<kind>.md` if it has one
+   * (it replaces the packaged prompt as a whole), else the packaged one. Only experts have a packaged prompt; a
+   * top-level chat becomes an orchestrator through the managing repo's orchestrate skill.
+   */
   private instructions(rec: AgentRecord): string {
-    const file = path.join(this.config.promptsDir, `${rec.kind}.md`);
-    const template = existsSync(file) ? readFileSync(file, 'utf8') : '';
+    const file = promptFile(this.config, rec.kind);
+    const template = file ? readFileSync(file, 'utf8') : '';
     const parent = rec.parentId ? this.get(rec.parentId) : null;
-    return template
-      .replaceAll('{{id}}', rec.id)
-      .replaceAll('{{name}}', rec.name)
-      .replaceAll('{{cwd}}', rec.cwd)
-      .replaceAll('{{orchestratorName}}', parent?.name ?? '')
-      .replaceAll('{{orchestratorCwd}}', parent?.cwd ?? '');
+    const values: Record<PromptPlaceholder, string> = {
+      id: rec.id,
+      name: rec.name,
+      cwd: rec.cwd,
+      orchestratorName: parent?.name ?? '',
+      orchestratorCwd: parent?.cwd ?? '',
+    };
+    return template.replace(/\{\{(\w+)\}\}/g, (all, key: string) => (key in values ? values[key as PromptPlaceholder] : all));
   }
 
   private runtime(id: string): AgentRuntime {
@@ -1236,4 +1241,24 @@ function slug(name: string): string {
 
 function newId(prefix: string): string {
   return `${prefix}-${randomBytes(3).toString('hex')}`;
+}
+
+/** The placeholders a prompt file may use, each filled in per agent. */
+export const PROMPT_PLACEHOLDERS = {
+  id: "The agent's id",
+  name: "The agent's name",
+  cwd: "The agent's folder (absolute)",
+  orchestratorName: "The name of the agent's chat (empty for a chat)",
+  orchestratorCwd: "The folder of the agent's chat (empty for a chat): where task files usually go",
+} as const;
+
+export type PromptPlaceholder = keyof typeof PROMPT_PLACEHOLDERS;
+
+/** The prompt file used for a kind of agent: the repo's replacement, else the packaged one, else none. */
+export function promptFile(config: Pick<Config, 'repoPromptsDir' | 'promptsDir'>, kind: string): string | null {
+  for (const dir of [config.repoPromptsDir, config.promptsDir]) {
+    const file = path.join(dir, `${kind}.md`);
+    if (existsSync(file)) return file;
+  }
+  return null;
 }

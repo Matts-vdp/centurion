@@ -5,6 +5,8 @@ import { timingSafeEqual } from 'node:crypto';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { Config } from './config.js';
 import type { Manager } from './manager.js';
+import { apiJson, apiMarkdown } from './docs.js';
+import { packageVersion } from './paths.js';
 import { allFiles, FileError, fileDiff, gitStatus, listFolder, RawBody, readFileContent, repoInfo } from './files.js';
 import { EFFORT_LEVELS, IMAGE_TYPES, type EffortLevel, type ImageData, type PermissionDecision } from './types.js';
 
@@ -160,7 +162,7 @@ export const routes: Route[] = [
   {
     method: 'GET',
     path: '/api/events',
-    summary: 'Server-sent events: a snapshot, then every change (see SSE_EVENTS)',
+    summary: 'Server-sent events: a snapshot, then every change (the events are listed below the endpoints)',
     result:
       'An event stream: `snapshot`, then all plans, question sets and permission requests, then live events; a `: ping` comment every 25 s',
     handler: ({ openStream }) => {
@@ -171,14 +173,24 @@ export const routes: Route[] = [
   {
     method: 'GET',
     path: '/api/info',
-    summary: 'Server settings the UI needs',
-    result: '`{ permissionMode, orchestratorFolder, platform, defaultModel }`',
+    summary: 'Server settings the UI needs, and the version',
+    result: '`{ version, permissionMode, orchestratorFolder, platform, defaultModel }`',
     handler: ({ config }) => ({
+      version: packageVersion,
       permissionMode: config.permissionMode,
       orchestratorFolder: config.orchestratorFolder,
       platform: process.platform,
       defaultModel: config.model,
     }),
+  },
+  {
+    method: 'GET',
+    path: '/api/docs',
+    summary: 'This API documented: the same text as `centurion api`',
+    query: '`format=json` for data (`{ version, auth, deepLink, routes, events }`); default Markdown',
+    result: 'Markdown (`text/markdown`), or JSON with `format=json`',
+    handler: ({ url }) =>
+      url.searchParams.get('format') === 'json' ? apiJson() : new RawBody('text/markdown; charset=utf-8', Buffer.from(apiMarkdown())),
   },
   {
     method: 'GET',

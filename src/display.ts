@@ -2,6 +2,7 @@ import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { createSdkMcpServer, tool, type McpSdkServerConfigWithInstance } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
+import { packageVersion } from './paths.js';
 import { resolveInside } from './files.js';
 import type { Manager } from './manager.js';
 import type { AgentRecord } from './types.js';
@@ -84,38 +85,33 @@ export function logout() {
 type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean };
 const text = (t: string, isError = false): ToolResult => ({ content: [{ type: 'text', text: t }], ...(isError ? { isError } : {}) });
 
-/** `show_visual`, for every agent. One server per agent, so links are checked against that agent's experts and folders. */
-export function createDisplayTools(manager: Manager, agentId: string): McpSdkServerConfigWithInstance {
-  return createSdkMcpServer({
-    name: 'display',
-    version: '0.2.0',
-    alwaysLoad: true,
-    tools: [
-      tool(
-        'show_visual',
-        DESCRIPTION,
-        {
-          title: z.string().optional().describe('A few words above the visual. Optional.'),
-          markup: z.string().describe('The visual markup.'),
-        },
-        async (args) => {
-          const parsed = parseVisual(args.markup);
-          const errors = [...parsed.errors];
-          const warnings = [...parsed.warnings];
-          if (errors.length === 0) {
-            const checked = await checkReferences(manager, agentId, parsed.nodes);
-            errors.push(...checked.errors);
-            warnings.push(...checked.warnings);
-          }
-          if (errors.length) {
-            return text(`The visual was not shown. Fix these and call show_visual again:\n${formatIssues(errors)}`, true);
-          }
-          const notes = warnings.length ? `\nNotes (it was shown anyway):\n${formatIssues(warnings)}` : '';
-          return text(`Shown to the user.${notes}`);
-        },
-      ),
-    ],
-  });
+/** `show_visual` (the `display` server's tools). Links are checked against that agent's experts and folders. */
+export function displayTools(manager: Manager, agentId: string) {
+  return [
+  tool(
+    'show_visual',
+    DESCRIPTION,
+    {
+      title: z.string().optional().describe('A few words above the visual. Optional.'),
+      markup: z.string().describe('The visual markup.'),
+    },
+    async (args) => {
+      const parsed = parseVisual(args.markup);
+      const errors = [...parsed.errors];
+      const warnings = [...parsed.warnings];
+      if (errors.length === 0) {
+        const checked = await checkReferences(manager, agentId, parsed.nodes);
+        errors.push(...checked.errors);
+        warnings.push(...checked.warnings);
+      }
+      if (errors.length) {
+        return text(`The visual was not shown. Fix these and call show_visual again:\n${formatIssues(errors)}`, true);
+      }
+      const notes = warnings.length ? `\nNotes (it was shown anyway):\n${formatIssues(warnings)}` : '';
+      return text(`Shown to the user.${notes}`);
+    },
+  ),
+  ];
 }
 
 /** The agents an `expert:` link may name: the caller's chat and every expert in it. */
@@ -215,4 +211,9 @@ async function findFile(roots: string[], p: string): Promise<string | null> {
     }
   }
   return null;
+}
+
+/** The `display` tool server for one agent. */
+export function createDisplayTools(manager: Manager, agentId: string): McpSdkServerConfigWithInstance {
+  return createSdkMcpServer({ name: 'display', version: packageVersion, alwaysLoad: true, tools: displayTools(manager, agentId) });
 }

@@ -1,5 +1,6 @@
-// Fails when a route or config field has no docs, so the generated API and config docs stay complete.
+// Fails when a route, config field or tool has no docs, so the generated API and config docs stay complete.
 import { describeConfig } from './config.js';
+import { describeTools } from './docs.js';
 import { describeRoutes, SSE_EVENTS } from './server.js';
 
 const problems: string[] = [];
@@ -17,9 +18,11 @@ for (const f of describeConfig()) {
   if (!f.description.trim()) problems.push(`config ${f.name}: no description`);
   if (f.default === undefined) problems.push(`config ${f.name}: no default`);
 }
+const tools = describeTools();
+for (const t of tools) if (!t.description.trim()) problems.push(`tool ${t.fullName}: no description`);
 
 if (problems.length) {
   console.error(`Docs check failed:\n  - ${problems.join('\n  - ')}`);
   process.exit(1);
 }
-console.log(`Docs check passed: ${seen.size} routes, ${SSE_EVENTS.length} events, ${describeConfig().length} config fields.`);
+console.log(`Docs check passed: ${seen.size} routes, ${SSE_EVENTS.length} events, ${describeConfig().length} config fields, ${tools.length} tools.`);
