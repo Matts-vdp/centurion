@@ -9,15 +9,17 @@ Every agent is a normal Claude Code session (through the Agent SDK) in its own f
 You need Node 20.11 or newer and access to Claude: your Claude Code login, a `CLAUDE_CODE_OAUTH_TOKEN`, or provider variables such as Foundry.
 
 ```bash
-npm i -g https://github.com/Matts-vdp/centurion/releases/download/v0.1.0/centurion.tgz
+npm i -g https://github.com/Matts-vdp/centurion/releases/latest/download/centurion.tgz
 ```
+
+The same command updates an existing install. To install a specific version, use `releases/download/v1.0.1/centurion.tgz` instead of `releases/latest/download/centurion.tgz`.
 
 Without access to GitHub releases, build the package from a clone instead:
 
 ```bash
-git clone --branch v0.1.0 https://github.com/Matts-vdp/centurion && cd centurion
+git clone https://github.com/Matts-vdp/centurion && cd centurion
 npm ci
-npm pack && npm i -g ./centurion-0.1.0.tgz
+npm pack && npm i -g ./centurion-*.tgz
 ```
 
 ## Set up a managing repository
