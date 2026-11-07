@@ -1,0 +1,1656 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Visual proposals</title>
+<style>
+/* ===== the app's own theme, repo hues and visual styles (copied from ui/src/styles.css) ===== */
+:root {
+  color-scheme: light;
+  --font: 'IBM Plex Sans', 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+  --mono: 'IBM Plex Mono', 'Cascadia Code', Consolas, monospace;
+
+  --canvas: #fbfaf8;
+  --sunken: #f1eeea;
+  --raised: #ffffff;
+  --fill: #e9e6e1;
+  --fill-2: #dedad4;
+  --line: #e4e1dc;
+  --text: #1c1b19;
+  --text-2: #5e5a54;
+  --text-3: #6f6b64;
+  --running: #1f6feb;
+  --done: #1e8a4c;
+  --waiting: #9a6200;
+  --failed: #c2392a;
+  --running-soft: rgb(31 111 235 / 0.22);
+  --failed-soft: rgb(194 57 42 / 0.08);
+  --accent: #0e8a83;
+  --accent-text: #0b7670;
+  --accent-soft: rgb(14 138 131 / 0.11);
+  --accent-line: rgb(14 138 131 / 0.45);
+  --on-accent: #ffffff;
+
+  /* Identity hues for expert marks, one per repo (status keeps the dots). bg / fg pairs. */
+  --id-0-bg: #f8e3eb; --id-0-fg: #9c3563;
+  --id-1-bg: #f5e2f4; --id-1-fg: #8a3887;
+  --id-2-bg: #f7e5da; --id-2-fg: #9a4a22;
+  --id-3-bg: #e1e9f2; --id-3-fg: #33597e;
+  --id-4-bg: #ebe7fa; --id-4-fg: #5b47a8;
+  --id-5-bg: #f2ebd9; --id-5-fg: #7a6020;
+  --id-on: #ffffff;
+  --diff-add: rgb(30 138 76 / 0.12);
+  --diff-del: rgb(194 57 42 / 0.1);
+  --shadow-float: 0 8px 24px rgb(0 0 0 / 0.1), 0 1px 3px rgb(0 0 0 / 0.06);
+  --focus: color-mix(in srgb, var(--accent) 70%, transparent);
+
+  --hl-keyword: #8a3ffc;
+  --hl-string: #1e7a45;
+  --hl-comment: #8a867f;
+  --hl-number: #a65a00;
+  --hl-title: #1f5fc4;
+  --hl-attr: #9c3d2e;
+  --hl-type: #0f7a85;
+  --hl-variable: #1c1b19;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --canvas: #131211;
+    --sunken: #0b0a09;
+    --raised: #1d1c1a;
+    --fill: #262422;
+    --fill-2: #312e2b;
+    --line: #2b2926;
+    --text: #efede9;
+    --text-2: #bcb8b1;
+    --text-3: #8f8b84;
+    --running: #6aa8ff;
+    --done: #63c98a;
+    --waiting: #e8b04a;
+    --failed: #ff7a6b;
+    --running-soft: rgb(106 168 255 / 0.25);
+    --failed-soft: rgb(255 122 107 / 0.08);
+    --accent: #5fcac3;
+    --accent-text: #6fd3cc;
+    --accent-soft: rgb(95 202 195 / 0.13);
+    --accent-line: rgb(95 202 195 / 0.45);
+    --on-accent: #0f1e1d;
+    --id-0-bg: #3f2532; --id-0-fg: #f2a7c3;
+    --id-1-bg: #3a2539; --id-1-fg: #e2a3df;
+    --id-2-bg: #3e2a20; --id-2-fg: #eba98a;
+    --id-3-bg: #24303d; --id-3-fg: #9fbad6;
+    --id-4-bg: #322b45; --id-4-fg: #c4b8f5;
+    --id-5-bg: #3a3324; --id-5-fg: #dcc794;
+    --id-on: #131211;
+    --diff-add: rgb(99 201 138 / 0.12);
+    --diff-del: rgb(255 122 107 / 0.12);
+    --shadow-float: inset 0 1px 0 rgb(255 255 255 / 0.04), 0 0 0 1px var(--line), 0 12px 32px rgb(0 0 0 / 0.45);
+    --focus: color-mix(in srgb, var(--accent) 70%, transparent);
+
+    --hl-keyword: #c9a2ff;
+    --hl-string: #8fd4a6;
+    --hl-comment: #8a867f;
+    --hl-number: #f0b968;
+    --hl-title: #8cbcff;
+    --hl-attr: #ff9d8f;
+    --hl-type: #7fd3dc;
+    --hl-variable: #efede9;
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --canvas: #131211;
+  --sunken: #0b0a09;
+  --raised: #1d1c1a;
+  --fill: #262422;
+  --fill-2: #312e2b;
+  --line: #2b2926;
+  --text: #efede9;
+  --text-2: #bcb8b1;
+  --text-3: #8f8b84;
+  --running: #6aa8ff;
+  --done: #63c98a;
+  --waiting: #e8b04a;
+  --failed: #ff7a6b;
+  --running-soft: rgb(106 168 255 / 0.25);
+  --failed-soft: rgb(255 122 107 / 0.08);
+  --accent: #5fcac3;
+  --accent-text: #6fd3cc;
+  --accent-soft: rgb(95 202 195 / 0.13);
+  --accent-line: rgb(95 202 195 / 0.45);
+  --on-accent: #0f1e1d;
+  --id-0-bg: #3f2532; --id-0-fg: #f2a7c3;
+  --id-1-bg: #3a2539; --id-1-fg: #e2a3df;
+  --id-2-bg: #3e2a20; --id-2-fg: #eba98a;
+  --id-3-bg: #24303d; --id-3-fg: #9fbad6;
+  --id-4-bg: #322b45; --id-4-fg: #c4b8f5;
+  --id-5-bg: #3a3324; --id-5-fg: #dcc794;
+  --id-on: #131211;
+  --diff-add: rgb(99 201 138 / 0.12);
+  --diff-del: rgb(255 122 107 / 0.12);
+  --shadow-float: inset 0 1px 0 rgb(255 255 255 / 0.04), 0 0 0 1px var(--line), 0 12px 32px rgb(0 0 0 / 0.45);
+  --focus: color-mix(in srgb, var(--accent) 70%, transparent);
+  --hl-keyword: #c9a2ff;
+  --hl-string: #8fd4a6;
+  --hl-comment: #8a867f;
+  --hl-number: #f0b968;
+  --hl-title: #8cbcff;
+  --hl-attr: #ff9d8f;
+  --hl-type: #7fd3dc;
+  --hl-variable: #efede9;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--canvas);
+  color: var(--text);
+  font: 13.5px/1.45 var(--font);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+svg.lucide {
+  stroke-width: 1.75;
+  flex: none;
+}
+
+.chevron-icon {
+  transition: transform 140ms ease-out;
+}
+
+.chevron-icon.open {
+  transform: rotate(90deg);
+}
+
+.mono {
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+[data-hue='0'] {
+  --hue-bg: var(--id-0-bg);
+  --hue-fg: var(--id-0-fg);
+}
+
+[data-hue='1'] {
+  --hue-bg: var(--id-1-bg);
+  --hue-fg: var(--id-1-fg);
+}
+
+[data-hue='2'] {
+  --hue-bg: var(--id-2-bg);
+  --hue-fg: var(--id-2-fg);
+}
+
+[data-hue='3'] {
+  --hue-bg: var(--id-3-bg);
+  --hue-fg: var(--id-3-fg);
+}
+
+[data-hue='4'] {
+  --hue-bg: var(--id-4-bg);
+  --hue-fg: var(--id-4-fg);
+}
+
+[data-hue='5'] {
+  --hue-bg: var(--id-5-bg);
+  --hue-fg: var(--id-5-fg);
+}
+
+.repo-hue {
+  color: var(--hue-fg);
+}
+/* ---------- visuals (show_visual): drawn from markup; the look comes from depth, colour only from tone and repo ---------- */
+
+.visual {
+  --arrow: var(--text-3);
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  container: visual / inline-size;
+}
+
+.visual-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  min-height: 18px;
+}
+
+.visual-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.visual-toggle {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  padding: 0;
+  font-size: 12px;
+  color: var(--text-3);
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+.visual:hover .visual-toggle,
+.visual-toggle:focus-visible,
+.visual-toggle[aria-pressed='true'] {
+  opacity: 1;
+}
+
+.visual-toggle:hover {
+  color: var(--text);
+}
+
+@media (hover: none) {
+  .visual-toggle {
+    opacity: 1;
+  }
+}
+
+.visual-broken {
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+.visual-source {
+  max-height: 480px;
+}
+
+.visual-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Layout: columns, rows, branches. */
+.v-column {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.v-column.in-card {
+  gap: 8px;
+}
+
+.v-column.arrows {
+  gap: 0;
+}
+
+.v-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+
+.v-row.in-card {
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px 16px;
+}
+
+.v-flow-row {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.v-flow-cell {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.v-flow-cell > * {
+  flex: 1;
+}
+
+.v-branch {
+  display: flex;
+  gap: 12px;
+  min-width: 0;
+}
+
+.v-branch-cell {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.v-branch-cell > :last-child {
+  flex: 1;
+}
+
+/* The bar the branch arrows hang from: from the first cell's centre to the last one's. */
+.v-branch-cell::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -6px;
+  right: -6px;
+  height: 1px;
+  background: var(--arrow);
+}
+
+.v-branch-cell:first-child::before {
+  left: 50%;
+}
+
+.v-branch-cell:last-child::before {
+  right: 50%;
+}
+
+.v-branch-cell:only-child::before {
+  display: none;
+}
+
+.v-stem {
+  width: 1px;
+  height: 12px;
+  background: var(--arrow);
+  align-self: center;
+}
+
+/* Arrows. */
+.v-arrow {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  flex: none;
+}
+
+.v-arrow.down {
+  height: 28px;
+}
+
+.v-arrow.down.labelled {
+  height: 40px;
+}
+
+.v-arrow-shaft {
+  position: relative;
+  background: var(--arrow);
+}
+
+.v-arrow.down .v-arrow-shaft {
+  width: 1px;
+  height: 100%;
+}
+
+.v-arrow-head {
+  position: absolute;
+  fill: none;
+  stroke: var(--arrow);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.v-arrow.down .v-arrow-head {
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.v-arrow-label {
+  font-size: 12px;
+  line-height: 1.3;
+  color: var(--text-3);
+}
+
+/* Beside the shaft, up to two lines (narrow branch cells wrap it). */
+.v-arrow.down .v-arrow-label {
+  position: absolute;
+  left: calc(50% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  max-width: calc(50% - 12px);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.v-arrow.right {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 36px;
+  max-width: 120px;
+  padding: 0 4px;
+}
+
+/* Balances the label above the shaft, so the shaft stays near the middle. */
+.v-arrow.right.labelled::after {
+  content: '';
+  height: 15px;
+}
+
+.v-arrow.right .v-arrow-shaft {
+  width: 100%;
+  min-width: 28px;
+  height: 1px;
+}
+
+.v-arrow.right .v-arrow-head {
+  right: -1px;
+  top: 50%;
+  transform: translateY(-50%) rotate(-90deg);
+}
+
+.v-arrow.right .v-arrow-label {
+  font-size: 11.5px;
+  text-align: center;
+}
+
+/* Narrow: a left-to-right flow turns into a top-to-bottom one. */
+@container visual (max-width: 520px) {
+  .v-flow-row {
+    flex-direction: column;
+  }
+
+  .v-arrow.right {
+    flex-direction: row;
+    height: 28px;
+    min-width: 0;
+    max-width: none;
+    padding: 0;
+  }
+
+  .v-arrow.right.labelled {
+    height: 40px;
+  }
+
+  .v-arrow.right.labelled::after {
+    display: none;
+  }
+
+  .v-arrow.right .v-arrow-shaft {
+    width: 1px;
+    min-width: 0;
+    height: 100%;
+  }
+
+  .v-arrow.right .v-arrow-head {
+    top: auto;
+    right: auto;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  .v-arrow.right .v-arrow-label {
+    position: absolute;
+    left: calc(50% + 10px);
+    top: 50%;
+    transform: translateY(-50%);
+    white-space: nowrap;
+  }
+}
+
+/* Cards: a hairline box in a row or column; inside a card, a plain row. */
+.v-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--raised);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+/* The recommended or new thing. */
+.v-card.tone-accent {
+  box-shadow: inset 0 0 0 1px var(--accent-line);
+}
+
+.v-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* A nested card with content: a tile a step darker than the card, a step lighter again inside a tile. */
+.v-tile {
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--sunken) 55%, var(--raised));
+}
+
+.v-tile .v-tile {
+  background: var(--raised);
+}
+
+/* The tile already shows the nesting; children line up with a title that has no icon. */
+.v-tile:not(.has-icon) > .v-children {
+  padding-left: 0;
+}
+
+.v-tile.tone-accent {
+  box-shadow: inset 0 0 0 1px var(--accent-line);
+}
+
+.v-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.v-icon {
+  flex: none;
+  color: var(--text-2);
+}
+
+.v-title {
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.v-item .v-title {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+.v-repo {
+  flex: none;
+  font: 11.5px var(--mono);
+}
+
+.v-badge {
+  flex: none;
+  margin-left: auto;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 6px;
+  background: var(--fill);
+  color: var(--text-2);
+  font: 11.5px/20px var(--mono);
+  white-space: nowrap;
+}
+
+.tone-accent > .v-head > .v-badge {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.v-text {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.v-item .v-text {
+  font-size: 13px;
+}
+
+.has-icon > .v-text {
+  padding-left: 24px;
+}
+
+.v-text code {
+  font-family: var(--mono);
+  font-size: 0.86em;
+  background: var(--fill);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.v-children {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.v-item > .v-children {
+  gap: 6px;
+  margin-top: 4px;
+  padding-left: 24px;
+}
+
+/* Key numbers. */
+.v-value {
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.v-item > .v-value {
+  font-size: 18px;
+}
+
+.value > .v-head .v-title {
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--text-3);
+}
+
+.value > .v-head .v-icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* Tones colour only the icon and the number; the icon gives each one a shape too. */
+.tone-ok > .v-head > .v-icon,
+.tone-ok > .v-value {
+  color: var(--done);
+}
+
+.tone-bad > .v-head > .v-icon,
+.tone-bad > .v-value {
+  color: var(--failed);
+}
+
+.tone-warn > .v-head > .v-icon,
+.tone-warn > .v-value {
+  color: var(--waiting);
+}
+
+.tone-running > .v-head > .v-icon,
+.tone-running > .v-value {
+  color: var(--running);
+}
+
+.tone-accent > .v-head > .v-icon,
+.tone-accent > .v-value {
+  color: var(--accent-text);
+}
+
+/* Links: an expert, a file or a URL. */
+.v-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+}
+
+.v-link .v-title {
+  text-decoration: underline;
+  text-decoration-color: var(--accent-line);
+  text-underline-offset: 3px;
+}
+
+.v-link:hover .v-title {
+  text-decoration-color: var(--accent-text);
+}
+
+.v-link svg {
+  flex: none;
+  color: var(--accent-text);
+}
+
+/* Mermaid diagrams (```mermaid in Markdown): themed from the variables above, no surface of their own. */
+.mermaid-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 1em;
+}
+
+/* Never shrunk below its own width (up to 600 px): a wide diagram scrolls on a narrow screen instead. */
+.mermaid-diagram {
+  display: flex;
+  justify-content: safe center;
+  overflow-x: auto;
+}
+
+.mermaid-diagram svg {
+  max-width: 100%;
+  min-width: min(var(--natural, 0px), 600px);
+  height: auto;
+}
+
+.mermaid-diagram.loading {
+  padding: 24px 0;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+
+/* ===== the mockup page ===== */
+body { overflow: auto; height: auto; }
+.page { max-width: 760px; margin: 0 auto; padding: 28px 16px 72px; display: flex; flex-direction: column; gap: 40px; }
+.page-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px 24px; }
+.page-head > div:first-child { flex: 1 1 320px; }
+.page-head h1 { margin: 0 0 4px; font-size: 20px; font-weight: 600; }
+.page-head p { margin: 0; color: var(--text-2); font-size: 13.5px; }
+.theme-switch { flex: none; display: inline-flex; padding: 2px; border-radius: 8px; background: var(--fill); }
+.theme-switch button { border: 0; background: none; padding: 4px 10px; border-radius: 6px; font-size: 12.5px; color: var(--text-2); }
+.theme-switch button[aria-pressed='true'] { background: var(--raised); color: var(--text); box-shadow: 0 1px 2px rgb(0 0 0 / 0.08); }
+.prop { display: flex; flex-direction: column; gap: 14px; }
+.prop-head h2 { margin: 0; font-size: 16px; font-weight: 600; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.prop-kind { font: 11.5px var(--mono); font-weight: 400; color: var(--text-3); }
+.prop-head p { margin: 4px 0 0; color: var(--text-2); font-size: 14px; line-height: 1.55; }
+.prop-head code, .prop-note code { font: 0.86em var(--mono); background: var(--fill); border-radius: 4px; padding: 1px 5px; }
+.prop-note { margin: 0; color: var(--text-3); font-size: 12.5px; line-height: 1.5; }
+details.markup summary { width: fit-content; font-size: 12px; color: var(--text-3); cursor: pointer; }
+details.markup summary:hover { color: var(--text); }
+details.markup pre { margin: 6px 0 0; padding: 10px 12px; border-radius: 8px; background: var(--sunken); color: var(--text-2); font: 12px/1.55 var(--mono); overflow-x: auto; }
+.demo-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; }
+.demo-label { font-size: 12px; color: var(--text-3); margin-bottom: 8px; }
+
+/* ===== proposed: collapsed details (<More>) ===== */
+.expandable > .v-head { cursor: pointer; border-radius: 6px; }
+.expandable > .v-head:hover .v-chevron { color: var(--text); }
+.v-chevron { flex: none; margin-left: auto; color: var(--text-3); transition: transform 140ms ease-out; }
+.v-badge + .v-chevron, .v-meta + .v-chevron { margin-left: 0; }
+.open > .v-head .v-chevron { transform: rotate(90deg); }
+.v-more { font-size: 13px; line-height: 1.55; color: var(--text-2); overflow-wrap: anywhere; }
+.v-card > .v-more { font-size: 13.5px; }
+.has-icon > .v-more { padding-left: 24px; }
+.v-more[hidden] { display: none; }
+.v-more code { font-family: var(--mono); font-size: 0.86em; background: var(--fill); border-radius: 4px; padding: 1px 5px; }
+
+/* ===== proposed: meta, change, progress ===== */
+.v-meta { flex: none; margin-left: auto; font: 12px var(--mono); color: var(--text-3); white-space: nowrap; }
+.v-meta + .v-badge { margin-left: 0; }
+.v-value-line { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 8px; }
+.v-change { font: 13px var(--mono); color: var(--text-3); }
+.tone-ok > .v-value-line > *, .tone-ok > .v-progress > span { color: var(--done); }
+.tone-bad > .v-value-line > *, .tone-bad > .v-progress > span { color: var(--failed); }
+.tone-warn > .v-value-line > *, .tone-warn > .v-progress > span { color: var(--waiting); }
+.tone-running > .v-value-line > *, .tone-running > .v-progress > span { color: var(--running); }
+.v-progress { height: 4px; margin-top: 6px; border-radius: 2px; background: var(--fill); overflow: hidden; }
+.v-progress > span { display: block; width: var(--p); height: 100%; border-radius: 2px; color: var(--text-3); background: currentColor; }
+
+/* ===== proposed: <Bars> ===== */
+.v-bars { display: grid; grid-template-columns: minmax(0, max-content) minmax(0, 1fr); gap: 6px 12px; align-items: center; }
+.v-bars-title { grid-column: 1 / -1; font-size: 13.5px; font-weight: 600; margin-bottom: 2px; }
+.v-bars-title span { font-weight: 400; color: var(--text-3); }
+.v-bar-label { max-width: 200px; font-size: 13px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.v-bar { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.v-bar-fill { flex: none; width: calc((100% - 64px) * var(--f)); min-width: 2px; height: 14px; border-radius: 3px; background: color-mix(in srgb, var(--text-3) 38%, transparent); }
+.v-bar-value { font: 12px var(--mono); color: var(--text-2); white-space: nowrap; }
+.v-bar.tone-ok .v-bar-fill { background: var(--done); }
+.v-bar.tone-bad .v-bar-fill { background: var(--failed); }
+.v-bar.tone-warn .v-bar-fill { background: var(--waiting); }
+.v-bar.tone-ok .v-bar-value { color: var(--done); }
+.v-bar.tone-bad .v-bar-value { color: var(--failed); }
+@container visual (max-width: 420px) { .v-bar-label { max-width: 110px; } }
+
+/* ===== proposed: <Tree> with <Item> ===== */
+/* Rows look like the Files panel's tree: no underline; a row that does something gets the panel's hover fill. */
+.v-tree { display: flex; flex-direction: column; min-width: 0; }
+.v-card > .v-tree { margin: 4px -8px 0; }
+.v-tree.boxed { padding: 6px; border-radius: 10px; background: var(--raised); box-shadow: inset 0 0 0 1px var(--line); }
+.v-tree-row { position: relative; display: flex; align-items: center; gap: 6px; min-height: 26px; min-width: 0; padding: 0 8px 0 calc(4px + var(--d) * 16px); border-radius: 6px; font-size: 13px; color: var(--text); white-space: nowrap; }
+/* Indent guides under each ancestor's chevron. */
+.v-tree-row::before { content: ''; position: absolute; top: 0; bottom: 0; left: 11px; width: calc(var(--d) * 16px); background: repeating-linear-gradient(to right, var(--line) 0 1px, transparent 1px 16px); pointer-events: none; }
+.v-tree-chevron { flex: none; width: 14px; height: 14px; color: var(--text-3); transition: transform 140ms ease-out; }
+.v-tree-node.open > .v-tree-row .v-tree-chevron { transform: rotate(90deg); }
+.v-tree-space { flex: none; width: 14px; }
+.v-tree-noicon { flex: none; width: 15px; }
+.v-tree-row .v-icon { width: 15px; height: 15px; color: var(--text-3); }
+.v-tree-row.toggle, .v-tree-row.link { cursor: pointer; }
+.v-tree-row.toggle:hover, .v-tree-row.link:hover { background: color-mix(in srgb, var(--fill) 70%, transparent); }
+.v-tree-row.toggle:hover .v-tree-chevron { color: var(--text); }
+.v-tree-title { flex: none; }
+.v-tree-note { flex: 1 1 auto; min-width: 0; padding-left: 4px; font-size: 12px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; }
+.v-tree-meta { flex: none; margin-left: auto; padding-left: 8px; font: 11.5px var(--mono); color: var(--text-3); }
+.v-tree-loc { flex: none; margin-left: auto; padding: 0 0 0 8px; border: 0; background: none; font: 11.5px var(--mono); color: var(--text-3); cursor: pointer; }
+.v-tree-meta + .v-tree-loc { margin-left: 0; }
+.v-tree-loc:hover, .v-tree-row.link:hover .v-tree-loc { color: var(--accent-text); text-decoration: underline; text-decoration-color: var(--accent-line); text-underline-offset: 3px; }
+.v-tree-hidden { display: none; }
+.v-tree-node:not(.open) > .v-tree-row .v-tree-hidden { display: inline; }
+.v-tree-node:not(.open) > .v-tree-children { display: none; }
+.v-tree-node.tone-ok > .v-tree-row .v-icon { color: var(--done); }
+.v-tree-node.tone-bad > .v-tree-row .v-icon { color: var(--failed); }
+.v-tree-node.tone-warn > .v-tree-row .v-icon { color: var(--waiting); }
+.v-tree-node.tone-running > .v-tree-row .v-icon { color: var(--running); }
+.v-tree-node.tone-accent > .v-tree-row .v-icon { color: var(--accent-text); }
+
+/* ===== proposed: <Image> ===== */
+.v-image { margin: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.v-image-frame { border-radius: 8px; overflow: hidden; box-shadow: 0 0 0 1px var(--line); cursor: zoom-in; line-height: 0; }
+.v-image-frame svg { width: 100%; height: auto; display: block; }
+.v-image figcaption { font-size: 12.5px; color: var(--text-3); line-height: 1.4; }
+
+/* ===== proposed: <Code> ===== */
+.v-code { margin-top: 6px; border-radius: 8px; background: var(--sunken); overflow: hidden; min-width: 0; }
+.v-code-head { display: flex; align-items: center; gap: 6px; padding: 5px 10px; font-size: 12px; color: var(--text-2); box-shadow: inset 0 -1px 0 var(--line); }
+.v-code-head.link { cursor: pointer; }
+.v-code-head.link:hover { color: var(--text); background: color-mix(in srgb, var(--fill) 50%, transparent); }
+.v-code-head svg { width: 14px; height: 14px; color: var(--text-3); }
+.v-code-head .at { color: var(--text-3); }
+.v-code-head .lang { margin-left: auto; font: 11px var(--mono); color: var(--text-3); }
+.v-code pre { margin: 0; padding: 6px 0; display: grid; grid-template-columns: auto minmax(max-content, 1fr); font: 12px/1.6 var(--mono); color: var(--text); overflow-x: auto; }
+.v-code pre.no-numbers { grid-template-columns: minmax(max-content, 1fr); }
+.v-code .ln { padding: 0 10px 0 12px; text-align: right; color: var(--text-3); user-select: none; }
+.v-code .src { padding: 0 12px; white-space: pre; }
+.v-code pre.no-numbers .src { padding-left: 12px; }
+.v-code .mark { background: color-mix(in srgb, var(--text) 9%, transparent); }
+.v-code .mark.ln { color: var(--text); }
+.v-code .add { background: var(--diff-add); }
+.v-code .del { background: var(--diff-del); }
+.v-code .k { color: var(--hl-keyword); }
+.v-code .s { color: var(--hl-string); }
+.v-code .c { color: var(--hl-comment); }
+.v-code .f { color: var(--hl-title); }
+.has-icon > .v-code { margin-left: 24px; }
+.v-more > .v-code { margin-top: 8px; }
+
+/* ===== proposed: <Timeline> with <Item> ===== */
+.visual { --surface: var(--canvas); }
+.v-card { --surface: var(--raised); }
+.v-timeline { display: flex; flex-direction: column; }
+.v-card > .v-timeline { margin-top: 8px; }
+.v-tl-item { display: grid; grid-template-columns: 44px 12px minmax(0, 1fr); column-gap: 10px; }
+.v-tl-when { font: 11.5px/21px var(--mono); color: var(--text-3); text-align: right; white-space: nowrap; }
+.v-tl-rail { position: relative; display: flex; justify-content: center; }
+.v-tl-rail::before { content: ''; position: absolute; top: 0; bottom: 0; width: 1px; background: color-mix(in srgb, var(--text-3) 45%, transparent); }
+.v-tl-item:first-child .v-tl-rail::before { top: 10px; }
+.v-tl-item:last-child .v-tl-rail::before { bottom: auto; height: 10px; }
+.v-tl-dot { position: relative; margin-top: 6px; width: 9px; height: 9px; border-radius: 50%; background: var(--text-3); box-shadow: 0 0 0 3px var(--surface); }
+.tone-ok .v-tl-dot { background: var(--done); }
+.tone-bad .v-tl-dot { background: var(--failed); }
+.tone-warn .v-tl-dot { background: var(--waiting); }
+.tone-running .v-tl-dot { background: var(--running); }
+.tone-accent .v-tl-dot { background: var(--accent); }
+.v-tl-item.later .v-tl-dot { background: var(--surface); box-shadow: inset 0 0 0 1.5px var(--text-3), 0 0 0 3px var(--surface); }
+.v-tl-body { padding-bottom: 14px; min-width: 0; }
+.v-tl-item:last-child .v-tl-body { padding-bottom: 0; }
+.v-tl-body .v-title { font-size: 13.5px; font-weight: 500; }
+.v-tl-item.later .v-title { color: var(--text-2); }
+.v-tl-body .v-text { font-size: 13px; }
+</style>
+</head>
+<body>
+<main class="page">
+  <header class="page-head">
+    <div>
+      <h1>Visual proposals</h1>
+      <p>Drawn with the app's own theme and visual styles. Two examples of the main use cases first, then each proposal on its own. Chevrons open and fold; "Markup" shows what the agent writes.</p>
+    </div>
+    <div class="theme-switch" role="group" aria-label="Theme">
+      <button data-theme-set="system" aria-pressed="true">System</button>
+      <button data-theme-set="light" aria-pressed="false">Light</button>
+      <button data-theme-set="dark" aria-pressed="false">Dark</button>
+    </div>
+  </header>
+
+  <!-- ================= A. Planning ================= -->
+  <section class="prop">
+    <div class="prop-head">
+      <h2>Example: planning an implementation <span class="prop-kind">Row, Card, More, Timeline</span></h2>
+      <p>The agent sets out two ways to do it, with the reasoning folded away, and how the work would land. Open the chevrons.</p>
+    </div>
+    <figure class="visual">
+      <figcaption class="visual-head"><span class="visual-title">Where should the token refresh live?</span></figcaption>
+      <div class="visual-body">
+        <div class="v-row">
+          <div class="v-card tone-accent expandable">
+            <div class="v-head" role="button" tabindex="0" aria-expanded="false"><span class="v-title">In the API client</span><span class="v-badge">Recommended</span><i data-i="chevron-right" class="v-chevron"></i></div>
+            <p class="v-text">One place catches every 401, refreshes once and retries.</p>
+            <div class="v-children">
+              <div class="v-item tone-ok has-icon"><div class="v-head"><i data-i="check" class="v-icon"></i><span class="v-title">Callers don't change</span></div></div>
+              <div class="v-item tone-ok has-icon"><div class="v-head"><i data-i="check" class="v-icon"></i><span class="v-title">Covers background requests</span></div></div>
+              <div class="v-item tone-bad has-icon"><div class="v-head"><i data-i="x" class="v-icon"></i><span class="v-title">The client learns about auth</span></div></div>
+            </div>
+            <div class="v-more" hidden>The client already sets the headers, so it holds the token anyway. Requests that fail while a refresh runs wait for that same refresh, so there is never more than one.</div>
+          </div>
+          <div class="v-card expandable">
+            <div class="v-head" role="button" tabindex="0" aria-expanded="false"><span class="v-title">In a React hook</span><i data-i="chevron-right" class="v-chevron"></i></div>
+            <p class="v-text">Each screen refreshes before it fetches.</p>
+            <div class="v-children">
+              <div class="v-item tone-ok has-icon"><div class="v-head"><i data-i="check" class="v-icon"></i><span class="v-title">Easy to follow per screen</span></div></div>
+              <div class="v-item tone-bad has-icon"><div class="v-head"><i data-i="x" class="v-icon"></i><span class="v-title">Misses background requests</span></div></div>
+              <div class="v-item tone-bad has-icon"><div class="v-head"><i data-i="x" class="v-icon"></i><span class="v-title">Every screen must remember it</span></div></div>
+            </div>
+            <div class="v-more" hidden>Fine for a small app, but the sync worker and the websocket reconnect don't render, so they'd need their own refresh.</div>
+          </div>
+        </div>
+      </div>
+    </figure>
+    <figure class="visual">
+      <figcaption class="visual-head"><span class="visual-title">How it would land</span></figcaption>
+      <div class="visual-body">
+        <div class="v-timeline">
+          <div class="v-tl-item"><span class="v-tl-when">PR 1</span><span class="v-tl-rail"><span class="v-tl-dot"></span></span><div class="v-tl-body"><span class="v-title">Shared refresh in the API client</span><p class="v-text">Behind a flag, so both paths run side by side.</p></div></div>
+          <div class="v-tl-item"><span class="v-tl-when">PR 2</span><span class="v-tl-rail"><span class="v-tl-dot"></span></span><div class="v-tl-body"><span class="v-title">Remove the per-screen refreshes</span></div></div>
+          <div class="v-tl-item"><span class="v-tl-when">PR 3</span><span class="v-tl-rail"><span class="v-tl-dot"></span></span><div class="v-tl-body"><span class="v-title">Drop the flag</span></div></div>
+        </div>
+      </div>
+    </figure>
+    <details class="markup"><summary>Markup</summary><script type="text/plain">
+<Row>
+  <Card title="In the API client" badge="Recommended" tone="accent">
+    One place catches every 401, refreshes once and retries.
+    <Card icon="check" tone="ok" title="Callers don't change" />
+    <Card icon="check" tone="ok" title="Covers background requests" />
+    <Card icon="x" tone="bad" title="The client learns about auth" />
+    <More>The client already sets the headers, so it holds the token anyway. …</More>
+  </Card>
+  <Card title="In a React hook">
+    …
+  </Card>
+</Row>
+
+<Timeline>
+  <Item when="PR 1" title="Shared refresh in the API client">Behind a flag, so both paths run side by side.</Item>
+  <Item when="PR 2" title="Remove the per-screen refreshes" />
+  <Item when="PR 3" title="Drop the flag" />
+</Timeline></script></details>
+  </section>
+
+  <!-- ================= B. Investigation ================= -->
+  <section class="prop">
+    <div class="prop-head">
+      <h2>Example: investigating a bug <span class="prop-kind">Card, More, Code, Tree</span></h2>
+      <p>The hypotheses and where each one stands, the evidence one click away, and the call tree that shows where it goes wrong. Each call in the repo links to its line; <code>router.push</code> is library code, so it has no link.</p>
+    </div>
+    <figure class="visual">
+      <figcaption class="visual-head"><span class="visual-title">Why users stay signed in after logout</span></figcaption>
+      <div class="visual-body">
+        <div class="v-card has-icon">
+          <div class="v-head"><i data-i="search" class="v-icon"></i><span class="v-title">Three hypotheses</span><span class="v-badge">1 confirmed</span></div>
+          <div class="v-children">
+            <div class="v-item tone-bad has-icon expandable open">
+              <div class="v-head" role="button" tabindex="0" aria-expanded="true"><i data-i="bug" class="v-icon"></i><span class="v-title">A refresh in flight writes the cookie back</span><span class="v-meta">confirmed</span><i data-i="chevron-right" class="v-chevron"></i></div>
+              <div class="v-more">Logout cancels the refresh but doesn't wait for it, and the cancel can't stop a response that's already arriving.
+                <div data-code="evidence"></div>
+              </div>
+            </div>
+            <div class="v-item has-icon expandable">
+              <div class="v-head" role="button" tabindex="0" aria-expanded="false"><i data-i="x" class="v-icon"></i><span class="v-title">Cookie path mismatch</span><span class="v-meta">ruled out</span><i data-i="chevron-right" class="v-chevron"></i></div>
+              <div class="v-more" hidden>Both the login and the logout responses set <code>Path=/</code>.</div>
+            </div>
+            <div class="v-item tone-running has-icon">
+              <div class="v-head"><i data-i="loader" class="v-icon"></i><span class="v-title">The service worker caches <code style="font: 0.86em var(--mono)">/me</code></span><span class="v-meta">checking</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </figure>
+    <figure class="visual">
+      <figcaption class="visual-head"><span class="visual-title">What logout() calls</span></figcaption>
+      <div class="visual-body">
+        <div class="v-tree boxed" data-tree="calls"></div>
+      </div>
+    </figure>
+    <details class="markup"><summary>Markup</summary><script type="text/plain">
+<Card icon="search" title="Three hypotheses" badge="1 confirmed">
+  <Card icon="bug" tone="bad" title="A refresh in flight writes the cookie back" meta="confirmed">
+    <More>Logout cancels the refresh but doesn't wait for it, …
+      <Code file="src/auth/refresh.ts" line="55" mark="57">…</Code>
+    </More>
+  </Card>
+  <Card icon="x" title="Cookie path mismatch" meta="ruled out">
+    <More>Both the login and the logout responses set `Path=/`.</More>
+  </Card>
+  <Card tone="running" title="The service worker caches `/me`" meta="checking" />
+</Card>
+
+<Tree>
+  <Item icon="square-function" title="logout()" link="file:src/auth/logout.ts:40">
+    <Item tone="ok" title="session.clear()" link="file:src/auth/session.ts:12" />
+    <Item tone="bad" title="refresh.cancel()" link="file:src/auth/refresh.ts:88">Returns a promise nobody awaits
+      <Item title="controller.abort()" link="file:src/auth/refresh.ts:91" />
+      <Item tone="warn" title="pending.then(writeCookie)" link="file:src/auth/refresh.ts:57">Still runs after the abort</Item>
+    </Item>
+    <Item title="router.push('/login')" meta="next/router" />
+  </Item>
+</Tree></script></details>
+  </section>
+
+  <!-- ================= 1. More ================= -->
+  <section class="prop">
+    <div class="prop-head">
+      <h2>Collapsed details <span class="prop-kind">new child: &lt;More&gt;</span></h2>
+      <p>A card or an item gets a chevron; the details open in place. The list stays scannable, and the reasoning is one click away instead of a paragraph under every line.</p>
+    </div>
+    <figure class="visual">
+      <div class="visual-body">
+        <div class="v-card has-icon">
+          <div class="v-head"><i data-i="shield-check" class="v-icon"></i><span class="v-title">Review of the auth change</span><span class="v-badge">3 findings</span></div>
+          <p class="v-text">One thing to fix before merging, two that are fine.</p>
+          <div class="v-children">
+            <div class="v-item tone-warn has-icon expandable open">
+              <div class="v-head" role="button" tabindex="0" aria-expanded="true"><i data-i="triangle-alert" class="v-icon"></i><span class="v-title">Refresh can race the logout call</span><span class="v-meta">refresh.ts:42</span><i data-i="chevron-right" class="v-chevron"></i></div>
+              <div class="v-more">Both calls write the session cookie. When logout lands first, the refresh writes a fresh token back and the user stays signed in. Await the pending refresh in <code>logout()</code>, or cancel it.</div>
+            </div>
+            <div class="v-item tone-ok has-icon expandable">
+              <div class="v-head" role="button" tabindex="0" aria-expanded="false"><i data-i="circle-check" class="v-icon"></i><span class="v-title">Tokens are no longer logged</span><span class="v-meta">client.ts:17</span><i data-i="chevron-right" class="v-chevron"></i></div>
+              <div class="v-more" hidden>The debug line printed the whole <code>Authorization</code> header; it now prints only the last four characters.</div>
+            </div>
+            <div class="v-item tone-ok has-icon">
+              <div class="v-head"><i data-i="circle-check" class="v-icon"></i><span class="v-title">Tests cover token expiry</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </figure>
+    <figure class="visual">
+      <div class="visual-body">
+        <div class="v-column arrows">
+          <div class="v-card has-icon"><div class="v-head"><i data-i="monitor" class="v-icon"></i><span class="v-title">Web app</span></div><p class="v-text">Sends the login form</p></div>
+          <div class="v-arrow down labelled"><span class="v-arrow-label">POST /login</span><span class="v-arrow-shaft"><svg class="v-arrow-head" viewBox="0 0 10 6" width="10" height="6"><path d="M1 1l4 4 4-4"/></svg></span></div>
+          <div class="v-card has-icon expandable">
+            <div class="v-head" role="button" tabindex="0" aria-expanded="false"><i data-i="key-round" class="v-icon"></i><span class="v-title">Auth service</span><span class="v-repo repo-hue" data-hue="3">auth</span><i data-i="chevron-right" class="v-chevron"></i></div>
+            <p class="v-text">Checks the password, issues a token</p>
+            <div class="v-more" hidden>Passwords are checked with argon2id. The token lives 15 minutes; the refresh token 30 days, rotated on every use.</div>
+          </div>
+          <div class="v-arrow down"><span class="v-arrow-shaft"><svg class="v-arrow-head" viewBox="0 0 10 6" width="10" height="6"><path d="M1 1l4 4 4-4"/></svg></span></div>
+          <div class="v-card has-icon"><div class="v-head"><i data-i="server" class="v-icon"></i><span class="v-title">API</span></div></div>
+        </div>
+      </div>
+    </figure>
+    <p class="prop-note">A step in a flow can hide its details too. Collapsed by default; an agent can't make it open. A <code>&lt;More&gt;</code> holds text and <code>&lt;Code&gt;</code>, never cards, so it never hides structure.</p>
+    <details class="markup"><summary>Markup</summary><script type="text/plain">
+<Card icon="shield-check" title="Review of the auth change" badge="3 findings">
+  One thing to fix before merging, two that are fine.
+  <Card icon="triangle-alert" tone="warn" title="Refresh can race the logout call" meta="refresh.ts:42">
+    <More>Both calls write the session cookie. When logout lands first, … Await the pending refresh in `logout()`, or cancel it.</More>
+  </Card>
+  <Card tone="ok" title="Tokens are no longer logged" meta="client.ts:17">
+    <More>The debug line printed the whole `Authorization` header; …</More>
+  </Card>
+  <Card tone="ok" title="Tests cover token expiry" />
+</Card></script></details>
+  </section>
+
+  <!-- ================= 2. meta / change / progress ================= -->
+  <section class="prop">
+    <div class="prop-head">
+      <h2>Small extras on a card <span class="prop-kind">attributes: meta, change, progress</span></h2>
+      <p><code>meta</code> is quiet text on the right (a time, a size, a line number). <code>change</code> sits next to a key number. <code>progress</code> is a thin meter, <code>0–100</code> or <code>3/5</code>. Tone colours them, as it does the icon and the number now.</p>
+    </div>
+    <figure class="visual">
+      <div class="visual-body">
+        <div class="v-row">
+          <div class="v-card tone-ok value"><div class="v-value-line"><div class="v-value">80 ms</div><span class="v-change">−81%</span></div><div class="v-head"><span class="v-title">p95 latency</span></div></div>
+          <div class="v-card tone-warn value"><div class="v-value-line"><div class="v-value">412 kB</div><span class="v-change">+3%</span></div><div class="v-head"><span class="v-title">Bundle size</span></div></div>
+          <div class="v-card value"><div class="v-value-line"><div class="v-value">38 s</div><span class="v-change">±0</span></div><div class="v-head"><span class="v-title">Test time</span></div></div>
+        </div>
+      </div>
+    </figure>
+    <div class="demo-pair">
+      <figure class="visual">
+        <div class="visual-body">
+          <div class="v-card has-icon">
+            <div class="v-head"><i data-i="list-checks" class="v-icon"></i><span class="v-title">Checks</span><span class="v-badge">4 of 5</span></div>
+            <div class="v-children">
+              <div class="v-item tone-ok has-icon"><div class="v-head"><i data-i="circle-check" class="v-icon"></i><span class="v-title">Typecheck</span><span class="v-meta">4.1 s</span></div></div>
+              <div class="v-item tone-ok has-icon"><div class="v-head"><i data-i="circle-check" class="v-icon"></i><span class="v-title">Unit tests, 128</span><span class="v-meta">12.3 s</span></div></div>
+              <div class="v-item tone-ok has-icon"><div class="v-head"><i data-i="circle-check" class="v-icon"></i><span class="v-title">Lint</span><span class="v-meta">2.0 s</span></div></div>
+              <div class="v-item tone-ok has-icon"><div class="v-head"><i data-i="circle-check" class="v-icon"></i><span class="v-title">Build</span><span class="v-meta">8.7 s</span></div></div>
+              <div class="v-item tone-bad has-icon"><div class="v-head"><i data-i="circle-x" class="v-icon"></i><span class="v-title">E2E: login in dark mode</span><span class="v-meta">1m 02s</span></div></div>
+            </div>
+          </div>
+        </div>
+      </figure>
+      <figure class="visual">
+        <div class="visual-body">
+          <div class="v-column">
+            <div class="v-card tone-running has-icon"><div class="v-head"><i data-i="loader" class="v-icon"></i><span class="v-title">Database migration</span><span class="v-meta">3/5</span></div><div class="v-progress"><span style="--p: 60%"></span></div></div>
+            <div class="v-card tone-ok has-icon"><div class="v-head"><i data-i="circle-check" class="v-icon"></i><span class="v-title">API docs</span><span class="v-meta">done</span></div><div class="v-progress"><span style="--p: 100%"></span></div></div>
+            <div class="v-card has-icon"><div class="v-head"><i data-i="monitor" class="v-icon"></i><span class="v-title">UI</span><span class="v-meta">1/4</span></div><div class="v-progress"><span style="--p: 25%"></span></div></div>
+          </div>
+        </div>
+      </figure>
+    </div>
+    <details class="markup"><summary>Markup</summary><script type="text/plain">
+<Row>
+  <Card title="p95 latency" value="80 ms" change="−81%" tone="ok" />
+  <Card title="Bundle size" value="412 kB" change="+3%" tone="warn" />
+  <Card title="Test time" value="38 s" change="±0" />
+</Row>
+
+<Card icon="list-checks" title="Checks" badge="4 of 5">
+  <Card tone="ok" title="Typecheck" meta="4.1 s" />
+  <Card tone="bad" title="E2E: login in dark mode" meta="1m 02s" />
+</Card>
+
+<Column>
+  <Card tone="running" title="Database migration" progress="3/5" />
+  <Card tone="ok" title="API docs" progress="100" />
+  <Card icon="monitor" title="UI" progress="1/4" />
+</Column></script></details>
+  </section>
+
+  <!-- ================= 3. Bars ================= -->
+  <section class="prop">
+    <div class="prop-head">
+      <h2>Bar chart <span class="prop-kind">new element: &lt;Bars&gt; with &lt;Bar&gt;</span></h2>
+      <p>Comparing a handful of numbers. No axes or legend: it scales to the largest value and writes the number on each bar. Neutral grey unless a tone says something.</p>
+    </div>
+    <figure class="visual">
+      <div class="visual-body">
+        <div class="v-bars">
+          <div class="v-bars-title">p95 latency per route <span>ms</span></div>
+          <span class="v-bar-label">/login</span><div class="v-bar" style="--f: 0.69"><span class="v-bar-fill"></span><span class="v-bar-value">420</span></div>
+          <span class="v-bar-label">/login, cached</span><div class="v-bar tone-ok" style="--f: 0.13"><span class="v-bar-fill"></span><span class="v-bar-value">80</span></div>
+          <span class="v-bar-label">/refresh</span><div class="v-bar" style="--f: 0.23"><span class="v-bar-fill"></span><span class="v-bar-value">140</span></div>
+          <span class="v-bar-label">/logout</span><div class="v-bar tone-bad" style="--f: 1"><span class="v-bar-fill"></span><span class="v-bar-value">610</span></div>
+          <span class="v-bar-label">/me</span><div class="v-bar" style="--f: 0.07"><span class="v-bar-fill"></span><span class="v-bar-value">45</span></div>
+        </div>
+      </div>
+    </figure>
+    <details class="markup"><summary>Markup</summary><script type="text/plain">
+<Bars title="p95 latency per route" unit="ms">
+  <Bar label="/login" value="420" />
+  <Bar label="/login, cached" value="80" tone="ok" />
+  <Bar label="/refresh" value="140" />
+  <Bar label="/logout" value="610" tone="bad" />
+  <Bar label="/me" value="45" />
+</Bars></script></details>
+  </section>
+
+  <!-- ================= 4. Tree ================= -->
+  <section class="prop">
+    <div class="prop-head">
+      <h2>Tree <span class="prop-kind">new element: &lt;Tree&gt; with nested &lt;Item&gt;</span></h2>
+      <p>For anything hierarchical: a proposed folder structure, a component tree, the shape of a config, or a call tree in an investigation (see the example at the top). Click a row with a chevron to fold it. A folded row says how much it hides. <code>collapsed</code> lets the agent start a large branch folded.</p>
+    </div>
+    <figure class="visual">
+      <figcaption class="visual-head"><span class="visual-title">Proposed layout for billing</span></figcaption>
+      <div class="visual-body">
+        <div class="v-tree boxed" data-tree="proposed"></div>
+      </div>
+    </figure>
+    <p class="prop-note">New things use <code>tone="accent"</code> (the tone that already means "the new or recommended thing"), so their icon turns aqua. A move or a removal is said in words with <code>meta</code>.</p><p class="prop-note">Links are optional per item, so existing and planned code mix in one tree. An item with <code>link="file:path:line"</code> opens that file at that line: a leaf row opens when you click it, and a row with children shows the location on the right (click it to open, click the row to fold). Items without a link (new files, library calls) are plain lines. The tool checks that every linked file exists.</p>
+    <details class="markup"><summary>Markup</summary><script type="text/plain">
+<Tree>
+  <Item icon="folder" title="src/billing" tone="accent">One folder per feature
+    <Item icon="folder" title="__tests__" tone="accent">
+      <Item icon="file-code" title="invoices.test.ts" tone="accent" />
+    </Item>
+    <Item icon="file-code" title="index.ts" tone="accent">Public API only</Item>
+    <Item icon="file-code" title="invoices.ts" tone="accent">Create, send, void</Item>
+    <Item icon="file-code" title="stripe.ts" meta="moved from lib/" link="file:src/lib/stripe.ts" />
+  </Item>
+  <Item icon="folder" title="src/lib" collapsed>
+    <Item icon="file-code" title="money.ts" link="file:src/lib/money.ts">Stays shared</Item>
+    <Item icon="file-code" title="dates.ts" link="file:src/lib/dates.ts" />
+    <Item icon="file-code" title="http.ts" link="file:src/lib/http.ts" />
+    <Item icon="file-code" title="log.ts" link="file:src/lib/log.ts" />
+  </Item>
+</Tree></script></details>
+  </section>
+
+  <!-- ================= 5. Image ================= -->
+  <section class="prop">
+    <div class="prop-head">
+      <h2>Images <span class="prop-kind">new element: &lt;Image&gt;</span></h2>
+      <p>A screenshot or chart the agent made, from its folder. Two in a <code>Row</code> are a before/after; clicking one opens it full size in the Files panel.</p>
+    </div>
+    <figure class="visual">
+      <div class="visual-body">
+        <div class="v-row">
+          <figure class="v-image">
+            <div class="v-image-frame" data-shot="before"></div>
+            <figcaption>Before: the button runs off the card at 375 px</figcaption>
+          </figure>
+          <figure class="v-image">
+            <div class="v-image-frame" data-shot="after"></div>
+            <figcaption>After</figcaption>
+          </figure>
+        </div>
+      </div>
+    </figure>
+    <details class="markup"><summary>Markup</summary><script type="text/plain">
+<Row>
+  <Image src="file:shots/login-before.png" caption="Before: the button runs off the card at 375 px" />
+  <Image src="file:shots/login-after.png" caption="After" />
+</Row></script></details>
+  </section>
+
+  <!-- ================= 6. Timeline ================= -->
+  <section class="prop">
+    <div class="prop-head">
+      <h2>Timeline <span class="prop-kind">new element: &lt;Timeline&gt; with &lt;Item when&gt;</span></h2>
+      <p>What happened, or what comes next: an incident, a run, the PRs of a plan. The dots take the tone. Items after the <code>running</code> one are still to come and get a hollow dot.</p>
+    </div>
+    <figure class="visual">
+      <div class="visual-body">
+        <div class="v-timeline">
+          <div class="v-tl-item tone-bad"><span class="v-tl-when">10:42</span><span class="v-tl-rail"><span class="v-tl-dot"></span></span><div class="v-tl-body"><span class="v-title">Deploy 1.8.0 fails its health checks</span></div></div>
+          <div class="v-tl-item"><span class="v-tl-when">10:47</span><span class="v-tl-rail"><span class="v-tl-dot"></span></span><div class="v-tl-body"><span class="v-title">Rolled back to 1.7.3</span><p class="v-text">Errors stop within a minute.</p></div></div>
+          <div class="v-tl-item tone-ok"><span class="v-tl-when">11:20</span><span class="v-tl-rail"><span class="v-tl-dot"></span></span><div class="v-tl-body"><span class="v-title">Cause found: <code style="font: 0.86em var(--mono)">SESSION_KEY</code> missing in prod</span></div></div>
+          <div class="v-tl-item tone-running"><span class="v-tl-when">now</span><span class="v-tl-rail"><span class="v-tl-dot"></span></span><div class="v-tl-body"><span class="v-title">Adding a startup check for required env vars</span></div></div>
+          <div class="v-tl-item later"><span class="v-tl-when"></span><span class="v-tl-rail"><span class="v-tl-dot"></span></span><div class="v-tl-body"><span class="v-title">Redeploy as 1.8.1</span></div></div>
+        </div>
+      </div>
+    </figure>
+    <details class="markup"><summary>Markup</summary><script type="text/plain">
+<Timeline>
+  <Item when="10:42" tone="bad" title="Deploy 1.8.0 fails its health checks" />
+  <Item when="10:47" title="Rolled back to 1.7.3">Errors stop within a minute.</Item>
+  <Item when="11:20" tone="ok" title="Cause found: `SESSION_KEY` missing in prod" />
+  <Item when="now" tone="running" title="Adding a startup check for required env vars" />
+  <Item title="Redeploy as 1.8.1" />
+</Timeline></script></details>
+  </section>
+
+  <!-- ================= 7. Code ================= -->
+  <section class="prop">
+    <div class="prop-head">
+      <h2>Code <span class="prop-kind">new element: &lt;Code&gt;</span></h2>
+      <p>A short excerpt, up to about 25 lines, taken literally up to <code>&lt;/Code&gt;</code>. With <code>file</code> and <code>line</code> it gets a header that opens the file at that line, and real line numbers. <code>mark</code> highlights the lines that matter. <code>lang="diff"</code> shows a change in one block. It can go in a card or in a <code>&lt;More&gt;</code>.</p>
+    </div>
+    <figure class="visual">
+      <div class="visual-body">
+        <div class="v-card has-icon">
+          <div class="v-head"><i data-i="triangle-alert" class="v-icon" style="color: var(--waiting)"></i><span class="v-title">The refresh is never cancelled on logout</span></div>
+          <p class="v-text">Line 42 starts the cancel but doesn't wait for it, so a refresh in flight still writes its cookie.</p>
+          <div data-code="logout"></div>
+        </div>
+        <div class="v-card has-icon">
+          <div class="v-head"><i data-i="git-merge" class="v-icon"></i><span class="v-title">The fix</span></div>
+          <div data-code="fix"></div>
+        </div>
+      </div>
+    </figure>
+    <p class="prop-note">When <code>file</code> and <code>line</code> are given, the tool compares the excerpt with the file and warns the agent if they don't match, which catches made-up or stale evidence.</p>
+    <details class="markup"><summary>Markup</summary><script type="text/plain">
+<Card icon="triangle-alert" title="The refresh is never cancelled on logout">
+  Line 42 starts the cancel but doesn't wait for it, so a refresh in flight still writes its cookie.
+  <Code file="src/auth/logout.ts" line="40" mark="42">
+    export function logout() {
+      session.clear();
+      refresh.cancel();
+      router.push('/login');
+    }
+  </Code>
+</Card>
+
+<Card icon="git-merge" title="The fix">
+  <Code file="src/auth/logout.ts" lang="diff">
+    -export function logout() {
+    +export async function logout() {
+       session.clear();
+    -  refresh.cancel();
+    +  await refresh.cancel();
+       router.push('/login');
+     }
+  </Code>
+</Card></script></details>
+  </section>
+
+  <!-- ================= 8. Mermaid charts ================= -->
+  <section class="prop">
+    <div class="prop-head">
+      <h2>Mermaid charts <span class="prop-kind">no new markup: theme colours and one line in the tool description</span></h2>
+      <p>Mermaid already draws pies, bar and line charts, gantt charts, timelines and more. These are real Mermaid 11.17.2 renders with the proposed series colours (the repo identity hues), which the app doesn't set yet.</p>
+    </div>
+    <div class="v-column">
+      <figure class="visual mermaid-block"><div class="mermaid-diagram loading" data-mermaid="pie">Drawing the diagram…</div></figure>
+      <figure class="visual mermaid-block"><div class="mermaid-diagram loading" data-mermaid="xy">Drawing the diagram…</div></figure>
+    </div>
+    <details class="markup"><summary>Markup</summary><script type="text/plain">
+```mermaid
+pie title Where the tokens went
+  "Cache reads" : 62
+  "Output" : 18
+  "Cache writes" : 12
+  "Input" : 8
+```
+
+```mermaid
+xychart-beta
+  title "Test time per package (s)"
+  x-axis [ui, server, agent, files]
+  y-axis "seconds" 0 --> 25
+  bar [12, 8, 21, 4]
+  line [10, 9, 14, 4]
+```</script></details>
+  </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.min.js"></script>
+<script>
+// Lucide icon paths (24x24, stroke).
+const ICONS = {
+  'chevron-right': '<path d="m9 18 6-6-6-6"/>',
+  'circle-check': '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
+  'circle-x': '<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>',
+  'triangle-alert': '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  'shield-check': '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>',
+  'folder': '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  'file-code': '<path d="M10 12.5 8 15l2 2.5"/><path d="m14 12.5 2 2.5-2 2.5"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/>',
+  'list-checks': '<path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>',
+  'loader': '<path d="M12 2v4"/><path d="m16.2 7.8 2.9-2.9"/><path d="M18 12h4"/><path d="m16.2 16.2 2.9 2.9"/><path d="M12 18v4"/><path d="m4.9 19.1 2.9-2.9"/><path d="M2 12h4"/><path d="m4.9 4.9 2.9 2.9"/>',
+  'git-merge': '<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/>',
+  'monitor': '<rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/>',
+  'key-round': '<path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"/><circle cx="16.5" cy="7.5" r=".5" fill="currentColor"/>',
+  'server': '<rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/>',
+};
+Object.assign(ICONS, {
+  'search': '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  'bug': '<path d="m8 2 1.88 1.88"/><path d="M14.12 3.88 16 2"/><path d="M9 7.13v-1a3.003 3.003 0 1 1 6 0v1"/><path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6"/><path d="M12 20v-9"/><path d="M6.53 9C4.6 8.8 3 7.1 3 5"/><path d="M6 13H2"/><path d="M3 21c0-2.1 1.7-3.9 3.8-4"/><path d="M20.97 5c0 2.1-1.6 3.8-3.5 4"/><path d="M22 13h-4"/><path d="M17.2 17c2.1.1 3.8 1.9 3.8 4"/>',
+  'x': '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  'check': '<path d="M20 6 9 17l-5-5"/>',
+  'square-function': '<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><path d="M9 17c2 0 2.8-1 2.8-2.8V10c0-2 1-3.3 3.2-3"/><path d="M9 11.2h5.7"/>',
+});
+
+const TONE_ICON = { ok: 'circle-check', bad: 'circle-x', warn: 'triangle-alert', running: 'loader' };
+const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+// ---------- <Tree> ----------
+const TREES = {
+  proposed: [
+    { icon: 'folder', title: 'src/billing', tone: 'accent', note: 'One folder per feature', children: [
+      { icon: 'folder', title: '__tests__', tone: 'accent', children: [
+        { icon: 'file-code', title: 'invoices.test.ts', tone: 'accent' },
+      ] },
+      { icon: 'file-code', title: 'index.ts', tone: 'accent', note: 'Public API only' },
+      { icon: 'file-code', title: 'invoices.ts', tone: 'accent', note: 'Create, send, void' },
+      { icon: 'file-code', title: 'stripe.ts', meta: 'moved from lib/', link: 'src/lib/stripe.ts' },
+    ] },
+    { icon: 'folder', title: 'src/lib', collapsed: true, children: [
+      { icon: 'file-code', title: 'money.ts', note: 'Stays shared', link: 'src/lib/money.ts' },
+      { icon: 'file-code', title: 'dates.ts', link: 'src/lib/dates.ts' },
+      { icon: 'file-code', title: 'http.ts', link: 'src/lib/http.ts' },
+      { icon: 'file-code', title: 'log.ts', link: 'src/lib/log.ts' },
+    ] },
+  ],
+  calls: [
+    { icon: 'square-function', title: 'logout()', link: 'src/auth/logout.ts:40', children: [
+      { tone: 'ok', title: 'session.clear()', link: 'src/auth/session.ts:12' },
+      { tone: 'bad', title: 'refresh.cancel()', note: 'Returns a promise nobody awaits', link: 'src/auth/refresh.ts:88', children: [
+        { title: 'controller.abort()', link: 'src/auth/refresh.ts:91' },
+        { tone: 'warn', title: 'pending.then(writeCookie)', note: 'Still runs after the abort', link: 'src/auth/refresh.ts:57' },
+      ] },
+      { title: "router.push('/login')", meta: 'next/router' },
+    ] },
+  ],
+};
+
+const countItems = (n) => (n.children ?? []).reduce((sum, c) => sum + 1 + countItems(c), 0);
+
+function treeNode(n, d) {
+  const kids = n.children ?? [];
+  const icon = n.icon ?? (n.tone ? TONE_ICON[n.tone] : null);
+  const hidden = countItems(n);
+  // A link shows as a location on the right (file name and line), unless the title already is the file name.
+  const loc = n.link ? n.link.split('/').pop() : null;
+  const showLoc = loc && loc !== n.title;
+  const opens = !kids.length && n.link;
+  const row = `<div class="v-tree-row${kids.length ? ' toggle' : ''}${opens ? ' link' : ''}" style="--d: ${d}"${kids.length ? ' role="button" tabindex="0"' : ''}${opens ? ` title="Open ${esc(n.link)}"` : ''}>`
+    + (kids.length ? '<i data-i="chevron-right" class="v-tree-chevron"></i>' : '<span class="v-tree-space"></span>')
+    + (icon ? `<i data-i="${icon}" class="v-icon"></i>` : '<span class="v-tree-noicon"></span>')
+    + `<span class="v-tree-title">${esc(n.title)}</span>`
+    + `<span class="v-tree-note"${n.note ? ` title="${esc(n.note)}"` : ''}>${n.note ? esc(n.note) : ''}${kids.length ? `<span class="v-tree-hidden">${n.note ? ' · ' : ''}${hidden} item${hidden === 1 ? '' : 's'}</span>` : ''}</span>`
+    + (n.meta ? `<span class="v-tree-meta">${esc(n.meta)}</span>` : '')
+    + (showLoc ? `<button class="v-tree-loc" title="Open ${esc(n.link)}">${esc(loc)}</button>` : '')
+    + '</div>';
+  const children = kids.length ? `<div class="v-tree-children">${kids.map((c) => treeNode(c, d + 1)).join('')}</div>` : '';
+  return `<div class="v-tree-node${n.tone ? ` tone-${n.tone}` : ''}${kids.length && !n.collapsed ? ' open' : ''}">${row}${children}</div>`;
+}
+
+for (const el of document.querySelectorAll('[data-tree]')) el.innerHTML = TREES[el.dataset.tree].map((n) => treeNode(n, 0)).join('');
+document.addEventListener('click', (e) => {
+  if (e.target.closest('.v-tree-loc')) return; // opens the file, doesn't fold
+  const row = e.target.closest('.v-tree-row.toggle');
+  if (row) row.parentElement.classList.toggle('open');
+});
+document.addEventListener('keydown', (e) => {
+  const row = e.target.closest?.('.v-tree-row.toggle');
+  if (row && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); row.parentElement.classList.toggle('open'); }
+});
+
+// ---------- <Code> ----------
+const CODES = {
+  logout: { file: 'src/auth/logout.ts', line: 40, mark: [42], lang: 'ts', code: `export function logout() {
+  session.clear();
+  refresh.cancel();
+  router.push('/login');
+}` },
+  fix: { file: 'src/auth/logout.ts', lang: 'diff', code: `-export function logout() {
++export async function logout() {
+   session.clear();
+-  refresh.cancel();
++  await refresh.cancel();
+   router.push('/login');
+ }` },
+  evidence: { file: 'src/auth/refresh.ts', line: 55, mark: [57], lang: 'ts', code: `export function refresh() {
+  pending = fetch('/api/refresh', { signal: controller.signal });
+  pending.then(writeCookie);
+  return pending;
+}` },
+};
+
+function hl(line) {
+  return esc(line).replace(
+    /(\/\/.*$)|('[^']*'|"[^"]*"|`[^`]*`)|\b(export|async|function|await|const|let|return|if|new|import|from)\b|\b([A-Za-z_$][\w$]*)(?=\()/g,
+    (m, c, s, k, f) => (c ? `<span class="c">${c}</span>` : s ? `<span class="s">${s}</span>` : k ? `<span class="k">${k}</span>` : `<span class="f">${f}</span>`),
+  );
+}
+
+function codeBlock(c) {
+  const name = c.file ? c.file.split('/').pop() : null;
+  const head = c.file
+    ? `<div class="v-code-head link" title="${esc(c.file)}${c.line ? `:${c.line}` : ''}\nOpen in the Files panel"><i data-i="file-code"></i><span>${esc(name)}${c.line ? `<span class="at">:${c.line}</span>` : ''}</span><span class="lang">${c.lang}</span></div>`
+    : '';
+  const numbers = c.line != null && c.lang !== 'diff';
+  const cells = c.code.split('\n').map((text, i) => {
+    const n = (c.line ?? 1) + i;
+    let cls = c.mark?.includes(n) ? ' mark' : '';
+    let body = text;
+    if (c.lang === 'diff') {
+      if (text.startsWith('+')) cls = ' add';
+      else if (text.startsWith('-')) cls = ' del';
+    }
+    return (numbers ? `<span class="ln${cls}">${n}</span>` : '') + `<span class="src${cls}">${hl(body) || ' '}</span>`;
+  });
+  return `<div class="v-code">${head}<pre class="${numbers ? '' : 'no-numbers'}">${cells.join('')}</pre></div>`;
+}
+
+for (const el of document.querySelectorAll('[data-code]')) el.outerHTML = codeBlock(CODES[el.dataset.code]);
+
+for (const el of document.querySelectorAll('i[data-i]')) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('width', '16');
+  svg.setAttribute('height', '16');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('class', `lucide ${el.className}`);
+  svg.innerHTML = ICONS[el.dataset.i] ?? '';
+  el.replaceWith(svg);
+}
+
+// Markup sources: the text/plain script becomes a <pre>.
+for (const s of document.querySelectorAll('details.markup script')) {
+  const pre = document.createElement('pre');
+  pre.textContent = s.textContent.replace(/^\n/, '');
+  s.replaceWith(pre);
+}
+
+// <More>: the head toggles the details.
+for (const head of document.querySelectorAll('.expandable > .v-head')) {
+  const toggle = () => {
+    const card = head.parentElement;
+    const open = card.classList.toggle('open');
+    head.setAttribute('aria-expanded', String(open));
+    card.querySelector(':scope > .v-more').hidden = !open;
+  };
+  head.addEventListener('click', toggle);
+  head.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+}
+
+// Fake screenshots for <Image>.
+const shot = (after) => `<svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
+  <rect width="320" height="200" fill="#ece9e4"/>
+  <rect x="0" y="0" width="320" height="22" fill="#dcd8d1"/>
+  <circle cx="12" cy="11" r="3.5" fill="#c9c4bc"/><circle cx="24" cy="11" r="3.5" fill="#c9c4bc"/><circle cx="36" cy="11" r="3.5" fill="#c9c4bc"/>
+  <rect x="90" y="40" width="140" height="140" rx="10" fill="#ffffff"/>
+  <rect x="106" y="56" width="60" height="8" rx="3" fill="#2a2826"/>
+  <rect x="106" y="78" width="108" height="20" rx="5" fill="#f1eeea" stroke="#dedad4"/>
+  <rect x="106" y="106" width="108" height="20" rx="5" fill="#f1eeea" stroke="#dedad4"/>
+  ${after
+    ? '<rect x="106" y="140" width="108" height="24" rx="6" fill="#0e8a83"/><rect x="142" y="149" width="36" height="6" rx="3" fill="#ffffff"/>'
+    : '<rect x="150" y="140" width="108" height="24" rx="6" fill="#0e8a83"/><rect x="186" y="149" width="36" height="6" rx="3" fill="#ffffff"/>'}
+</svg>`;
+for (const f of document.querySelectorAll('[data-shot]')) f.innerHTML = shot(f.dataset.shot === 'after');
+
+// Theme switch.
+const root = document.documentElement;
+for (const b of document.querySelectorAll('[data-theme-set]')) {
+  b.addEventListener('click', () => {
+    const t = b.dataset.themeSet;
+    if (t === 'system') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', t);
+    for (const o of document.querySelectorAll('[data-theme-set]')) o.setAttribute('aria-pressed', String(o === b));
+    drawCharts();
+  });
+}
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => drawCharts());
+
+// Mermaid with the app's theme variables plus the proposed series colours.
+const CHARTS = {
+  pie: `pie title Where the tokens went
+  "Cache reads" : 62
+  "Output" : 18
+  "Cache writes" : 12
+  "Input" : 8`,
+  xy: `xychart-beta
+  title "Test time per package (s)"
+  x-axis [ui, server, agent, files]
+  y-axis "seconds" 0 --> 25
+  bar [12, 8, 21, 4]
+  line [10, 9, 14, 4]`,
+};
+let n = 0;
+async function drawCharts() {
+  if (!window.mermaid) {
+    for (const el of document.querySelectorAll('[data-mermaid]')) el.textContent = 'Mermaid did not load (no network?).';
+    return;
+  }
+  const css = getComputedStyle(root);
+  const v = (name) => css.getPropertyValue(name).trim();
+  const series = ['--id-3-fg', '--id-2-fg', '--id-4-fg', '--id-5-fg', '--id-0-fg', '--id-1-fg'].map(v);
+  const pie = Object.fromEntries(series.map((c, i) => [`pie${i + 1}`, c]));
+  mermaid.initialize({
+    startOnLoad: false,
+    securityLevel: 'strict',
+    theme: 'base',
+    fontFamily: v('--font'),
+    themeVariables: {
+      darkMode: css.colorScheme === 'dark',
+      background: v('--canvas'),
+      fontFamily: v('--font'),
+      fontSize: '14px',
+      textColor: v('--text'),
+      titleColor: v('--text'),
+      lineColor: v('--text-3'),
+      primaryColor: v('--raised'),
+      primaryTextColor: v('--text'),
+      primaryBorderColor: v('--text-3'),
+      ...pie,
+      pieTitleTextSize: '14px',
+      pieTitleTextColor: v('--text'),
+      pieSectionTextColor: v('--id-on'),
+      pieSectionTextSize: '13px',
+      pieLegendTextColor: v('--text-2'),
+      pieLegendTextSize: '13px',
+      pieStrokeColor: v('--canvas'),
+      pieStrokeWidth: '2px',
+      pieOuterStrokeColor: v('--canvas'),
+      pieOuterStrokeWidth: '0px',
+      pieOpacity: '1',
+      xyChart: {
+        backgroundColor: v('--canvas'),
+        titleColor: v('--text'),
+        xAxisLabelColor: v('--text-2'),
+        xAxisTitleColor: v('--text-2'),
+        xAxisTickColor: v('--text-3'),
+        xAxisLineColor: v('--text-3'),
+        yAxisLabelColor: v('--text-2'),
+        yAxisTitleColor: v('--text-2'),
+        yAxisTickColor: v('--text-3'),
+        yAxisLineColor: v('--text-3'),
+        plotColorPalette: [series[0], series[1]].join(', '),
+      },
+    },
+  });
+  for (const el of document.querySelectorAll('[data-mermaid]')) {
+    try {
+      const { svg } = await mermaid.render(`m${++n}`, CHARTS[el.dataset.mermaid]);
+      el.classList.remove('loading');
+      el.innerHTML = svg;
+    } catch (err) {
+      el.textContent = `Could not draw: ${err.message ?? err}`;
+    }
+  }
+}
+drawCharts();
+</script>
+</body>
+</html>
