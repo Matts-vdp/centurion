@@ -7,6 +7,7 @@ import type { Config } from './config.js';
 import type { Manager } from './manager.js';
 import { apiJson, apiMarkdown } from './docs.js';
 import { packageVersion } from './paths.js';
+import { bold, cyan, dim } from './term.js';
 import { allFiles, FileError, fileDiff, gitStatus, listFolder, RawBody, readFileContent, repoInfo } from './files.js';
 import { EFFORT_LEVELS, IMAGE_TYPES, type EffortLevel, type ImageData, type PermissionDecision } from './types.js';
 
@@ -114,9 +115,9 @@ export function startServer(manager: Manager, config: Config): http.Server {
   server.listen(config.port, config.host, () => {
     const shown = config.host === '0.0.0.0' ? 'localhost' : config.host;
     const token = config.token ? `?token=${encodeURIComponent(config.token)}` : '';
-    console.log(`Centurion listening on http://${shown}:${config.port}/${token}`);
-    console.log(`Permission mode: ${config.permissionMode}. State: ${config.stateFile}`);
-    console.log(`Orchestrators run in: ${config.orchestratorFolder}`);
+    console.log(`${bold(cyan('Centurion'))} listening on ${cyan(`http://${shown}:${config.port}/${token}`)}`);
+    console.log(`${dim('Permission mode:')} ${config.permissionMode}  ${dim('State:')} ${config.stateFile}`);
+    console.log(`${dim('Chats run in:')} ${config.orchestratorFolder}`);
   });
   return server;
 }
