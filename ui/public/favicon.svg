@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- The sidebar's logo (a chat branching into experts) in white on the accent, with filled nodes and a heavier line so it holds up at 16 px. -->
+  <rect width="32" height="32" rx="7" fill="#0e8a83"/>
+  <g transform="translate(4 4)" fill="#fff" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="5" cy="12" r="2.6"/>
+    <circle cx="19" cy="5" r="2.6"/>
+    <circle cx="19" cy="19" r="2.6"/>
+    <path fill="none" d="M7.5 12h4M11.5 12V7c0-1.1.9-2 2-2h3M11.5 12v5c0 1.1.9 2 2 2h3"/>
+  </g>
+</svg>
