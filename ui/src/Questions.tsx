@@ -5,6 +5,7 @@ import { ChatIcon, CheckIcon, Chevron, OpenIcon } from './icons';
 import { AgentMark } from './Mark';
 import { agentState, clock, folderName } from './status';
 import { lastSeen, store, useManager } from './store';
+import { continueList } from './listInput';
 
 type Props = {
   setId: string;
@@ -165,6 +166,7 @@ export function QuestionSetView({ setId, orchestrator, agents, now, onSelect, ru
                       autoFocus
                       placeholder="What is the right answer?"
                       value={corrections[r.id]}
+                      onKeyDown={continueList}
                       onChange={(e) => setCorrections((prev) => ({ ...prev, [r.id]: e.target.value }))}
                     />
                     <button
@@ -307,6 +309,7 @@ function OpenQuestion({
           placeholder="Your answer"
           value={draft.text}
           aria-labelledby={`q-${q.id}`}
+          onKeyDown={continueList}
           onChange={(e) => onDraft({ ...draft, text: e.target.value })}
         />
       ) : (

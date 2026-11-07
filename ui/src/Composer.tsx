@@ -5,6 +5,7 @@ import { AttachImageIcon, CloseIcon, SendIcon } from './icons';
 import { agentState, deliverable, isHeld } from './status';
 import { composerFill, lastSeen, pendingFor, useManager } from './store';
 import { parsePrompt } from './timeline';
+import { continueList } from './listInput';
 
 type Props = {
   agent: AgentRecord;
@@ -166,6 +167,7 @@ export function Composer({ agent, agents, focused, run, onInterrupt }: Props) {
                     return;
                   }
                 }
+                if (e.shiftKey && continueList(e)) return;
                 if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault();
                   void send();
