@@ -91,6 +91,8 @@ export const commands = {
     api<AgentRecord>(`/api/agents/${id}/archive`, { method: 'POST', body: { archived } }),
   setKeepWarm: (id: string, settings: { minutes: number; experts: boolean }) =>
     api<AgentRecord>(`/api/agents/${id}/keep-warm`, { method: 'POST', body: settings }),
+  setNotificationsPaused: (id: string, paused: boolean) =>
+    api<AgentRecord>(`/api/agents/${id}/notifications`, { method: 'POST', body: { paused } }),
   setModel: (id: string, change: { model?: string | null; effort?: EffortLevel | null }) =>
     api<AgentRecord>(`/api/agents/${id}/model`, { method: 'POST', body: change }),
   models: () => api<ModelOption[]>('/api/models'),

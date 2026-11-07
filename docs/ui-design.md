@@ -159,6 +159,7 @@ When auto mode can't decide on a tool call, the turn pauses and a **permission b
 - **Skills.** Typing `/` as the first character opens a list above the composer (a `--raised` menu): `/name` in mono with its argument hint in `--text-3`, then the description in `--text-2` on one line. Prefix matches first. ↑/↓ move the `--fill` row, Tab or Enter fill in `/name `, Esc closes it.
 - **Images.** Paste, drop (the composer gets an `--accent-line` ring while files are over it) or the image button at the start of the footer. Thumbnails (64 px, 8 px radius) sit above the text with a dark round remove button. Large images are scaled to 1568 px and re-encoded in the browser. Sent images show as 140 px tall thumbnails above the message's text box; a click opens them full size on a dark overlay (click or Esc closes). A queued message with images says `· 2 images` in `--text-3`.
 - Queued messages stack directly above the composer as a compact list (`Queued · 2`), one line each, with the sender, the text and a remove button on hover. Later: drag to reorder and "send now".
+- While a chat's expert notifications are paused (⋯ menu), a line sits at the top of the composer: `Expert notifications paused` in `--waiting`, the held count in `--text-3`, and a **Resume** link button. Held notifications don't appear in the queue list.
 
 **Overview (no agent selected).**
 - A summary row of four numbers that act as filters: Running, Needs you, Queued, Spend today.

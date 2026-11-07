@@ -385,6 +385,7 @@ textarea:focus {
   top: calc(100% + 6px);
   z-index: 30;
   min-width: 220px;
+  max-width: min(340px, calc(100vw - 32px));
   padding: 4px;
   background: var(--raised);
   border-radius: 10px;
@@ -414,6 +415,7 @@ textarea:focus {
 .menu-hint {
   font-size: 12.5px;
   color: var(--text-3);
+  overflow-wrap: anywhere;
 }
 
 /* ---------- status ---------- */
@@ -3791,6 +3793,28 @@ kbd.key {
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+.paused-notifications {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 36px;
+  padding: 6px 12px 6px 16px;
+  box-shadow: inset 0 -1px 0 var(--line);
+  font-size: 13px;
+}
+
+.paused-text {
+  flex: 1;
+  min-width: 0;
+  color: var(--waiting);
+  font-weight: 500;
+}
+
+.paused-count {
+  color: var(--text-3);
+  font-weight: 400;
 }
 
 .queue-title {

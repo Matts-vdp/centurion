@@ -89,6 +89,16 @@ export type KeepWarmSettings = {
  * price, and writing a cold cache again costs 1.25× (5 minute TTL) or 2× (1 hour TTL), so pinging stops
  * paying after about 12 pings (45 minutes) or 20 pings (well past 8 hours).
  */
+/** A queue entry held back by a notification pause. */
+export function isHeld(rec: AgentRecord, m: QueuedMessage): boolean {
+  return rec.notificationsPaused === true && m.source === 'manager';
+}
+
+/** Queue entries that will be delivered when the agent is free (held notifications left out). */
+export function deliverable(rec: AgentRecord): QueuedMessage[] {
+  return rec.queue.filter((m) => !isHeld(rec, m));
+}
+
 export function keepWarmCapMinutes(ttlSeconds: number): number {
   return ttlSeconds >= 3600 ? 480 : 45;
 }
@@ -156,6 +166,11 @@ export type AgentRecord = {
   keepWarm?: KeepWarmSettings | null;
   /** What keep-warm is doing now. */
   warm?: KeepWarmState | null;
+  /**
+   * Chats only: expert notifications (manager messages) stay in the queue and the user's messages go
+   * first. Resuming merges the held ones into one message. Absent = false.
+   */
+  notificationsPaused?: boolean;
   /** Model chosen for this agent (alias or id); null uses `config.model` or Claude Code's default. */
   model: string | null;
   /** Effort chosen for this agent; null uses the model's default. */

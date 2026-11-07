@@ -7,7 +7,7 @@ import {
   type SDKResultMessage,
   type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
-import { EFFORT_LEVELS, type AgentRecord, type ContextUsage, type EffortLevel, type QueuedMessage, type Reply } from './types.js';
+import { EFFORT_LEVELS, isHeld, type AgentRecord, type ContextUsage, type EffortLevel, type QueuedMessage, type Reply } from './types.js';
 
 const MAX_REPLIES = 20;
 
@@ -168,7 +168,7 @@ export class AgentRuntime {
 
   /** Deliver the next queued message if the agent is free. */
   pump(): void {
-    if (this.busy || this.stopping || this.hibernating || this.rec.queue.length === 0) return;
+    if (this.busy || this.stopping || this.hibernating || !this.rec.queue.some((m) => !isHeld(this.rec, m))) return;
     this.clearIdleTimer();
     const next = this.takeNext();
     next.uuid = randomUUID();
@@ -301,6 +301,11 @@ export class AgentRuntime {
 
   /** Combine consecutive manager notifications into one message so a busy orchestrator wakes once. */
   private takeNext(): QueuedMessage {
+    // While notifications are paused, the first entry that isn't one goes ahead of them.
+    if (this.rec.notificationsPaused) {
+      const index = this.rec.queue.findIndex((m) => !isHeld(this.rec, m));
+      return this.rec.queue.splice(index, 1)[0];
+    }
     const first = this.rec.queue.shift()!;
     if (first.source !== 'manager') return first;
     const batch = [first];

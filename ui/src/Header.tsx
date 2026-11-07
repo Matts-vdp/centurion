@@ -113,6 +113,22 @@ export function Header({ agent, parent, agents, run, onSelect, onClose, onOpenDr
                     <span className="menu-hint">Starts an expert under this chat without telling it</span>
                   </button>
                 )}
+                {agent.kind === 'orchestrator' && (
+                  <button
+                    role="menuitem"
+                    onClick={() => {
+                      setMenu(false);
+                      void run(() => commands.setNotificationsPaused(agent.id, !agent.notificationsPaused));
+                    }}
+                  >
+                    {agent.notificationsPaused ? 'Resume expert notifications' : 'Pause expert notifications'}
+                    <span className="menu-hint">
+                      {agent.notificationsPaused
+                        ? 'Delivers the held ones as one message'
+                        : 'Holds them until you resume, then they arrive together'}
+                    </span>
+                  </button>
+                )}
                 <button
                   role="menuitem"
                   onClick={() => {

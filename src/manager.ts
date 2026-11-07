@@ -38,6 +38,7 @@ import { createDisplayTools } from './display.js';
 import { createManagerTools } from './tools.js';
 import {
   EFFORT_LEVELS,
+  deliverable,
   keepWarmCapMinutes,
   type AgentKind,
   type AgentRecord,
@@ -461,6 +462,34 @@ export class Manager extends EventEmitter<ManagerEvents> {
     return rec;
   }
 
+  /**
+   * Pause or resume a chat's expert notifications. While paused they wait in the queue and the user's
+   * messages go first; resuming merges the held ones into one message that is delivered as usual.
+   */
+  setNotificationsPaused(id: string, paused: boolean): AgentRecord {
+    const rt = this.runtime(id);
+    const rec = rt.rec;
+    if (rec.kind !== 'orchestrator') throw new Error('Only chats get expert notifications');
+    if (paused === (rec.notificationsPaused === true)) return rec;
+    if (paused) {
+      rec.notificationsPaused = true;
+    } else {
+      delete rec.notificationsPaused;
+      const held = rec.queue.filter((m) => m.source === 'manager');
+      if (held.length > 1) {
+        const n = held.length;
+        const header = `[Manager notification] ${n} notifications arrived while the user had paused them:`;
+        const merged: QueuedMessage = { ...held[0], text: [header, ...held.map((m) => m.text)].join('\n\n') };
+        const first = rec.queue.indexOf(held[0]);
+        rec.queue = rec.queue.filter((m) => m.source !== 'manager');
+        rec.queue.splice(first, 0, merged);
+      }
+    }
+    this.changed(rec);
+    rt.pump();
+    return rec;
+  }
+
   /** The supported models (aliases and ids), cached for the manager's lifetime. */
   async models(): Promise<ModelOption[]> {
     if (this.modelList) return this.modelList;
@@ -747,7 +776,7 @@ export class Manager extends EventEmitter<ManagerEvents> {
     if (!started.every((id) => plan.replied[id])) return;
     const allStarted = expertTracks(plan).every((id) => plan.experts[id]);
     const orch = this.runtimes.get(plan.orchestratorId);
-    const orchIdle = !orch || (!orch.isBusy && orch.rec.queue.length === 0);
+    const orchIdle = !orch || (!orch.isBusy && deliverable(orch.rec).length === 0);
     if (allStarted || orchIdle) this.releaseHeld(plan);
   }
 

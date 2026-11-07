@@ -1,6 +1,6 @@
 import { query, type Options, type Query } from '@anthropic-ai/claude-agent-sdk';
 import { InputChannel, cacheTtl, ownCost, type InputUsage } from './agent.js';
-import { keepWarmCapMinutes, type AgentRecord, type KeepWarmPing, type KeepWarmState } from './types.js';
+import { deliverable, keepWarmCapMinutes, type AgentRecord, type KeepWarmPing, type KeepWarmState } from './types.js';
 
 /** A ping that hasn't answered by then is abandoned (and counts as failed). */
 const PING_TIMEOUT_MS = 120_000;
@@ -80,7 +80,8 @@ export class KeepWarm {
     const working = settings.experts && rec.kind === 'orchestrator' && this.expertsWorking(rec.id);
     const until = Math.max(window, working ? cap : 0) || null;
     if (rec.warm?.stopped) return { nextAt: null, until };
-    if (this.hooks.isBusy(rec.id) || rec.queue.length > 0) return { nextAt: null, until };
+    // Notifications held by a pause don't count: the chat is idle between the user's messages.
+    if (this.hooks.isBusy(rec.id) || deliverable(rec).length > 0) return { nextAt: null, until };
     if (!until || now >= until) return { nextAt: null, until };
     const expires = Date.parse(cache.at) + ttl * 1000;
     // The cache lasts through the window by itself.

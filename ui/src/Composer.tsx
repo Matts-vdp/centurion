@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { commands, type AgentRecord, type CommandOption, type ImageData, type QueuedMessage } from './api';
 import { useNow } from './hooks';
 import { AttachImageIcon, CloseIcon, SendIcon } from './icons';
-import { agentState } from './status';
+import { agentState, deliverable, isHeld } from './status';
 import { composerFill, lastSeen, pendingFor, useManager } from './store';
 import { parsePrompt } from './timeline';
 
@@ -120,7 +120,8 @@ export function Composer({ agent, agents, focused, run, onInterrupt }: Props) {
           {menuOpen && (skills.list === null || matches.length > 0) && (
             <SlashMenu matches={matches} loading={skills.list === null} error={skills.error} active={active} onHover={setMenuIndex} onPick={fillCommand} />
           )}
-          {agent.queue.length > 0 && <Queue agent={agent} run={run} />}
+          {agent.notificationsPaused && <Paused agent={agent} run={run} />}
+          {deliverable(agent).length > 0 && <Queue agent={agent} run={run} />}
           <div className="composer-body">
             {images.list.length > 0 && (
               <div className="attachments" aria-label="Images to send">
@@ -450,11 +451,32 @@ function LiveStatus({ agent, agents }: { agent: AgentRecord; agents: Map<string,
   );
 }
 
+/** Expert notifications are paused: how many wait, and the way to let them through. */
+function Paused({ agent, run }: { agent: AgentRecord; run: (a: () => Promise<unknown>) => Promise<void> }) {
+  const held = agent.queue.filter((m) => isHeld(agent, m)).length;
+  return (
+    <div className="paused-notifications" role="status">
+      <span className="paused-text">
+        Expert notifications paused
+        <span className="paused-count mono"> · {held === 0 ? 'none held' : `${held} held`}</span>
+      </span>
+      <button
+        className="link-button"
+        title={held > 1 ? 'Delivers the held notifications to the chat as one message' : 'Delivers notifications to the chat again'}
+        onClick={() => void run(() => commands.setNotificationsPaused(agent.id, false))}
+      >
+        Resume
+      </button>
+    </div>
+  );
+}
+
 function Queue({ agent, run }: { agent: AgentRecord; run: (a: () => Promise<unknown>) => Promise<void> }) {
+  const queue = deliverable(agent);
   return (
     <div className="queue" aria-label="Queued messages">
-      <div className="queue-title mono">Queued · {agent.queue.length}</div>
-      {agent.queue.map((m: QueuedMessage) => {
+      <div className="queue-title mono">Queued · {queue.length}</div>
+      {queue.map((m: QueuedMessage) => {
         const { source, text } = parsePrompt(m.text);
         const from = source.kind === 'user' ? 'You' : source.kind === 'orchestrator' ? source.name : source.kind === 'manager' ? 'Manager' : 'Claude Code';
         return (

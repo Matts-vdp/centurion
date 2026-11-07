@@ -220,6 +220,11 @@ async function route(manager: Manager, config: Config, req: http.IncomingMessage
     if (body.experts !== undefined && typeof body.experts !== 'boolean') throw new HttpError(400, '"experts" must be true or false');
     return manager.setKeepWarm(id, { minutes: body.minutes, experts: body.experts === true });
   }
+  if (parts[2] === 'notifications' && method === 'POST') {
+    const body = await readJson(req);
+    if (typeof body.paused !== 'boolean') throw new HttpError(400, '"paused" must be true or false');
+    return manager.setNotificationsPaused(id, body.paused);
+  }
   if (parts[2] === 'permission' && method === 'POST') {
     const body = await readJson(req);
     const decisions: PermissionDecision[] = ['allow', 'allowSession', 'deny'];

@@ -1,4 +1,4 @@
-import type { AgentRecord } from './api';
+import type { AgentRecord, QueuedMessage } from './api';
 import { isUnread, pendingFor, pendingPermissions, type Activity } from './store';
 import { displayName, toolDetail } from './tools';
 
@@ -73,7 +73,8 @@ export function agentState(
     return make('failed', err ? `Failed · ${err}` : 'Failed', `Failed ${ago}${err ? ` · ${err}` : ''}`);
   }
   if (a.status === 'interrupted') return make('interrupted', 'Interrupted', `Interrupted ${ago} · send a message to continue`);
-  if (a.queue.length > 0) return make('queued', `${a.queue.length} queued`, `${a.queue.length} queued · starts when the agent is free`);
+  const queued = deliverable(a).length;
+  if (queued > 0) return make('queued', `${queued} queued`, `${queued} queued · starts when the agent is free`);
   if (busyChildren.length > 0) {
     const n = busyChildren.length;
     const names = busyChildren.map((c) => c.name);
@@ -87,6 +88,16 @@ export function agentState(
   if (isUnread(a, seen)) return make('unread', `Replied ${ago}`, `Idle · replied ${ago}`);
   const never = a.replies.length === 0;
   return make('idle', never ? 'New' : `Idle · ${ago}`, never ? 'New · no messages yet' : `Idle · replied ${ago}`);
+}
+
+/** A queue entry held back by a notification pause (as `isHeld` in src/types.ts). */
+export function isHeld(a: AgentRecord, m: QueuedMessage): boolean {
+  return a.notificationsPaused === true && m.source === 'manager';
+}
+
+/** Queue entries that will be delivered when the agent is free. */
+export function deliverable(a: AgentRecord): QueuedMessage[] {
+  return a.queue.filter((m) => !isHeld(a, m));
 }
 
 /** Roll-up of an orchestrator's experts, for its row when the tree is collapsed. */
