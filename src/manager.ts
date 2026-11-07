@@ -1146,8 +1146,8 @@ export class Manager extends EventEmitter<ManagerEvents> {
 
   /**
    * The instructions appended to an agent's system prompt: the repo's `.centurion/prompts/<kind>.md` if it has one
-   * (it replaces the packaged prompt as a whole), else the packaged one. Only experts have a packaged prompt; a
-   * top-level chat becomes an orchestrator through the managing repo's orchestrate skill.
+   * (it replaces the packaged prompt as a whole), else the packaged one. A top-level chat (kind
+   * `orchestrator`) gets `orchestrator.md`; it becomes an orchestrator through the managing repo's orchestrate skill.
    */
   private instructions(rec: AgentRecord): string {
     const file = promptFile(this.config, rec.kind);

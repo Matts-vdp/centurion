@@ -51,7 +51,7 @@ export function init(cwd: string, options: { container: boolean }): string[] {
     '',
     'Next:',
     `  - Commit ${HOME_DIR}/ (its state/ folder is ignored).`,
-    `  - Edit ${HOME_DIR}/prompts/ to change what experts are told; a file there replaces the packaged prompt. Delete it to go back to the default.`,
+    `  - Edit ${HOME_DIR}/prompts/ to change what experts and chats are told; a file there replaces the packaged prompt. Delete it to go back to the default.`,
     '  - Put your orchestration workflow in a skill, e.g. .claude/skills/orchestrate/SKILL.md (`centurion tools` lists the tools it can use).',
     '  - Run `centurion` to start, and `centurion help --agent` for the full guide.',
     ...(notes.length ? ['', ...notes.map((n) => `Note: ${n}`)] : []),
