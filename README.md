@@ -4,13 +4,21 @@ A local manager for Claude agents. You start **chats** in a central project (the
 
 ## Install
 
-Centurion is installed from GitHub, as the `centurion` command. Installing builds it, so it takes a minute; you need Node 20.11 or newer and `git`.
+Centurion is installed from GitHub as the `centurion` command; you need Node 20.11 or newer. Each version tag has a built package on its GitHub release:
 
 ```bash
-npm i -g github:Matts-vdp/centurion#v0.1.0
+npm i -g https://github.com/Matts-vdp/centurion/releases/download/v0.1.0/centurion.tgz
 ```
 
-Pin a tag so an upgrade is a deliberate change. If GitHub can't be reached (a work network, say), build a tarball elsewhere (`git clone`, `npm ci`, `npm pack`) and install that file: `npm i -g ./centurion-0.1.0.tgz`.
+Pin the version so an upgrade is a deliberate change. Without access to GitHub releases (a work network, say), build the same file from a clone and install it, or keep it in the repo or container image that needs it:
+
+```bash
+git clone --branch v0.1.0 https://github.com/Matts-vdp/centurion && cd centurion
+npm ci                                   # also builds (prepare)
+npm pack && npm i -g ./centurion-0.1.0.tgz
+```
+
+`npm i -g github:...` does not work: npm builds a git package in a temporary clone without its build tools when installing globally.
 
 ## Set up a managing folder
 
@@ -67,6 +75,8 @@ npm start          # runs src/cli.ts with tsx; finds .centurion/config.json like
 | `npm run dev` | Runs the manager (restarting on changes) and the Vite dev server together. Open `http://localhost:5173/?token=...`; `/api` is proxied to the manager's port (`CENTURION_PORT`, default 4317). |
 | `npm run typecheck` | Type-checks the backend and the UI. |
 | `npm run check:docs` | Fails when a route, config field or tool has no docs. |
+
+Releasing: set the version in `package.json`, commit, and push a tag `v<version>`. The *Release* workflow (`.github/workflows/release.yml`) checks that the tag matches, type-checks, builds and attaches `centurion.tgz` to a GitHub release.
 
 A `centurion.config.json` in the folder you start from still works (the layout before `.centurion/`), with a note at start-up.
 

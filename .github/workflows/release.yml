@@ -1,0 +1,31 @@
+# On a version tag (v0.1.0), build and attach the installable package to a GitHub release:
+#   npm i -g https://github.com/<owner>/<repo>/releases/download/v0.1.0/centurion.tgz
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Tag matches package.json
+        run: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
+      - run: npm ci # also builds (prepare)
+      - run: npm run typecheck
+      - run: npm run check:docs
+      - name: Pack
+        run: mv "$(npm pack --ignore-scripts | tail -1)" centurion.tgz
+      - name: Release
+        run: gh release create "$GITHUB_REF_NAME" centurion.tgz --title "$GITHUB_REF_NAME" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}

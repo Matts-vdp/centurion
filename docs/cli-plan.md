@@ -25,10 +25,10 @@ The project is called **Centurion**: the bin is `centurion`, the repo folder `.c
 
 The package must work without a registry, straight from GitHub:
 
-- **From the repo (default).** `npm i -g github:<user>/<repo>#v0.1.0`. A `prepare` script runs the build (server and UI) during the install, so the repo holds no built files. Installs are rare (a new machine, a container rebuild, an upgrade), so the extra minute and the dev dependencies it downloads don't matter. Needs `git` and access to GitHub.
-- **From a clone.** `git clone`, `npm ci`, `npm run build`, then `npm i -g .` (or `npm pack` and install the tarball). For hacking on the core, or when the work network blocks GitHub: build the tarball elsewhere and keep it in the work repo or container image.
+- **From a release (default).** A GitHub Action (`.github/workflows/release.yml`) runs on each `v*` tag: it checks the tag against `package.json`, runs `npm ci` (which builds), the type check and the docs check, and attaches `centurion.tgz` to a GitHub release. Install: `npm i -g https://github.com/<user>/centurion/releases/download/v0.1.0/centurion.tgz`. Releasing is pushing a tag.
+- **From a clone.** `git clone --branch <tag>`, `npm ci` (the `prepare` script builds), `npm pack`, `npm i -g ./centurion-<version>.tgz`. For hacking on the core, or when the work network blocks GitHub: build the tarball elsewhere and keep it in the work repo or container image.
 
-A release Action that attaches a built tarball to each tag can come later if installs get slow or GitHub is blocked.
+Tried and dropped: `npm i -g github:<user>/centurion#v0.1.0`. npm builds a git dependency in a temporary clone, and with `-g` it passes its global settings to that build, so the build tools (Vite, TypeScript) are never installed there. Installing them from `prepare` collided with npm's own install of the clone (`ENOTEMPTY` on Windows). A non-global git install does build.
 
 ## Commands
 
@@ -68,7 +68,7 @@ The README links to these commands instead of repeating the API table, and `npm 
 
 ## Container
 
-- `postCreateCommand`: `npm i -g github:<user>/<repo>#<tag>`, then `centurion init --container` if `.centurion/config.json` doesn't exist (normally it is committed). The version is pinned in the container config, so upgrading is a reviewed change.
+- `postCreateCommand`: `npm i -g <release URL of the pinned tag>`, then `centurion init --container` if `.centurion/config.json` doesn't exist (normally it is committed). The version is pinned in the container config, so upgrading is a reviewed change.
 - `forwardPorts: [4317]`, `remoteUser: node`, and the `~/.claude` volume as in `docs/add-devcontainer-support.md`.
 - Auth as in that doc: `CLAUDE_CODE_OAUTH_TOKEN` through `remoteEnv`, or `/login` once into the `~/.claude` volume. A provider (Foundry, Bedrock) through its environment variables.
 - `safe.directory` for each mounted repo, so the Files panel shows git state.
@@ -90,7 +90,7 @@ The README links to these commands instead of repeating the API table, and `npm 
 | 5 | Token generated into `state/token`; uploads under `state/` | done |
 | 6 | `init [--container]` (config, prompts, ignore file), `--version` | done |
 | 7 | Default `removeEnv`; state migrations and the newer-file check | done |
-| 8 | `prepare` script so a GitHub install builds itself | done |
+| 8 | `prepare` builds on `npm ci`; release workflow attaches `centurion.tgz` to each tag's release | done (the workflow is untested until the first tag) |
 | 9 | Route table in `src/server.ts`, config as a zod schema | done |
 | 10 | `help`, `help --agent`, `api`, `tools`, `config` (text and `--json`), `GET /api/docs` | done |
 | 11 | README and `docs/add-devcontainer-support.md` | done |

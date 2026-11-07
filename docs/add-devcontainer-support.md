@@ -11,7 +11,7 @@ The agents have to run where the repositories and their tooling are (language ru
 
 ## 2. Container setup (`.devcontainer/devcontainer.json` of the managing repo)
 
-- **Node 20.11 or newer** (24 recommended) and `git`, e.g. the `mcr.microsoft.com/devcontainers/typescript-node:24` image or a Node feature.
+- **Node 20.11 or newer** (24 recommended), e.g. the `mcr.microsoft.com/devcontainers/typescript-node:24` image or a Node feature.
 - **A non-root user** (`remoteUser: "node"`). Claude Code refuses `bypassPermissions` when it runs as root.
 - **`forwardPorts: [4317]`**, so the page opens in the host browser.
 - **`~/.claude` on a volume**, so the login and session transcripts survive rebuilds. Without them, sessions can't be resumed.
@@ -20,10 +20,10 @@ The agents have to run where the repositories and their tooling are (language ru
 - **`postCreateCommand`** that installs the pinned version and sets up the managing folder if it has no config yet:
 
   ```bash
-  npm i -g github:Matts-vdp/centurion#v0.1.0 && (test -f .centurion/config.json || centurion init --container)
+  npm i -g https://github.com/Matts-vdp/centurion/releases/download/v0.1.0/centurion.tgz && (test -f .centurion/config.json || centurion init --container)
   ```
 
-  Pinning the tag here makes an upgrade a reviewed change. Normally `.centurion/` is committed, so `init` only runs once. Without access to GitHub, install a tarball kept in the repo or the image instead (`npm i -g ./centurion-0.1.0.tgz`).
+  Pinning the version here makes an upgrade a reviewed change. Normally `.centurion/` is committed, so `init` only runs once. Without access to GitHub, install a tarball kept in the repo or the image instead (`npm i -g ./centurion.tgz`; see the README for building one).
 
 ## 3. Auth inside the container
 
