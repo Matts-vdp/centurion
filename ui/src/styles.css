@@ -2356,6 +2356,106 @@ button.crumb:hover {
   color: var(--text-2);
 }
 
+/* A delegation that starts a plan track: one line, the round tracker owns its status. */
+.delegation-line {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 6px 10px 6px 8px;
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 1px var(--line);
+  --ring: var(--canvas);
+  font-size: 13.5px;
+}
+
+.delegation-line + .delegation-line {
+  margin-top: -12px;
+}
+
+.delegation-line-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  min-width: 0;
+}
+
+.delegation-line-head > * {
+  flex: none;
+}
+
+.name-button {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+}
+
+.name-button:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--text-3);
+  text-underline-offset: 3px;
+}
+
+.delegation-line .delegation-folder {
+  font-size: 12.5px;
+}
+
+.delegation-line-head > .delegation-line-message {
+  flex: 1 1 140px;
+  min-width: 0;
+  border: 0;
+  background: none;
+  padding: 0;
+  text-align: left;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.delegation-line-message:hover {
+  color: var(--text-2);
+}
+
+.delegation-round {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+  font-size: 12.5px;
+}
+
+.delegation-line-body {
+  margin: 6px 0 2px 26px;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The round tracker a delegation line pointed to. */
+.plan.started {
+  scroll-margin: 16px;
+}
+
+.plan.flash {
+  animation: plan-flash 1.2s ease-out;
+}
+
+@keyframes plan-flash {
+  from {
+    box-shadow: inset 0 0 0 1px var(--accent-line), 0 0 0 3px var(--accent-soft);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plan.flash {
+    animation: none;
+  }
+}
+
 .narrow .delegation-open {
   padding: 0 8px;
 }
@@ -3117,6 +3217,10 @@ button.crumb:hover {
 
 .questions-folded svg:first-child {
   color: var(--done);
+}
+
+.questions-folded.set-aside svg:first-child {
+  color: var(--text-3);
 }
 
 .plan-replaced-list {

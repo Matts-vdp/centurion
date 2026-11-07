@@ -277,7 +277,7 @@ function Tracker({
   const complete = experts > 0 && replied === experts && rows.every((r) => r.kind !== 'pending');
 
   return (
-    <section className="plan started" aria-label={`Round ${plan.round}, started`}>
+    <section className="plan started" data-plan={plan.id} aria-label={`Round ${plan.round}, started`}>
       <div className="plan-head">
         <span className="tag">Round {plan.round}</span>
         <h3 className="plan-title">{v.title}</h3>

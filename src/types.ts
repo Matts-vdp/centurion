@@ -309,8 +309,11 @@ export type QuestionSet = {
   questions: UserQuestion[];
   resolved: ResolvedQuestion[];
   routed: RoutedQuestion[];
-  /** open: some questions for the user are unanswered. dropped: rewound away while open. */
-  status: 'open' | 'answered' | 'dropped';
+  /**
+   * open: some questions for the user are unanswered. answered: all are. chat: the user replied in the
+   * chat while it was open (it stops waiting but can still be answered). dropped: rewound away while open.
+   */
+  status: 'open' | 'answered' | 'chat' | 'dropped';
   toolUseId?: string;
   createdAt: string;
   updatedAt: string;

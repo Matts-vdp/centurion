@@ -174,7 +174,9 @@ async function route(manager: Manager, config: Config, req: http.IncomingMessage
     const body = await readJson(req, MAX_MESSAGE_BODY);
     const images = imagesOf(body.images);
     const text = images.length ? (typeof body.text === 'string' ? body.text : '') : str(body.text, 'text');
-    return manager.sendMessage(id, text, 'user', body.notify === true, {}, images);
+    const sent = manager.sendMessage(id, text, 'user', body.notify === true, {}, images);
+    manager.setAsideQuestions(id);
+    return sent;
   }
   if (parts[2] === 'experts' && method === 'POST') {
     const body = await readJson(req);

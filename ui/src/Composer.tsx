@@ -28,7 +28,7 @@ export function Composer({ agent, agents, focused, run, onInterrupt }: Props) {
   const decision = pending.plan
     ? { placeholder: 'Answer, add context, or ask for a different plan', hint: 'Enter sends just your message, never the checkboxes' }
     : pending.questions
-      ? { placeholder: `Message ${agent.name}`, hint: 'Enter sends just your message, never the selected answers' }
+      ? { placeholder: `Message ${agent.name}`, hint: 'Enter sends just your message; the open questions fold away' }
       : null;
 
   // Skill autocomplete: `/` as the first character, before the first space.

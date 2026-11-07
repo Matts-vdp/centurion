@@ -1,7 +1,7 @@
-import { useState, type ReactNode } from 'react';
+import { useState, type MouseEvent, type ReactNode } from 'react';
 import type { AgentRecord } from './api';
 import type { Delegation } from './blocks';
-import { CheckIcon, ErrorIcon, OpenIcon } from './icons';
+import { ArrowUpIcon, CheckIcon, ErrorIcon, OpenIcon } from './icons';
 import { AgentMark } from './Mark';
 import { runLabel, useModels } from './models';
 import { agentState, duration, folderName, money, repoHue, type StateKey } from './status';
@@ -31,6 +31,11 @@ export function DelegationView({ block, agents, isLatest, now, onSelect }: Props
   const name = expert?.name ?? block.expertName;
   const status = delegationStatus(block, expert, isLatest, now, (a) => agentState(a, agents, seen, activity.get(a.id), now).sentence);
   const created = block.tool.name.endsWith('create_expert');
+
+  // The round tracker already shows this track's live state: here, one line that points to it.
+  if (block.startsTrack && status.tone !== 'failed') {
+    return <TrackDelegation block={block} expert={expert} name={name} created={created} onSelect={onSelect} />;
+  }
 
   return (
     <div className="delegation">
@@ -67,6 +72,80 @@ export function DelegationView({ block, agents, isLatest, now, onSelect }: Props
           Open <OpenIcon size={13} />
         </button>
       )}
+    </div>
+  );
+}
+
+/** A delegation that starts a plan track, folded to one line: the tracker above owns its status. */
+function TrackDelegation({
+  block,
+  expert,
+  name,
+  created,
+  onSelect,
+}: {
+  block: Delegation;
+  expert: AgentRecord | undefined;
+  name: string;
+  created: boolean;
+  onSelect: (id: string) => void;
+}) {
+  const { plans } = useManager();
+  const [open, setOpen] = useState(false);
+  const plan = expert
+    ? [...plans.values()]
+        .filter((p) => p.status === 'started' && p.experts[block.trackId!] === expert.id)
+        .sort((a, b) => (b.startedAt ?? '').localeCompare(a.startedAt ?? ''))[0]
+    : undefined;
+  const tracks = plan?.versions.at(-1)?.tracks ?? [];
+  const index = tracks.findIndex((t) => t.id === block.trackId);
+  const pending = block.tool.result === undefined;
+  const preview = block.message.split('\n').find((l) => l.trim()) ?? '';
+
+  const showRound = (e: MouseEvent<HTMLButtonElement>) => {
+    const tracker = e.currentTarget.closest('.transcript')?.querySelector<HTMLElement>(`[data-plan="${plan!.id}"]`);
+    if (!tracker) return;
+    tracker.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    tracker.classList.remove('flash');
+    void tracker.offsetWidth;
+    tracker.classList.add('flash');
+  };
+
+  return (
+    <div className={`delegation-line${open ? ' open' : ''}`}>
+      <div className="delegation-line-head">
+        <AgentMark agent={{ name, kind: 'expert', cwd: expert?.cwd }} size={18} />
+        <span className="delegation-verb">{pending ? (created ? 'Starting' : 'Sending to') : created ? 'Started' : 'Asked'}</span>
+        {expert ? (
+          <button className="delegation-name name-button" title={`Open ${name}`} onClick={() => onSelect(expert.id)}>
+            {name}
+          </button>
+        ) : (
+          <span className="delegation-name">{name}</span>
+        )}
+        {index >= 0 && <span className="delegation-verb">for track {index + 1}</span>}
+        {expert && (
+          <span className="mono delegation-folder" title={expert.cwd} data-hue={repoHue(expert.cwd)}>
+            <span className="repo-hue">{folderName(expert.cwd)}</span> · {runLabel(expert)}
+          </span>
+        )}
+        {preview && (
+          <button
+            className="delegation-line-message"
+            aria-expanded={open}
+            title={open ? 'Show less' : 'Show the whole message'}
+            onClick={() => setOpen(!open)}
+          >
+            {open ? 'Hide message' : preview}
+          </button>
+        )}
+        {plan && (
+          <button className="link-button delegation-round" title="Show the round's progress" onClick={showRound}>
+            Round {plan.round} <ArrowUpIcon size={12} />
+          </button>
+        )}
+      </div>
+      {open && <div className="delegation-line-body">{block.message}</div>}
     </div>
   );
 }

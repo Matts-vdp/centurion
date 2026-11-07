@@ -1,7 +1,7 @@
 import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { commands, type AgentRecord, type AnswerPayload, type QuestionSet, type UserQuestion } from './api';
 import { expertStatus } from './Delegation';
-import { CheckIcon, Chevron, OpenIcon } from './icons';
+import { ChatIcon, CheckIcon, Chevron, OpenIcon } from './icons';
 import { AgentMark } from './Mark';
 import { agentState, clock, folderName } from './status';
 import { lastSeen, store, useManager } from './store';
@@ -47,6 +47,19 @@ export function QuestionSetView({ setId, orchestrator, agents, now, onSelect, ru
   }
   const answeredCount = set.questions.filter((q) => q.answer).length;
   const total = set.questions.length;
+
+  // The user replied in the chat instead: one line, still answerable once opened.
+  const setAside = set.status === 'chat';
+  if (setAside && !expanded && Object.keys(corrections).length === 0) {
+    return (
+      <button className="questions-folded set-aside" onClick={() => setExpanded(true)} title="You replied in the chat. Open to answer here anyway.">
+        <ChatIcon size={14} />
+        <span className="questions-folded-title">{set.title}</span>
+        <span className="questions-folded-meta">· answered in the chat</span>
+        <Chevron open={false} size={14} />
+      </button>
+    );
+  }
 
   // Everything answered: one line that opens on click.
   if (set.status === 'answered' && !expanded && Object.keys(corrections).length === 0) {
@@ -95,10 +108,11 @@ export function QuestionSetView({ setId, orchestrator, agents, now, onSelect, ru
     <section className="questions" aria-label={set.title}>
       <div className="plan-head">
         <h3 className="plan-title">{set.title}</h3>
-        <span className={`plan-state${answeredCount < total ? ' waiting' : ''}`}>
+        <span className={`plan-state${answeredCount < total && !setAside ? ' waiting' : ''}`}>
+          {setAside ? 'Answered in the chat · ' : ''}
           {answeredCount} of {total} answered
         </span>
-        {set.status === 'answered' && (
+        {(set.status === 'answered' || setAside) && (
           <button className="icon-button" aria-label="Fold" onClick={() => setExpanded(false)}>
             <Chevron open size={14} />
           </button>

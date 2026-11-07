@@ -250,7 +250,7 @@ export class Manager extends EventEmitter<ManagerEvents> {
       }
     }
     for (const set of this.questionSets) {
-      if (set.orchestratorId === rec.id && set.status === 'open' && Date.parse(set.createdAt) >= from) {
+      if (set.orchestratorId === rec.id && (set.status === 'open' || set.status === 'chat') && Date.parse(set.createdAt) >= from) {
         set.status = 'dropped';
         this.questionsChanged(set);
       }
@@ -843,6 +843,20 @@ export class Manager extends EventEmitter<ManagerEvents> {
     this.sendMessage(set.orchestratorId, text, 'user', false);
     this.questionsChanged(set);
     return set;
+  }
+
+  /**
+   * The user wrote in the chat instead of answering: the chat's open question sets stop waiting
+   * (the UI folds them; they can still be answered).
+   */
+  setAsideQuestions(orchestratorId: string): void {
+    const now = new Date().toISOString();
+    for (const set of this.questionSets) {
+      if (set.orchestratorId !== orchestratorId || set.status !== 'open') continue;
+      set.status = 'chat';
+      set.updatedAt = now;
+      this.questionsChanged(set);
+    }
   }
 
   private findRouted(orchestratorId: string, questionId: string, expertId: string): { setId: string; questionId: string } {

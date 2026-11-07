@@ -49,6 +49,10 @@ export type Delegation = {
   notifiedAt?: number;
   /** The orchestrator read the reply with get_expert_output. */
   read: boolean;
+  /** The plan track it names (track_id). */
+  trackId?: string;
+  /** The first delegation for its track since the last plan: the round tracker shows its state. */
+  startsTrack: boolean;
 };
 
 export function toBlocks(items: Item[], replies: Reply[], running: boolean): RenderBlock[] {
@@ -59,6 +63,8 @@ export function toBlocks(items: Item[], replies: Reply[], running: boolean): Ren
   const latest = new Map<string, Delegation>();
   // Subagents by tool call and by agent id, so background endings and reports can fold into them.
   const subs = { byTool: new Map<string, SubagentBlock>(), byAgent: new Map<string, SubagentBlock>() };
+  // Track ids already started since the last plan block (ids like "t1" repeat from round to round).
+  let startedTracks = new Set<string>();
 
   turns.forEach((turn, n) => {
     const last = n === turns.length - 1;
@@ -74,6 +80,10 @@ export function toBlocks(items: Item[], replies: Reply[], running: boolean): Ren
         if (name === 'create_expert' || name === 'message_expert') {
           flush(false);
           const d = delegation(item);
+          if (d.trackId && !item.isError && !item.denied && !startedTracks.has(d.trackId)) {
+            d.startsTrack = true;
+            startedTracks.add(d.trackId);
+          }
           if (d.expertId) latest.set(d.expertId, d);
           blocks.push(d);
           continue;
@@ -91,6 +101,7 @@ export function toBlocks(items: Item[], replies: Reply[], running: boolean): Ren
           const parsed = parseJson(item.result);
           if (name === 'propose_tracks' && typeof parsed.planId === 'string' && typeof parsed.version === 'number') {
             flush(false);
+            startedTracks = new Set();
             blocks.push({ kind: 'plan', key: `plan-${item.id}`, planId: parsed.planId, version: parsed.version });
             continue;
           }
@@ -153,6 +164,8 @@ function delegation(tool: ToolItem): Delegation {
     expertName: typeof i.name === 'string' ? i.name : (expertId ?? 'expert'),
     message: typeof i.message === 'string' ? i.message : '',
     read: false,
+    ...(typeof i.track_id === 'string' && i.track_id ? { trackId: i.track_id } : {}),
+    startsTrack: false,
   };
 }
 
