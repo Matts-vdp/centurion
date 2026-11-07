@@ -115,3 +115,7 @@ Use `--config <path>` or `CENTURION_CONFIG` to point at another config file. `CE
 Agent records carry `model` and `effort` (set, or `null`), `activeModel` and `activeEffort` (what the process last reported; effort is only known when Claude Code reports it), `archived` and `archivedWith` (the chat an expert was archived with), `lastActivityAt` (when a turn last ended or failed), `turnStartedAt` (while a turn runs) and `context: { usedTokens, windowTokens } | null`, besides the queue, replies, status and cost. Each reply has `durationMs` and `costUsd` for its turn.
 
 Permission requests (`permission` events) carry `id`, `agentId`, `toolName`, `toolUseId`, `input`, the SDK's `title`, `description`, `reason` and `blockedPath` when given, `canAllowSession`, `defaultToNo`, `status` (`pending`, `allowed`, `allowedSession`, `denied`, `cancelled`) and the times. They live in memory only: a waiting request is cancelled when the turn is interrupted, stopped or ends, and after a restart the turn is interrupted as usual. `AskUserQuestion` is always denied with a pointer to `ask_user` (chats) or the reply (experts), and `ExitPlanMode` is always allowed.
+
+## License
+
+Apache License 2.0, see [LICENSE](LICENSE) and [NOTICE](NOTICE). Centurion depends on the Claude Agent SDK, which has its own terms; you need your own Claude access to run it.
