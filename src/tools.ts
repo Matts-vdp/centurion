@@ -6,6 +6,9 @@ import { EFFORT_LEVELS, type AgentRecord, type EffortLevel } from './types.js';
 
 type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean };
 
+/** Added to create_expert / message_expert results: the chat already shows the delegation. */
+const SHOWN_DELEGATION = 'The user sees this in the chat. Don\'t restate the task in your reply.';
+
 function ok(data: unknown): ToolResult {
   return { content: [{ type: 'text', text: typeof data === 'string' ? data : JSON.stringify(data, null, 2) }] };
 }
@@ -54,7 +57,7 @@ export function managerTools(manager: Manager, orchestratorId: string) {
       'settings and MCP servers. Omit `folder` to start it in your own folder (useful for web research or MCP-only work). ' +
       'If you pass `message`, the expert starts working on it right away. Leave `model` and `effort` out unless the ' +
       'task clearly needs something else: the expert then runs on the same model and effort as you (or as its plan ' +
-      'track says).',
+      'track says). The user sees the expert start in the chat, with its task, so don\'t restate the task in your reply.',
     {
       name: z.string().describe('Short name, e.g. "api-research"'),
       folder: z.string().optional().describe('Absolute path of the folder the expert works in. Defaults to your own folder.'),
@@ -77,14 +80,14 @@ export function managerTools(manager: Manager, orchestratorId: string) {
         model: args.model,
         effort: args.effort,
       });
-      return ok(summary(rec));
+      return ok({ ...summary(rec), note: SHOWN_DELEGATION });
     }),
   ),
   tool(
     'message_expert',
     'Send a message to one of your experts. It is queued and handled after any earlier messages; this tool returns ' +
       'immediately. With notify (default true) you get a notification when the expert has handled it; then read the ' +
-      'answer with get_expert_output.',
+      'answer with get_expert_output. The user sees the message in the chat, so don\'t restate it in your reply.',
     {
       expert_id: z.string(),
       message: z.string(),
@@ -100,7 +103,7 @@ export function managerTools(manager: Manager, orchestratorId: string) {
         trackId: args.track_id,
         questionId: args.question_id,
       });
-      return ok({ accepted: true, ...summary(manager.get(rec.id)) });
+      return ok({ accepted: true, ...summary(manager.get(rec.id)), note: SHOWN_DELEGATION });
     }),
   ),
   tool(
@@ -127,7 +130,9 @@ export function managerTools(manager: Manager, orchestratorId: string) {
       'your own, to run in parallel. The user sees them as a plan they can start (all or some) or answer in the chat. ' +
       'Returns immediately; end your turn after calling it and wait. Calling it again for the same round replaces ' +
       'the plan with a new version (do that when the user asks for changes). `later` outlines the rounds you expect ' +
-      'after this one, for information only.',
+      'after this one, for information only. The user sees the plan exactly as you pass it, so don\'t list the tracks, ' +
+      'their summaries or the later rounds in your reply: at most one short line, or what the plan can\'t show (why ' +
+      'this split, what you are unsure of).',
     {
       round: z.number().int().min(1),
       title: z.string().describe('What this round is about, in a few words'),
@@ -163,7 +168,8 @@ export function managerTools(manager: Manager, orchestratorId: string) {
         planId: plan.id,
         round: plan.round,
         version: plan.versions.length,
-        status: 'Waiting for the user. End your turn now. You will get a message saying which tracks to start, or the user will answer in the chat.',
+        status:
+          'Shown to the user. Don\'t repeat the tracks in your reply. End your turn now. You will get a message saying which tracks to start, or the user will answer in the chat.',
       });
     }),
   ),
@@ -173,7 +179,8 @@ export function managerTools(manager: Manager, orchestratorId: string) {
       'you answered yourself (`resolved`, with where the answer came from) and the ones you sent to an expert in another ' +
       'repo (`routed`; also send each with message_expert and its question_id), so the user sees all of them. Give ' +
       'options when there are clear choices and mark the one you prefer as suggested. Returns immediately; end your ' +
-      'turn after calling it. The answers arrive as one message.',
+      'turn after calling it. The answers arrive as one message. The user sees the questions, options and context as ' +
+      'you pass them, so don\'t repeat them in your reply: at most one short line.',
     {
       title: z.string().describe('E.g. "Questions from round 1"'),
       questions: z
@@ -199,7 +206,8 @@ export function managerTools(manager: Manager, orchestratorId: string) {
       const set = manager.askUser(orchestratorId, args);
       return ok({
         questionSetId: set.id,
-        status: 'Waiting for the user. Send the routed questions with message_expert (question_id), then end your turn.',
+        status:
+          'Shown to the user. Don\'t repeat the questions in your reply. Send the routed questions with message_expert (question_id), then end your turn.',
       });
     }),
   ),

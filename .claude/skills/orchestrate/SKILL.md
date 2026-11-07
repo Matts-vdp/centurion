@@ -54,4 +54,4 @@ Experts end their findings with open questions, marked `cross-repo` (needs infor
 - Send cross-repo questions to an expert in the right repo with `message_expert` and a `question_id`.
 - Ask the user the rest with **one** `ask_user` call: give options when there are clear choices, and mark the one you prefer as `suggested`. Include the questions you answered (`resolved`) and the ones you routed (`routed`), so the user sees all of them and can correct you.
 
-Call `ask_user` before sending the routed questions, then end your turn. The answers arrive as one message starting with `Answers to …`; pass them on to the experts that asked.
+The tool shows the questions to the user as they are, so **do not repeat them in your reply**. Call `ask_user` before sending the routed questions, then end your turn. The answers arrive as one message starting with `Answers to …`; pass them on to the experts that asked.
