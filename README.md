@@ -49,6 +49,8 @@ Auth comes from your normal Claude Code login (`claude` → `/login`), a `CLAUDE
 | `env` / `removeEnv` | Environment variables to add to or remove from agent processes. |
 | `idleMinutes` | Close an agent's process after this many idle minutes (default 10, `0` = never). The next message resumes the session. |
 
+The file is checked at startup: an unknown field or a wrong type stops the manager with a message naming the field and the file.
+
 Use `--config <path>` or `AGENT_MANAGER_CONFIG` to point at another config file. `AGENT_MANAGER_PORT`, `AGENT_MANAGER_HOST` and `AGENT_MANAGER_TOKEN` override the file.
 
 ## How it works
