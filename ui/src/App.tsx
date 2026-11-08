@@ -12,6 +12,34 @@ import { Switcher } from './Switcher';
 
 const NARROW = '(max-width: 899px)';
 
+// The sidebar's width, per browser.
+const SIDEBAR_KEY = 'centurion-sidebar-width';
+const SIDEBAR_DEFAULT = 264;
+const SIDEBAR_MIN = 200;
+const SIDEBAR_MAX = 480;
+
+function clampSidebar(w: number): number {
+  return Math.round(Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, w)));
+}
+
+function readSidebarWidth(): number {
+  try {
+    const n = Number(localStorage.getItem(SIDEBAR_KEY));
+    return n > 0 ? clampSidebar(n) : SIDEBAR_DEFAULT;
+  } catch {
+    return SIDEBAR_DEFAULT;
+  }
+}
+
+function saveSidebarWidth(w: number): void {
+  try {
+    if (w === SIDEBAR_DEFAULT) localStorage.removeItem(SIDEBAR_KEY);
+    else localStorage.setItem(SIDEBAR_KEY, String(w));
+  } catch {
+    // Storage blocked: the width just isn't remembered.
+  }
+}
+
 function readHash(): string | null {
   const m = /^#agent=(.+)$/.exec(location.hash);
   return m ? decodeURIComponent(m[1]) : null;
@@ -33,6 +61,12 @@ export function App() {
   const narrow = useMedia(NARROW);
   const [sidebarOpen, setSidebarOpen] = useState(() => !window.matchMedia(NARROW).matches || !layout.focused());
   const [switcher, setSwitcher] = useState(false);
+  const [sidebarWidth, setSidebarWidthState] = useState(readSidebarWidth);
+  const setSidebarWidth = useCallback((w: number) => {
+    const next = clampSidebar(w);
+    setSidebarWidthState(next);
+    saveSidebarWidth(next);
+  }, []);
   useTabStatus(selected ? agents.get(selected) : undefined);
 
   useEffect(() => store.connect(), []);
@@ -93,8 +127,9 @@ export function App() {
       {showSidebar && (
         <>
           {narrow && agent && <div className="scrim" onClick={() => setSidebarOpen(false)} />}
-          <aside className="sidebar" aria-label="Agents">
+          <aside className="sidebar" aria-label="Agents" style={narrow ? undefined : { width: sidebarWidth }}>
             <Sidebar agents={agents} selected={selected} open={panes} onSelect={select} onOpenInSplit={openInSplit} onSearch={() => setSwitcher(true)} />
+            {!narrow && <SidebarResizer width={sidebarWidth} onResize={setSidebarWidth} />}
           </aside>
         </>
       )}
@@ -261,6 +296,46 @@ function Divider() {
         if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
           e.preventDefault();
           layout.setRatio(ratio + (e.key === 'ArrowLeft' ? -0.05 : 0.05));
+        }
+      }}
+    />
+  );
+}
+
+/** Drag the sidebar's right edge to resize it; double-click puts it back. */
+function SidebarResizer({ width, onResize }: { width: number; onResize: (w: number) => void }) {
+  const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const left = e.currentTarget.parentElement!.getBoundingClientRect().left;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const move = (ev: PointerEvent) => onResize(ev.clientX - left);
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      document.body.classList.remove('resizing');
+    };
+    document.body.classList.add('resizing');
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+  return (
+    <div
+      className="pane-divider sidebar-resizer"
+      role="separator"
+      aria-orientation="vertical"
+      aria-valuenow={width}
+      aria-valuemin={SIDEBAR_MIN}
+      aria-valuemax={SIDEBAR_MAX}
+      aria-label="Resize the sidebar"
+      title="Drag to resize, double-click to reset"
+      tabIndex={0}
+      onPointerDown={onPointerDown}
+      onDoubleClick={() => onResize(SIDEBAR_DEFAULT)}
+      onKeyDown={(e) => {
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+          e.preventDefault();
+          onResize(width + (e.key === 'ArrowLeft' ? -16 : 16));
         }
       }}
     />

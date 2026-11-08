@@ -250,6 +250,7 @@ svg.lucide {
 .sidebar {
   width: 264px;
   flex: none;
+  position: relative;
   background: var(--sunken);
   display: flex;
   flex-direction: column;
@@ -4912,6 +4913,11 @@ body.resizing .pane-divider::after {
 
 .pane-divider:focus-visible {
   outline: none;
+}
+
+/* The sidebar's edge: the pane divider's handle, straddling its right border. */
+.sidebar-resizer {
+  left: 100%;
 }
 
 body.resizing {
