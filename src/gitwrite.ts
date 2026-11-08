@@ -1,7 +1,8 @@
 import { EventEmitter } from 'node:events';
-import { readFile, rm, stat } from 'node:fs/promises';
+import { readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { FileError, relParts, resolveInside, toPosix } from './confine.js';
+import { FileError, isInside, MAX_TEXT, relParts, resolveInside, toPosix } from './confine.js';
+import { conflictFile } from './gitconflict.js';
 import { fileDiff, forgetGitCaches, git, gitStatus, markOperationStarted, needRepo, type GitEntry, type GitOptions, type GitResult, type GitStatus, type RepoInfo } from './git.js';
 
 /**
@@ -271,6 +272,62 @@ function allGroups(status: GitStatus): { conflicts: GitEntry[]; staged: GitEntry
 /** Pathspecs go through stdin (no command-line length limit), taken literally. */
 const pathspecArgs = ['--pathspec-from-file=-', '--pathspec-file-nul'];
 const pathInput = (paths: string[]) => paths.join('\0') + '\0';
+
+/** Resolve a conflict from its index stages, or save the inline result. */
+export function resolveConflict(root: string, req: { path: string; content?: string; take?: 'yours' | 'incoming' | 'delete'; hash?: string }): Promise<WriteResult & { deleted: string[] }> {
+  const [repoPath] = repoPaths([req.path]);
+  if ((req.content === undefined) === (req.take === undefined)) throw new FileError(400, 'Give either content or take');
+  if (req.content !== undefined && Buffer.byteLength(req.content) > MAX_TEXT) throw new FileError(400, 'Conflict result is too large');
+  return write(root, async (run) => {
+    const status = await freshStatus(root);
+    if (!allGroups(status).conflicts.some((e) => e.path === repoPath)) throw new GitError(409, 'The file is no longer conflicted');
+    const data = await conflictFile(run.top, repoPath);
+    if (req.hash && req.hash !== data.hash) throw new GitError(409, 'The conflict changed. Refresh it before saving');
+    if (req.content !== undefined && (data.binary || data.deleted)) throw new GitError(400, 'This conflict needs a file choice');
+    const full = await resolveInside(run.top, repoPath, false);
+    // Prevent writing through a symlink or a linked parent directory.
+    const realParent = await realpath(path.dirname(full));
+    if (!isInside(run.top, realParent)) throw new GitError(403, 'That path leads outside the repository');
+    if (await stat(full).then(() => true, () => false)) await resolveInside(run.top, repoPath);
+    const deleting = req.take === 'delete' || (req.take === 'yours' && data.deleted === 'yours') || (req.take === 'incoming' && data.deleted === 'incoming');
+    if (deleting) {
+      await rm(full, { force: true });
+    } else if (req.content !== undefined) {
+      await writeFile(full, req.content);
+    } else {
+      const stage = req.take === 'yours' ? data.yoursStage : data.yoursStage === 2 ? 3 : 2;
+      const blob = await run.must(['show', `:${stage}:${repoPath}`]);
+      await writeFile(full, blob.stdout);
+    }
+    await run.must(['--literal-pathspecs', 'add', '-A', ...pathspecArgs], { input: pathInput([repoPath]) });
+    return { deleted: deleting ? [repoPath] : [] };
+  });
+}
+
+/** Resolve unambiguous text blocks across the requested conflict scope. */
+export function resolveSimpleConflicts(root: string, paths: string[]): Promise<WriteResult & { resolved: number }> {
+  const list = repoPaths(paths);
+  return write(root, async (run) => {
+    const status = await freshStatus(root);
+    let resolved = 0;
+    for (const p of list) {
+      if (!allGroups(status).conflicts.some((e) => e.path === p)) continue;
+      const data = await conflictFile(run.top, p);
+      if (data.binary || data.deleted || !data.merged || !data.blocks.length) continue;
+      const chosen = data.blocks.map((b) => b.yours === b.base ? b.incoming : b.incoming === b.base ? b.yours :
+        b.yours.replace(/\s/g, '') === b.incoming.replace(/\s/g, '') ? b.yours : null);
+      if (chosen.some((c) => c === null)) continue;
+      let result = data.merged;
+      const eol = data.merged.includes('\r\n') ? '\r\n' : '\n';
+      for (let i = data.blocks.length - 1; i >= 0; i--) result = result.slice(0, data.blocks[i].start) + chosen[i]!.replace(/\r?\n/g, eol) + result.slice(data.blocks[i].end);
+      const full = await resolveInside(run.top, p);
+      await writeFile(full, result);
+      await run.must(['--literal-pathspecs', 'add', '-A', ...pathspecArgs], { input: pathInput([p]) });
+      resolved++;
+    }
+    return { resolved };
+  });
+}
 
 async function freshStatus(root: string): Promise<GitStatus> {
   forgetGitCaches();

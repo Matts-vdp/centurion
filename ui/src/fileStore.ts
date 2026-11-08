@@ -39,6 +39,8 @@ export type DiffSide = 'head' | 'staged' | 'worktree';
 /** A git command a write ran, with its output, for Details. */
 export type GitCommand = { command: string; code: number; output: string };
 export type GitWrite = { status: GitStatus | null; commands: GitCommand[] };
+export type ConflictBlock = { start: number; end: number; base: string; yours: string; incoming: string };
+export type Conflict = { path: string; code: string; binary: boolean; deleted: 'yours' | 'incoming' | null; yoursStage: 2 | 3; base: string | null; yours: string | null; incoming: string | null; labels: { yours: string; incoming: string; base: string }; merged: string | null; hash: string; blocks: ConflictBlock[] };
 export type GitRemoteWrite = GitWrite & { pulled: number; pushed: number; conflicted: boolean };
 export type GitBranches = {
   current: string | null; default: string | null; remotes: string[];
@@ -87,6 +89,9 @@ export const filesApi = {
 
 /** Git writes on the repository of the agent's own folder (root 0). Paths are relative to the repository. */
 export const gitApi = {
+  conflict: (id: string, path: string) => api<Conflict>(`/api/agents/${id}/git/conflict?root=0&path=${encodeURIComponent(path)}`),
+  resolve: (id: string, req: { path: string; content?: string; take?: 'yours' | 'incoming' | 'delete'; hash?: string }) => api<GitWrite & { deleted: string[] }>(`/api/agents/${id}/git/resolve`, { method: 'POST', body: req }),
+  resolveSimple: (id: string, paths: string[]) => api<GitWrite & { resolved: number }>(`/api/agents/${id}/git/resolve-simple`, { method: 'POST', body: { paths } }),
   remote: (id: string, action: 'fetch' | 'pull' | 'push' | 'sync' | 'publish', remote?: string) =>
     api<GitRemoteWrite>(`/api/agents/${id}/git/${action}`, { method: 'POST', body: remote ? { remote } : {} }),
   cancel: (id: string) => api<{ cancelled: boolean }>(`/api/agents/${id}/git/cancel`, { method: 'POST' }),

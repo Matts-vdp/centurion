@@ -173,6 +173,7 @@ All under the token check. Each takes `root` (only 0 for writes) and resolves th
 | GET | `/api/agents/:id/git/commit/:hash` | Message, meta and changed files; `?path=` for one file's diff |
 | GET | `/api/agents/:id/git/conflict?path=` | `{ base, yours, incoming, labels, blocks }` |
 | POST | `/api/agents/:id/git/resolve` | `{ path, content }` or `{ path, take: 'yours' \| 'incoming' \| 'delete' }`, then stages it |
+| POST | `/api/agents/:id/git/resolve-simple` | `{ paths }`, resolves unambiguous text conflicts and returns `{ resolved, status, commands }` |
 
 As built in step 1 (the route table in `src/server.ts` has the exact shapes; `centurion api` prints them):
 - Status adds `prefix` (the root's path in the repository, `''` or ending in `/`). `outside` is `{ conflicts, staged, unstaged }`, the same groups as the root's. Group entries are `{ path, status, added, removed, oldPath?, code? }`, `code` being a conflict's two letters (`UU`, `DU`, …) for the delete/modify choices. `operation` also has `branch` (the branch a rebase is rebasing, as HEAD is detached meanwhile) and a kind `am`. Untracked files outside the folder get no line counts (they aren't read).
@@ -222,6 +223,12 @@ As built in step 7 (`ui/src/Log.tsx`, `ui/src/Files.tsx`):
 - `scripts/test-log.mjs` uses an isolated manager and scratch repository with a bare origin and second clone. It covers branches, a merge, a tag, incoming and unpushed commits, details, a first-parent file diff and author filtering.
 - `scripts/test-branches.mjs` starts an isolated manager with its own config, port and state, removes inherited Claude/Anthropic environment variables, and checks scratch repositories against local bare origins. It covers clean and conflicting stash pops, clean and conflicting merges with Abort and Continue, allowed and refused rebases, Update, both delete confirmations and detached HEAD.
 
+As built in step 8a (`src/gitconflict.ts`, `src/gitwrite.ts`, `ui/src/ConflictViewer.tsx`, `ui/src/Changes.tsx`):
+- Conflict reads get blobs by index stage IDs. A synthetic `git merge-file --diff3` on those blobs supplies per-block versions; the working file supplies marker positions and the text between them. Marker text in the working file is never used as a side's content. The response also has `code`, `binary`, `deleted`, `merged`, UTF-16 `start`/`end` block offsets, and a `hash` for stale-save checks. Rebase and retained stash-pop conflicts map stage 3 to yours; ordinary merges map stage 2 to yours.
+- The resolve write accepts an optional `hash`, checks it inside the repository queue, writes a text result or an index side, and stages the path. Delete/modify offers Keep or Delete; binary conflicts offer whole-file takes. `resolve-simple` takes paths from the selected group and resolves only files where every block has an unambiguous choice. A whitespace-only difference keeps yours.
+- Conflict rows use `⋯` for whole-file choices and Open. Space opens an inside conflict instead of staging its markers. The group menu offers Resolve all simple ones and Ask the agent. In the viewer, each block has named stacked sides, Base, five choices, edit, and a collapsed result with Change. Mark resolved is enabled when all blocks have choices. Ask the agent only fills the composer.
+- The existing operation banner's Continue becomes enabled after the final file is staged. Git has no resumable stash-pop operation, so retained stash conflicts appear in the Conflicts group without an operation banner. `scripts/test-conflicts.mjs` exercises the API against a separate manager, seven scratch repositories and local bare origins.
+
 Backend notes (`src/git.ts`, new; the read helpers move there from `src/files.ts`, and the confinement helpers they share to `src/confine.ts`):
 - Git runs as `git` itself, as today: no shell, `core.quotepath=off`, `GIT_OPTIONAL_LOCKS=0` for reads only (writes need the locks).
 - A per-repository promise queue for writes, keyed by `git rev-parse --show-toplevel`.
@@ -264,6 +271,6 @@ Each step is shippable on its own and gets its own commit. Test against a test m
 5. **Remote:** branch row, fetch on open, Sync, Push, Pull, Publish, credentials handling, Cancel, `gitPull` in the config.
 6. **Branches (done):** the popover, create, switch with stash, Update from `master`, merge and rebase with autostash, compare, delete; the operation banner with Abort and Continue.
 7. **Log (done):** the segment, rows with refs and ↑↓ marks, the graph, commit details and diffs, row actions.
-8. **Conflicts, inline (8a):** the group, takes per file, simple ones, conflict blocks in the viewer, Mark resolved, Ask the agent.
+8. **Conflicts, inline (8a; done):** the group, takes per file, simple ones, conflict blocks in the viewer, Mark resolved, Ask the agent.
 9. **Three-pane resolver (8b).**
 10. **Docs:** `ui-design.md` §6a (Files and git), `CLAUDE.md` layout and status, `README.md` if usage changes.

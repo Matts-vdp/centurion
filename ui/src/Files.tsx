@@ -30,6 +30,7 @@ import {
 import { BackIcon, CheckIcon, Chevron, ChevronDownIcon, ChevronUpIcon, CloseIcon, CopyIcon, FileCodeIcon, FileIcon, FileImageIcon, FolderIcon, FolderOpenIcon, MoreIcon, RefreshIcon } from './icons';
 import { changeCount, Changes, ResultView, useDismiss, type ResultLine } from './Changes';
 import { DiffView, useHunkNav, type DiffActions } from './DiffView';
+import { ConflictViewer } from './ConflictViewer';
 import { parseDiff } from './diffModel';
 import { store } from './store';
 import { highlight, languageOf } from './highlight';
@@ -430,7 +431,13 @@ export function FilesPanel({ agent, pane, request, onRequestDone }: Props) {
           ) : (
             view &&
             roots && (
-              <Viewer
+              view.root === 0 && partsOf(status, view.path)?.conflict ? <ConflictViewer
+                key={view.path}
+                agentId={agent.id} path={view.path} version={version}
+                onClose={() => setView(null)}
+                onWritten={(next) => { setStatus(next); scheduleRefresh(); }}
+                onError={(text) => setGitResult({ error: true, text, details: '', commands: [] })}
+              /> : <Viewer
                 key={`${view.root}:${view.path}:${view.line ?? ''}`}
                 agentId={agent.id}
                 root={roots[view.root]}

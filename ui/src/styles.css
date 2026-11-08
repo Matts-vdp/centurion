@@ -5556,6 +5556,23 @@ body.resizing .pane {
 .git-operation-actions button { border: 0; background: transparent; color: var(--waiting); cursor: pointer; padding: 2px; }
 .git-operation-actions button:disabled { opacity: .5; cursor: default; }
 .git-operation-hint { flex: 1 1 100%; color: var(--text-3); font-size: 11px; }
+
+/* Inline conflict resolution uses the viewer's document surface and quiet separators. */
+.conflict-bar { justify-content: space-between; gap: 12px; color: var(--waiting); font-size: 12px; }
+.conflict-body { padding: 14px; }
+.conflict-context, .conflict-side pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; font: 12px/1.55 var(--mono); color: var(--text); }
+.conflict-context { color: var(--text-2); }
+.conflict-block { margin: 10px 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.conflict-block-head, .conflict-side { padding: 9px 11px; border-bottom: 1px solid var(--line); }
+.conflict-block-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--waiting); font-size: 12px; }
+.conflict-block-head button, .conflict-actions button, .conflict-side button { border: 0; background: transparent; color: var(--accent); cursor: pointer; padding: 3px 5px; font: inherit; }
+.conflict-side > span { display: block; margin-bottom: 5px; color: var(--text-2); font-size: 11px; }
+.conflict-side.resolved { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.conflict-actions { display: flex; flex-wrap: wrap; gap: 3px 9px; padding: 7px; font-size: 11px; }
+.conflict-edit { padding: 9px; }
+.conflict-edit textarea { display: block; box-sizing: border-box; width: 100%; resize: vertical; border: 1px solid var(--line); border-radius: 4px; padding: 8px; background: var(--fill); color: var(--text); }
+.conflict-whole { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.conflict-whole p { flex-basis: 100%; }
 @media (max-width: 420px) { .branch-popover { right: 12px; width: auto; } }
 
 .git-ab {

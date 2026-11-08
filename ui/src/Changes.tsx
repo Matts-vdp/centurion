@@ -18,6 +18,7 @@ import {
 import { Chevron, ChevronDownIcon, DiscardIcon, FileIcon, ForkIcon, MinusIcon, MoreIcon, PlusIcon } from './icons';
 import { continueList } from './listInput';
 import { BranchPopover } from './BranchPopover';
+import { composerFill } from './store';
 
 /**
  * The Changes segment of the Files panel (`docs/git-plan.md` §3): the branch, the changes in git's groups
@@ -144,6 +145,12 @@ export function Changes({ agentId, rootPath, status, selected, result, onResult,
   const inside = items(status, true);
   const outside = items(status.outside, false);
   const outsideCount = new Set([...status.outside.conflicts, ...status.outside.staged, ...status.outside.unstaged].map((e) => e.path)).size;
+  const askAgent = () => {
+    const op = status.operation;
+    const files = [...status.conflicts, ...status.outside.conflicts].map((e) => e.path);
+    const operation = op ? `${op.kind} ${op.branch ?? status.branch ?? 'this branch'} with ${op.onto ?? 'incoming changes'}` : `stash restore on ${status.branch ?? 'this branch'} with stashed changes`;
+    composerFill.set({ agentId, text: `Please help resolve the ${operation} conflicts in ${files.join(', ')}. Review both sides and explain your proposed resolution.` });
+  };
   const stagedPaths = new Set(status.staged.map((e) => e.path));
   const unstagedPaths = new Set(status.unstaged.map((e) => e.path));
 
@@ -173,6 +180,11 @@ export function Changes({ agentId, rootPath, status, selected, result, onResult,
 
   // Staging and unstaging show in the lists, so they leave the result line alone unless they fail.
   const stage = (paths: string[], key: string) => void run(key, () => gitApi.stage(agentId, paths), () => undefined);
+  const resolveRow = (it: Item, take: 'yours' | 'incoming' | 'delete' | 'keep') => void run(`row:${it.group}:${it.entry.path}`, async () => {
+    const data = await gitApi.conflict(agentId, it.entry.path);
+    return gitApi.resolve(agentId, { path: it.entry.path, take: take === 'keep' ? (data.deleted === 'yours' ? 'incoming' : 'yours') : take, hash: data.hash });
+  }, () => undefined);
+  const simple = (paths: string[], key: string) => void run(key, () => gitApi.resolveSimple(agentId, paths), (r) => ({ error: false, text: `Resolved ${plural(r.resolved, 'simple conflict')}`, details: '', commands: r.commands }));
   const unstage = (paths: string[], key: string) => void run(key, () => gitApi.unstage(agentId, paths), () => undefined);
   const discard = (paths: string[], key: string) =>
     void run(
@@ -214,7 +226,7 @@ export function Changes({ agentId, rootPath, status, selected, result, onResult,
   };
 
   /** Space on a row: stage what isn't staged, unstage what is; a conflict is marked resolved. */
-  const toggle = (it: Item) => (it.group === 'staged' ? unstage([it.entry.path], `row:${it.group}:${it.entry.path}`) : stage([it.entry.path], `row:${it.group}:${it.entry.path}`));
+  const toggle = (it: Item) => (it.group === 'conflicts' ? it.inside && onOpen(it.rel, 'file', 'head') : it.group === 'staged' ? unstage([it.entry.path], `row:${it.group}:${it.entry.path}`) : stage([it.entry.path], `row:${it.group}:${it.entry.path}`));
 
   const onRowKey = (e: ReactKeyboardEvent<HTMLButtonElement>, it: Item, index: number, groupKey: string) => {
     if (e.altKey) return;
@@ -258,7 +270,14 @@ export function Changes({ agentId, rootPath, status, selected, result, onResult,
     const groupKey = `${scope}:${group}`;
     const paths = list.map((it) => it.entry.path);
     const actions: ReactNode[] = [];
-    if (group === 'staged') {
+    if (group === 'conflicts') {
+      actions.push(
+        <GroupMenu key="c" items={[
+          { label: 'Resolve all simple ones', run: () => simple(paths, `all:${groupKey}`) },
+          { label: 'Ask the agent', run: askAgent },
+        ]} />,
+      );
+    } else if (group === 'staged') {
       actions.push(
         <button key="u" className="icon-button small" title="Unstage all" aria-label="Unstage all" disabled={busy.has(`all:${groupKey}`)} onClick={() => unstage(paths, `all:${groupKey}`)}>
           <MinusIcon size={14} />
@@ -322,22 +341,32 @@ export function Changes({ agentId, rootPath, status, selected, result, onResult,
                     <DiscardIcon size={14} />
                   </button>
                 )}
-                {it.group === 'staged' ? (
+                {it.group === 'conflicts' ? (
+                  <GroupMenu items={it.entry.code?.includes('D') ? [
+                    { label: 'Keep the file', run: () => resolveRow(it, 'keep') },
+                    { label: 'Delete it', run: () => resolveRow(it, 'delete') },
+                    { label: 'Open', disabled: !it.inside, run: () => onOpen(it.rel, 'file', side) },
+                  ] : [
+                    { label: 'Take yours', run: () => resolveRow(it, 'yours') },
+                    { label: 'Take incoming', run: () => resolveRow(it, 'incoming') },
+                    { label: 'Open', disabled: !it.inside, run: () => onOpen(it.rel, 'file', side) },
+                  ]} />
+                ) : it.group === 'staged' ? (
                   <button className="icon-button small" title="Unstage (Space)" aria-label="Unstage" disabled={busy.has(rowKey)} onClick={() => unstage([it.entry.path], rowKey)}>
                     <MinusIcon size={14} />
                   </button>
                 ) : (
                   <button
                     className="icon-button small"
-                    title={it.group === 'conflicts' ? 'Mark as resolved (Space): stages the file once its conflict markers are gone' : 'Stage (Space)'}
-                    aria-label={it.group === 'conflicts' ? 'Mark as resolved' : 'Stage'}
+                    title="Stage (Space)"
+                    aria-label="Stage"
                     disabled={busy.has(rowKey)}
                     onClick={() => stage([it.entry.path], rowKey)}
                   >
                     <PlusIcon size={14} />
                   </button>
                 )}
-                {it.inside && it.entry.status !== 'D' && (
+                {it.inside && it.group !== 'conflicts' && it.entry.status !== 'D' && (
                   <button className="icon-button small" title="Open the file" aria-label="Open the file" onClick={() => onOpen(it.rel, 'file', 'head')}>
                     <FileIcon size={14} />
                   </button>
@@ -357,7 +386,7 @@ export function Changes({ agentId, rootPath, status, selected, result, onResult,
   return (
     <div className="changes">
       <BranchLine status={status} agentId={agentId} busy={remoteBusy} onAction={(action, remote) => void doRemote(action, remote)} onCancel={() => void gitApi.cancel(agentId)} onWritten={onWritten} onResult={onResult} onCompare={onCompare} />
-      {status.operation && <OperationBanner status={status} busy={operationBusy} onAction={(action) => void doOperation(action)} />}
+      {status.operation && <OperationBanner status={status} busy={operationBusy} onAction={(action) => void doOperation(action)} onAsk={askAgent} />}
       <div className="changes-list" ref={listRef}>
         {total === 0 && <p className="files-note">No changes. Working tree clean.</p>}
         {inside.map((g) => renderGroup(g.group, g.items, 'in'))}
@@ -491,7 +520,7 @@ function BranchLine({ status, agentId, busy, onAction, onCancel, onWritten, onRe
   );
 }
 
-function OperationBanner({ status, busy, onAction }: { status: GitStatus; busy: 'abort' | 'continue' | null; onAction: (action: 'abort' | 'continue') => void }) {
+function OperationBanner({ status, busy, onAction, onAsk }: { status: GitStatus; busy: 'abort' | 'continue' | null; onAction: (action: 'abort' | 'continue') => void; onAsk: () => void }) {
   const op = status.operation!;
   const count = status.conflicts.length + status.outside.conflicts.length;
   const current = op.branch ?? status.branch ?? 'this branch';
@@ -503,6 +532,7 @@ function OperationBanner({ status, busy, onAction }: { status: GitStatus; busy: 
   return <div className="git-operation" role="status">
     <span className="git-operation-text"><span className="git-operation-mark" aria-hidden="true">!</span> {sentence}{count ? ` · ${plural(count, 'conflict')}` : ''}</span>
     <span className="git-operation-actions">
+      {count > 0 && <button onClick={onAsk}>Ask the agent</button>}
       <button disabled={!!busy} onClick={() => onAction('abort')}>{busy === 'abort' ? 'Aborting…' : 'Abort'}</button>
       <button disabled={!!busy || count > 0} title={count ? 'Resolve and stage all conflicts before continuing' : undefined} onClick={() => onAction('continue')}>{busy === 'continue' ? 'Continuing…' : 'Continue'}</button>
     </span>

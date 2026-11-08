@@ -10,7 +10,8 @@ import { packageVersion } from './paths.js';
 import { bold, cyan, dim } from './term.js';
 import { allFiles, FileError, listFolder, RawBody, readFileContent } from './files.js';
 import { commitFileDiff, DIFF_SIDES, diffSideText, fileDiff, gitBranches, gitCommit, gitLog, gitStatus, repoInfo, type DiffSide } from './git.js';
-import { APPLY_ACTIONS, applyPartial, cancelNetwork, commit, createBranch, deleteBranch, discardPaths, finishOperation, gitEvents, GitError, mergeBranch, preparedMergeMessage, rebaseBranch, rebaseSafety, remoteAction, stagePaths, switchBranch, undoCommit, unstagePaths, updateFromDefault, type ApplyAction } from './gitwrite.js';
+import { conflictFile } from './gitconflict.js';
+import { APPLY_ACTIONS, applyPartial, cancelNetwork, commit, createBranch, deleteBranch, discardPaths, finishOperation, gitEvents, GitError, mergeBranch, preparedMergeMessage, rebaseBranch, rebaseSafety, remoteAction, resolveConflict, resolveSimpleConflicts, stagePaths, switchBranch, undoCommit, unstagePaths, updateFromDefault, type ApplyAction } from './gitwrite.js';
 import { isInside } from './confine.js';
 import { EFFORT_LEVELS, IMAGE_TYPES, type EffortLevel, type ImageData, type PermissionDecision } from './types.js';
 
@@ -379,6 +380,13 @@ export const routes: Route[] = [
     },
   },
   {
+    method: 'GET', path: '/api/agents/:id/git/conflict',
+    summary: 'Index-stage base, named sides, and inline conflict blocks positioned in the working file.',
+    query: '`root`, `path` relative to the root',
+    result: '`{ path, code, binary, deleted, base, yours, incoming, labels, merged, hash, blocks }`; block start/end are UTF-16 offsets in merged',
+    handler: (ctx) => { const { root, rel } = fileRoot(ctx); if (!rel) throw new HttpError(400, '"path" is required'); return conflictFile(root, rel); },
+  },
+  {
     method: 'GET',
     path: '/api/agents/:id/git/side-text',
     summary:
@@ -516,6 +524,21 @@ export const routes: Route[] = [
     body: '`{ paths: string[] }`, relative to the repository',
     result: GIT_WRITE_RESULT,
     handler: (ctx) => stagePaths(writeRoot(ctx), strings(ctx.body.paths, 'paths')),
+  },
+  {
+    method: 'POST', path: '/api/agents/:id/git/resolve',
+    summary: `Writes a conflict result or takes an index side, then stages the path. ${GIT_WRITE}`,
+    query: GIT_WRITE_QUERY,
+    body: '`{ path, content, hash? }` or `{ path, take: "yours" | "incoming" | "delete", hash? }`; path relative to repository',
+    result: `${GIT_WRITE_RESULT}, plus deleted (the resolved path if deleted)`,
+    handler: (ctx) => { const b = ctx.body; if (b.content !== undefined && typeof b.content !== 'string') throw new HttpError(400, '"content" must be text'); if (b.take !== undefined && !['yours', 'incoming', 'delete'].includes(b.take)) throw new HttpError(400, 'Invalid take'); return resolveConflict(writeRoot(ctx), { path: str(b.path, 'path'), content: b.content, take: b.take, hash: b.hash }); },
+  },
+  {
+    method: 'POST', path: '/api/agents/:id/git/resolve-simple',
+    summary: `Resolves conflicts whose every block is whitespace-only or equal to base. ${GIT_WRITE}`,
+    query: GIT_WRITE_QUERY, body: '`{ paths: string[] }` relative to repository',
+    result: `${GIT_WRITE_RESULT}, plus resolved count`,
+    handler: (ctx) => resolveSimpleConflicts(writeRoot(ctx), strings(ctx.body.paths, 'paths')),
   },
   {
     method: 'POST',
