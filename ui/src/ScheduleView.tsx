@@ -1,5 +1,5 @@
-import { useEffect, useState, type FormEvent } from 'react';
-import { commands, type AgentRecord, type EffortLevel, type ScheduledTask, type ScheduleSpec, type ScheduleTarget } from './api';
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { commands, type AgentRecord, type CommandOption, type EffortLevel, type ScheduledTask, type ScheduleSpec, type ScheduleTarget } from './api';
 import { lastSeen, recentChatFolders, store, transcriptPin, useManager } from './store';
 import { duration, money } from './status';
 import { MenuIcon } from './icons';
@@ -57,8 +57,14 @@ function describe(spec: ScheduleSpec): string { return spec.kind === 'manual' ? 
 
 function ScheduleForm({ task, agentId, agents, onSelect, onClose, onOpenDrawer }: { task?: ScheduledTask; agentId?: string; agents: Map<string, AgentRecord>; onSelect: (id: string) => void; onClose?: () => void; onOpenDrawer?: () => void }) {
   const models = useModels();
+  const promptBox = useRef<HTMLTextAreaElement>(null);
   const [name, setName] = useState(task?.name ?? '');
   const [prompt, setPrompt] = useState(task?.prompt ?? '');
+  const [caret, setCaret] = useState(0);
+  const [suggestions, setSuggestions] = useState<{ folder: string; kind: 'slash' | 'file'; values: { value: string; detail?: string }[] } | null>(null);
+  const [suggestError, setSuggestError] = useState('');
+  const [suggestIndex, setSuggestIndex] = useState(0);
+  const [dismissedAt, setDismissedAt] = useState('');
   const [targetKind, setTargetKind] = useState<'newChat' | 'agent'>(task?.target.kind ?? (agentId ? 'agent' : 'newChat'));
   const [targetId, setTargetId] = useState(task?.target.kind === 'agent' ? task.target.agentId : agentId ?? '');
   const [folder, setFolder] = useState(task?.target.kind === 'newChat' ? task.target.cwd : '');
@@ -76,6 +82,49 @@ function ScheduleForm({ task, agentId, agents, onSelect, onClose, onOpenDrawer }
   const [times, setTimes] = useState<string[]>([]);
   const [previewError, setPreviewError] = useState('');
   const [error, setError] = useState('');
+  const targetFolder = targetKind === 'agent' ? agents.get(targetId)?.cwd ?? '' : folder;
+  const beforeCaret = prompt.slice(0, caret);
+  const slash = caret === prompt.length ? /^\/([^\s]*)$/.exec(beforeCaret) : null;
+  const mention = /(^|\s)@([^\s@"]*)$/.exec(beforeCaret);
+  const suggestKind = slash ? 'slash' : mention ? 'file' : null;
+  const suggestQuery = slash?.[1] ?? mention?.[2] ?? '';
+  const matching = suggestKind && targetFolder && suggestions?.kind === suggestKind && suggestions.folder === targetFolder && dismissedAt !== prompt ?
+    suggestions.values.filter((item) => item.value.toLowerCase().includes(suggestQuery.toLowerCase())).slice(0, 10) : [];
+  useEffect(() => {
+    if (!suggestKind || !targetFolder) return;
+    let live = true;
+    setSuggestError('');
+    const load = suggestKind === 'slash' ? commands.scheduleCommands(targetFolder).then((list: CommandOption[]) => list.map((item) => ({ value: item.name, detail: item.description }))) :
+      commands.scheduleFiles(targetFolder).then(({ files }) => {
+        const dirs = new Set<string>();
+        for (const file of files) { const parts = file.split('/'); for (let n = 1; n < parts.length; n++) dirs.add(parts.slice(0, n).join('/')); }
+        return [...dirs].map((value) => ({ value: `${value}/` })).concat(files.map((value) => ({ value })));
+      });
+    void load.then((values) => { if (live) { setSuggestions({ folder: targetFolder, kind: suggestKind, values }); setSuggestIndex(0); } },
+      (e: unknown) => { if (live) setSuggestError(e instanceof Error ? e.message : String(e)); });
+    return () => { live = false; };
+  }, [suggestKind, targetFolder]);
+  const pickSuggestion = (value: string) => {
+    if (slash) {
+      const replacement = `/${value} `;
+      setPrompt(replacement + prompt.slice(caret));
+      requestAnimationFrame(() => { promptBox.current?.focus(); promptBox.current?.setSelectionRange(replacement.length, replacement.length); setCaret(replacement.length); });
+    } else if (mention) {
+      const start = mention.index + mention[1].length;
+      const replacement = `@${/\s/.test(value) ? `"${value}"` : value} `;
+      const next = prompt.slice(0, start) + replacement + prompt.slice(caret);
+      setPrompt(next);
+      const at = start + replacement.length;
+      requestAnimationFrame(() => { promptBox.current?.focus(); promptBox.current?.setSelectionRange(at, at); setCaret(at); });
+    }
+    setSuggestions(null);
+  };
+  const promptKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!matching.length) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); setSuggestIndex((n) => (n + (e.key === 'ArrowDown' ? 1 : -1) + matching.length) % matching.length); }
+    if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); pickSuggestion(matching[Math.min(suggestIndex, matching.length - 1)].value); }
+    if (e.key === 'Escape') { e.preventDefault(); setDismissedAt(prompt); }
+  };
   useEffect(() => { void commands.info().then((info) => { if (!folder) setFolder(info.orchestratorFolder); if (!task) setMissedRuns(info.scheduleMissedRuns); }).catch(() => {}); }, []);
   const spec = (): ScheduleSpec => mode === 'manual' ? { kind: 'manual' } : mode === 'once' ? { kind: 'once', at: new Date(once).toISOString() } :
     mode === 'cron' ? { kind: 'cron', cron } : { kind: 'cron', cron: mode === 'hourly' ? `0 ${everyHours === 1 ? '*' : `*/${everyHours}`} * * *` : `${+time.split(':')[1]} ${+time.split(':')[0]} * * ${mode === 'weekdays' ? '1-5' : mode === 'weekly' ? days.join(',') : '*'}`, label: mode === 'hourly' ? `Every ${everyHours} hour${everyHours === 1 ? '' : 's'}` : mode === 'weekly' ? `Weekly ${days.map((d) => weekdays[d]).join(', ')} ${time}` : `${mode[0].toUpperCase() + mode.slice(1)} ${time}` };
@@ -89,7 +138,9 @@ function ScheduleForm({ task, agentId, agents, onSelect, onClose, onOpenDrawer }
   return <form className="schedule-view schedule-form" onSubmit={(e) => void save(e)}>
     <header className="schedule-head">{onOpenDrawer && <button type="button" className="icon-button" onClick={onOpenDrawer} aria-label="Open sidebar"><MenuIcon size={16} /></button>}<h2>{task ? `Edit · ${task.name}` : 'New scheduled task'}</h2>{onClose && <button type="button" className="icon-button" onClick={onClose} aria-label="Close pane">×</button>}</header>
     <label>Name<input value={name} onChange={(e) => setName(e.target.value)} required /></label>
-    <label>Prompt<textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={6} required /></label>
+    <label>Prompt<textarea ref={promptBox} value={prompt} onChange={(e) => { setPrompt(e.target.value); setCaret(e.target.selectionStart); setSuggestIndex(0); }} onClick={(e) => setCaret(e.currentTarget.selectionStart)} onKeyUp={(e) => setCaret(e.currentTarget.selectionStart)} onKeyDown={promptKey} rows={6} required /></label>
+    {matching.length > 0 && <div className="schedule-suggestions" role="listbox" aria-label={suggestKind === 'slash' ? 'Skills and commands' : 'Files and folders'}>{matching.map((item, i) => <button type="button" role="option" aria-selected={i === suggestIndex} key={item.value} onMouseDown={(e) => e.preventDefault()} onClick={() => pickSuggestion(item.value)}><span className="mono">{suggestKind === 'slash' ? '/' : '@'}{item.value}</span>{item.detail && <small>{item.detail}</small>}</button>)}</div>}
+    {suggestKind && suggestError && <p className="schedule-error">{suggestError}</p>}
     <label>Target<select value={targetKind} onChange={(e) => setTargetKind(e.target.value as 'newChat' | 'agent')}><option value="newChat">New chat each run</option><option value="agent">Existing agent</option></select></label>
     {targetKind === 'newChat' ? <><label>Folder<input list="schedule-folders" value={folder} onChange={(e) => setFolder(e.target.value)} required /><datalist id="schedule-folders">{recentChatFolders(agents).map((dir) => <option key={dir} value={dir} />)}</datalist></label><label>Model<input list="schedule-models" value={model} onChange={(e) => { setModel(e.target.value); setEffort(''); }} placeholder="Default" /><datalist id="schedule-models">{models?.map((m) => <option key={m.value} value={m.value}>{m.displayName}</option>)}</datalist></label><label>Effort<select value={effort} onChange={(e) => setEffort(e.target.value)}><option value="">Model default</option>{effortLevels(model || 'default').map((v) => <option key={v}>{v}</option>)}</select></label></> : <label>Agent<select value={targetId} onChange={(e) => setTargetId(e.target.value)} required><option value="">Choose an agent</option>{[...agents.values()].filter((a) => !a.archived).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></label>}
     <label>Schedule<select value={mode} onChange={(e) => setMode(e.target.value)}>{['hourly','daily','weekdays','weekly','once','manual','cron'].map((v) => <option key={v} value={v}>{v === 'cron' ? 'Custom cron' : v === 'once' ? 'Once' : v === 'manual' ? 'Manual only' : v[0].toUpperCase() + v.slice(1)}</option>)}</select></label>

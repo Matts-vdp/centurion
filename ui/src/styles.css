@@ -883,6 +883,10 @@ kbd {
 .schedule-form > label, .schedule-form details label { display: flex; flex-direction: column; gap: 6px; margin: 14px 0; color: var(--text-2); font-size: 12px; }
 .schedule-form input, .schedule-form textarea, .schedule-form select { width: 100%; padding: 9px 10px; background: var(--raised); color: var(--text); border: 1px solid var(--line); border-radius: 6px; font: 13px var(--font); }
 .schedule-form textarea { resize: vertical; }
+.schedule-suggestions { max-height: 230px; overflow: auto; margin-top: -10px; border: 1px solid var(--line); border-radius: 8px; background: var(--raised); box-shadow: var(--shadow-float); }
+.schedule-suggestions button { display: flex; align-items: baseline; gap: 12px; width: 100%; padding: 7px 10px; border: 0; background: none; color: var(--text); text-align: left; cursor: pointer; }
+.schedule-suggestions button:hover, .schedule-suggestions button[aria-selected='true'] { background: var(--fill); }
+.schedule-suggestions small { color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .schedule-form details { margin-top: 20px; }
 .schedule-form summary { cursor: pointer; }
 .schedule-days { display: flex; flex-wrap: wrap; gap: 12px; }

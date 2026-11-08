@@ -182,6 +182,10 @@ export const routes: Route[] = [
   { method: 'GET', path: '/api/schedules/preview', summary: 'Next three times for a cron or one-time schedule', query: '`cron=…` or `once=…`', result: '`{ times: string[] }`',
     handler: ({ url }) => ({ times: preview(url.searchParams.has('cron') ? { kind: 'cron', cron: url.searchParams.get('cron')! } :
       url.searchParams.has('once') ? { kind: 'once', at: url.searchParams.get('once')! } : { kind: 'manual' }) }) },
+  { method: 'GET', path: '/api/schedules/commands', summary: 'Skills and commands available in a scheduled task folder', query: '`cwd`: absolute target folder', result: 'CommandOption[]',
+    handler: ({ manager, url }) => manager.scheduleCommands(url.searchParams.get('cwd') ?? '') },
+  { method: 'GET', path: '/api/schedules/files', summary: 'Files available for @ mentions in a scheduled task folder', query: '`cwd`: absolute target folder', result: '`{ files: string[], truncated: boolean }`',
+    handler: ({ manager, url }) => manager.scheduleFiles(url.searchParams.get('cwd') ?? '') },
   { method: 'POST', path: '/api/schedules', summary: 'Creates a scheduled task, active or paused', body: '`{ name, prompt, target, schedule, missedRuns?, unattended?, keepRuns?, paused? }`', result: 'ScheduledTask',
     handler: ({ manager, body }) => manager.createSchedule(body as any) },
   { method: 'POST', path: '/api/schedules/pause-all', summary: 'Pauses or resumes automatic scheduled runs', body: '`{ paused: boolean }`', result: '`{ paused: boolean }`',

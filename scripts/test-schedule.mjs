@@ -130,3 +130,13 @@ test('manual task can pause, resume and run without the automatic scheduler', ()
     assert.deepEqual(created.runs, []);
   } finally { manager.shutdown(); rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('scheduled prompt file suggestions use the target folder', async () => {
+  const dir = mkdtempSync(path.join(process.cwd(), '.schedule-test-'));
+  writeFileSync(path.join(dir, 'note.txt'), 'hello');
+  const manager = new Manager({ stateFile: path.join(dir, 'state.json'), orchestratorFolder: dir,
+    schedules: false, scheduleMissedRuns: 'ask', scheduleCatchUpDays: 7, scheduleStartupDelaySeconds: 0,
+    scheduleMaxRunning: 2, idleMinutes: 10 });
+  try { assert.ok((await manager.scheduleFiles(dir)).files.includes('note.txt')); }
+  finally { manager.shutdown(); rmSync(dir, { recursive: true, force: true }); }
+});

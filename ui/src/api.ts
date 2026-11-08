@@ -102,6 +102,8 @@ const fetchInfo = () =>
 export const commands = {
   schedulePreview: (spec: ScheduleSpec) => spec.kind === 'manual' ? Promise.resolve({ times: [] as string[] }) :
     api<{ times: string[] }>(`/api/schedules/preview?${spec.kind === 'cron' ? `cron=${encodeURIComponent(spec.cron)}` : `once=${encodeURIComponent(spec.at)}`}`),
+  scheduleCommands: (cwd: string) => api<CommandOption[]>(`/api/schedules/commands?cwd=${encodeURIComponent(cwd)}`),
+  scheduleFiles: (cwd: string) => api<{ files: string[]; truncated: boolean }>(`/api/schedules/files?cwd=${encodeURIComponent(cwd)}`),
   createSchedule: (input: { name: string; prompt: string; target: ScheduleTarget; schedule: ScheduleSpec; missedRuns: ScheduledTask['missedRuns']; unattended: ScheduledTask['unattended']; keepRuns: number; paused?: boolean }) =>
     api<ScheduledTask>('/api/schedules', { method: 'POST', body: input }),
   updateSchedule: (id: string, input: Partial<ScheduledTask>) => api<ScheduledTask>(`/api/schedules/${id}`, { method: 'POST', body: input }),

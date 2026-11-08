@@ -36,7 +36,7 @@ import { KeepWarm, active as keepWarmActive } from './keepwarm.js';
 import { Scheduler } from './schedule.js';
 import { nextAfter, preview, validateSchedule } from './cron.js';
 import { SideChats, type SideChatEvent } from './sidechat.js';
-import { isInside } from './files.js';
+import { allFiles, isInside } from './files.js';
 import { StateStore, type State } from './state.js';
 import { createDisplayTools } from './display.js';
 import { createManagerTools } from './tools.js';
@@ -738,7 +738,12 @@ export class Manager extends EventEmitter<ManagerEvents> {
 
   /** The skills and custom commands an agent can run, per folder (Claude Code's own commands left out). */
   async commands(id: string): Promise<CommandOption[]> {
-    const cwd = this.get(id).cwd;
+    return this.scheduleCommands(this.get(id).cwd);
+  }
+
+  /** Skills offered by a scheduled task's target folder, before its new chat exists. */
+  async scheduleCommands(folder: string): Promise<CommandOption[]> {
+    const cwd = validateDir(folder);
     const known = this.commandLists.get(cwd);
     if (known) return known;
     let probe = this.commandProbes.get(cwd);
@@ -749,6 +754,11 @@ export class Manager extends EventEmitter<ManagerEvents> {
       this.commandProbes.set(cwd, probe);
     }
     return probe;
+  }
+
+  /** File paths available to mention in a scheduled prompt. */
+  scheduleFiles(folder: string): Promise<{ files: string[]; truncated: boolean }> {
+    return allFiles(validateDir(folder));
   }
 
   /**
