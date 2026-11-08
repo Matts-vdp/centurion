@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { commands, type AgentRecord } from './api';
+import { permissionNote } from './AlertsMenu';
 import { CacheTag } from './CacheTag';
+import { alertDefault, alertsOn, askPermission, setAgentAlerts, useAlertPermission, useAlertSettings } from './desktopNotify';
 import { useNow } from './hooks';
 import { CloseIcon, FolderIcon, MenuIcon, MoreIcon } from './icons';
 import { AgentMark, StateDot } from './Mark';
@@ -26,6 +28,9 @@ export function Header({ agent, parent, agents, run, onSelect, onClose, onOpenDr
   const { activity } = useManager();
   const seen = lastSeen.use();
   const [menu, setMenu] = useState(false);
+  const alertSettings = useAlertSettings();
+  const alertPermission = useAlertPermission();
+  const alerts = alertsOn(agent, alertSettings);
   const menuRef = useRef<HTMLDivElement>(null);
   const blocker = archiveBlocker(agent, agents);
   const now = useNow(true, agent.status === 'running' ? 1000 : 30_000);
@@ -129,6 +134,24 @@ export function Header({ agent, parent, agents, run, onSelect, onClose, onOpenDr
                     </span>
                   </button>
                 )}
+                <button
+                  role="menuitem"
+                  disabled={alertPermission === 'unsupported'}
+                  onClick={() => {
+                    setMenu(false);
+                    if (alerts && alertPermission === 'default') void askPermission();
+                    else setAgentAlerts(agent, !alerts);
+                  }}
+                >
+                  {alerts && alertPermission === 'default' ? 'Allow desktop alerts' : alerts ? 'Turn off desktop alerts' : 'Turn on desktop alerts'}
+                  <span className="menu-hint">
+                    {alerts && alertPermission !== 'granted'
+                      ? permissionNote(alertPermission)
+                      : `System notifications when ${agent.parentId === null ? 'its turn ends' : 'it finishes'} or it needs you, while the window is in the background${
+                          alerts === alertDefault(agent, alertSettings) ? ` (the default for ${agent.parentId === null ? 'chats' : 'experts'})` : ''
+                        }`}
+                  </span>
+                </button>
                 <button
                   role="menuitem"
                   onClick={() => {

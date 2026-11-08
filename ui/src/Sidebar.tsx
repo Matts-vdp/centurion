@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
+import { AlertsMenu } from './AlertsMenu';
 import { commands, type AgentRecord } from './api';
 import { sameFolder, useNow, useServerInfo } from './hooks';
 import { ArchiveIcon, Chevron, PlusIcon, SearchIcon } from './icons';
@@ -141,6 +142,7 @@ export function Sidebar({ agents, selected, open: openIds, onSelect, onOpenInSpl
       <div className="sidebar-head">
         <LogoIcon />
         <span className="app-name">Centurion</span>
+        <AlertsMenu />
         <button className="icon-button" title="New chat" aria-label="New chat" onClick={() => setCreating(true)}>
           <PlusIcon size={16} />
         </button>

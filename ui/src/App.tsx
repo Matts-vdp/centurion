@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import type { AgentRecord } from './api';
 import { AgentView } from './AgentView';
+import { useDesktopAlerts } from './desktopNotify';
 import { useMedia } from './hooks';
 import { CloseIcon, MenuIcon } from './icons';
 import { DRAG_TYPE, layout, useLayout, type DropZone } from './layout';
@@ -55,7 +56,8 @@ const initial = readHash();
 if (initial) layout.open(initial);
 
 export function App() {
-  const { agents, connected, authError, epoch } = useManager();
+  const manager = useManager();
+  const { agents, connected, authError, epoch } = manager;
   const { panes, focus, ratio } = useLayout();
   const selected = panes[focus] ?? null;
   const narrow = useMedia(NARROW);
@@ -107,6 +109,8 @@ export function App() {
     },
     [narrow],
   );
+
+  useDesktopAlerts(manager, select);
 
   const agent = selected ? agents.get(selected) : undefined;
 

@@ -6543,3 +6543,29 @@ button.diff-nums:hover .diff-num {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+
+/* ---------- desktop alerts (the sidebar's bell; shares .model-popover) ---------- */
+
+.alerts-popover {
+  left: 0;
+  right: auto;
+}
+
+.alerts-intro {
+  margin: 0;
+  padding: 0 8px 2px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.alerts-permission {
+  margin: 8px 8px 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--waiting);
+}
+
+.alerts-permission .link-button {
+  margin-left: 6px;
+}

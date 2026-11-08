@@ -9,6 +9,7 @@ export {
   ArrowUp as ArrowUpIcon,
   ArrowUpRight as OpenIcon,
   Bell as BellIcon,
+  BellOff as BellOffIcon,
   Bot as BotIcon,
   Brain as ThinkIcon,
   Check as CheckIcon,
