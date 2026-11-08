@@ -70,7 +70,7 @@ Backend notes (`src/files.ts`, new):
 
 ## 7. Out of scope here
 
-Editing and saving files, staging, commits, branches, merging (the git panel plan); search inside file contents (a later `git grep` endpoint); a file watcher; files in dev containers (they go through the container's filesystem once that plan lands).
+Editing and saving ordinary files; search inside file contents (a later `git grep` endpoint); a file watcher; files in dev containers (they go through the container's filesystem once that plan lands). Staging, commits, branches, merging and conflict resolution are covered by `docs/git-plan.md`.
 
 ## 8. Implementation plan
 

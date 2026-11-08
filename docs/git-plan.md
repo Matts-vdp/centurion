@@ -1,14 +1,14 @@
 # Git: changes, commits, sync, branches, log and conflicts
 
-**Status:** steps 1 to 9 done; step 10 planned. Builds on the Files panel (`docs/files-plan.md`), which already shows git status and a unified diff against `HEAD`.
+**Status:** done. Builds on the Files panel (`docs/files-plan.md`), which already shows git status and a unified diff against `HEAD`.
 
-The goal: the git work you do around an agent's changes, without leaving the manager. You read the diff, stage what you want, type a message, then commit and push. You sync with the remote, switch or create a branch, and merge `master` in with your open changes put aside and restored on their own. When that conflicts, you resolve it in the same panel. Rider and VS Code are the model (research summary in §11); where they differ, this plan picks what fits a manager of agents.
+The panel covers the git work around an agent's changes. You read diffs, stage files or patches, commit and sync, manage branches and resolve conflicts without leaving the manager. Rider and VS Code informed the design (research summary in §11).
 
 ## 1. Decisions
 
 - **The index is the truth.** Staged and unstaged changes are two groups, as in VS Code, and they map one to one to git's index. What an agent ran `git add` on shows up as staged. There are no changelists and no shelf.
 - **Pull merges by default**, configurable (`gitPull: 'merge' | 'rebase'` in the config, default `merge`). Sync passes `--no-rebase` or `--rebase` explicitly, so the repo's own `pull.rebase` doesn't change what the button does.
-- **No force push, anywhere.** A rejected push offers Sync. Actions that would only be pushable with force are disabled and say why: Amend and Rebase when the commits are already pushed.
+- **No force push, anywhere.** A rejected push offers Sync. Amend, undo and rebase refuse changes that would rewrite pushed commits.
 - **Never lose work.** Local changes are put aside with git's own `--autostash` (or stash, switch, pop) and restored afterwards. A stash that can't be restored cleanly is kept. No `reset --hard`, no `clean`, no `checkout --force`. The only actions that destroy work are Discard and deleting a branch. Both ask first.
 - **Agents don't block git.** You can use git while an agent of that repo is running; you decide when to wait. The manager does serialise its *own* git writes per repository, so two panes on one repo can't race. When git itself is busy (`index.lock`), the manager retries once after 500 ms and then says so.
 - **Agents aren't told.** Commits, switches and merges from the UI send nothing to any agent. The one exception is a button that fills the composer for you (§8, "Ask the agent"); you still send it yourself.
@@ -17,7 +17,7 @@ The goal: the git work you do around an agent's changes, without leaving the man
 
 ## 2. Where it lives
 
-The Files panel gets a third segment: `Files | Changes · 4 | Log`. It is a panel per pane on the right, opened by the header's repo chip or `Ctrl+B`, as before. Git is per repository and the Files panel already belongs to one agent's folder, so the panel is the right home. The header gets nothing new: it is already full (model, repo, cost, context, cache), and the branch lives at the top of Changes and Log.
+The Files panel has `Files | Changes · n | Log` on the right of each pane, opened by the header's folder chip or `Ctrl+B`. The branch lives at the top of Changes and Log.
 
 The git views work on the repository that holds the agent's folder (root 0). The second root, an expert's orchestrator folder, stays read-only here; a root picker can come later.
 
@@ -48,12 +48,12 @@ The git views work on the repository that holds the agent's folder (root 0). The
 ```
 
 - **Branch row** (top): branch icon and name as a button that opens the branch menu (§6), then `↓1 ↑2` in mono `--text-2` (hidden at 0), then one **Sync** button. Without an upstream the button reads **Publish**. Detached HEAD shows `detached at 3f2a1c9` and a **Create branch here** action in the menu.
-- **Operation banner**, only while a merge, rebase, cherry-pick, revert or stash restore is in progress (from git's state files, so it also shows when an agent or a terminal started it). It uses `--waiting` text with a warning icon, not a tinted box. The sentence names the branches (`Merging master into feature/checkout · 2 conflicts`, `Rebasing onto origin/main · commit 2 of 5`), with **Abort** and **Continue** on the right. Continue is disabled, with a tooltip, until no conflicts remain. For a merge it opens the commit box with git's prepared message; for a rebase it runs `rebase --continue`.
+- **Operation banner**, while a merge, rebase, cherry-pick, revert or am is in progress, uses Git's state files, so operations begun in a terminal or by an agent also appear. It uses `--waiting` text with a warning icon. The line names the operation, branches and conflicts, with **Abort** and **Continue**. Continue waits until conflicts are staged; for a merge it opens Git's prepared message in the commit box. Operations found only in Git's state are labelled “outside Centurion (agent or terminal)”. A stash pop conflict stays in the Conflicts group without a banner because Git has no resumable stash-pop operation.
 - **Groups**, in this order: Conflicts, Staged, Changes (tracked and untracked together; untracked files have the `U` letter), Outside this folder. Each group header is `Name · n` in the sidebar's group style, with hover actions on the right:
   - Staged: Unstage all (−).
   - Changes: Stage all (+), Discard all (↶), and a `⋯` menu.
   - Empty groups are hidden. With nothing at all: `No changes. Working tree clean.`
-- **Rows** keep today's look: the letter in mono `--text-2`, the file name, its folder in `--text-3`, and `+12 −3`. Conflict letters use `--waiting`, since a conflict waits on you. Hover shows the row's actions on the right: stage (+) or unstage (−), discard (↶), open file. A click opens the diff for that side (§4). Keyboard: ↑/↓ move, Enter opens, Space stages or unstages. Discard has no key, so it can't fire by accident.
+- **Rows** show a status letter, file name, folder and line counts. Conflict letters use `--waiting`. Hover or focus shows stage, unstage, discard and open actions. A click opens the group's diff side (§4). Arrow keys move, Enter opens, and Space stages or unstages; on a conflict Space opens the file. Discard has no shortcut.
 - **Discard asks in place**, with the rewind strip pattern (a raised strip under the row): `Discard your changes to token.ts? This can't be undone.` For an untracked file: `Delete token.test.ts? It isn't in git, so this can't be undone.` Discard all states the count. Discard of a tracked file restores the working copy from the index (`restore --worktree`), so staged work survives.
 - **Commit box**, pinned to the bottom of the panel so it doesn't move as the lists grow:
   - A text field, two lines by default and growing to eight, with the composer's list continuation. Its placeholder says what will happen: `Message for 2 staged files`, or `Message · commits all 5 changes` when nothing is staged. Committing with nothing staged asks once in place (`Nothing is staged. Commit all 5 changes?`), with an "always" choice remembered per browser.
@@ -63,21 +63,36 @@ The git views work on the repository that holds the agent's folder (root 0). The
   - A split button: **Commit** (primary) and a `⌄` with **Commit and Push** and **Commit and Sync**. `Ctrl+Enter` commits; `Ctrl+Shift+Enter` commits and pushes.
   - Disabled buttons always say why in a tooltip (`Write a message`, `Resolve 2 conflicts first`).
 - **Result line** under the commit box, in `--text-3`: what the last action did, in words. Examples: `Committed 3f2a1c9 · Undo`, `Pulled 3 commits from origin/main, pushed 2`, `Switched to main · your changes were put aside and restored`. A **Details** toggle shows the git commands that ran and their output. The line stays until the next action. Errors take the same place in `--failed` (§9).
-- **Undo commit** (in the result line and on the top commit in the Log) soft-resets the last commit. The changes stay staged and the message goes back into the box. It is offered only when that commit isn't pushed and isn't a merge commit. Undo instead of a confirmation: a commit is cheap to take back.
+- **Undo commit** (in the result line and on the top commit in the Log) soft-resets an unpushed, non-merge HEAD when no operation is active. Changes stay staged and the message returns to the box. It is unavailable after Amend.
+
+
+- Status adds `headPushed` (HEAD is on a remote-tracking branch), which disables Amend with its reason. Amend fills in the last message from the commit route and puts the draft aside; unticking brings the draft back.
+- Staging and unstaging leave the result line alone (the lists show them) unless they fail, so a commit's **Undo** survives staging the next files. Discard, commit, amend and undo write it. Undo isn't offered after an amend, since it would take back the whole commit.
+- A row opens the side of its group when the file is partly staged (`staged` or `worktree`), else `HEAD ↔ working tree`; the viewer bar says `Staged` / `Not staged`. Conflict rows open the file; their `+` marks them resolved (refused while markers remain). Rows outside the folder show the repo path and don't open.
+- The Changes group's `⋯` has **Stage tracked files only** and **Discard tracked changes only…**. The tab count is every changed path in the repository, outside the folder included, since a commit takes those too.
+- The draft is `centurion-commit-draft:<repo top>` and "always commit all" is `centurion-commit-all`, both in `localStorage`.
 
 ## 4. Diff viewer
 
 The panel's viewer, extended. It applies wherever a diff shows: Changes, Log, and the transcript's Edit links.
 
-- **Which diff.** Opened from Changes it is `index ↔ working tree`. From Staged it is `HEAD ↔ index`. From the tree, a transcript link or a file with no staged part, it is `HEAD ↔ working tree`, as today. When a file is partly staged, the viewer bar's `Changes` becomes `Changes | Staged`, so both halves are one click apart.
+- **Which diff.** Changes opens `index ↔ working tree`, Staged opens `HEAD ↔ index`, and a tree or transcript link normally opens `HEAD ↔ working tree`. A partly staged file instead opens its unstaged half and offers `Changes | Staged` in the bar.
 - **Split and unified.** A `Unified | Split` toggle on the viewer bar, remembered per browser. Split needs room: below 720 px of viewer width it falls back to unified, and the toggle says so in its tooltip. Split is built in the UI from the unified hunks: removed and added runs pair up side by side, with blank filler on the shorter side.
-- **Word highlights.** Within a paired removed and added line, the changed words get a stronger tint of the existing diff colours. This is computed in the UI with a small token diff (own code or the `diff` package) and skipped for lines over 500 characters.
-- **Whitespace and context.** A `⋯` on the bar holds **Ignore whitespace** (`-w`) and **Show whole file** (`-U` with the file's length). Each hunk header has small up and down arrows that load 20 more lines of context.
+- **Word highlights.** Paired removed and added lines compare words, spaces and symbols. Changed tokens get a stronger tint of the diff colours. Unrelated pairs remain plain changes.
+- **Whitespace and context.** A `⋯` on the bar holds **Ignore whitespace** (`-w`) and **Show whole file** (`-U1000000`). Ignore whitespace disables patch actions because that view cannot be applied. Hunk arrows add 20 lines from the diff's new side without changing the patch.
 - **Moving between changes:** `Alt+↓` / `Alt+↑` jump to the next or previous hunk, and a `2 of 5` in `--text-3` on the bar says where you are.
 - **Staging from the diff.** On a working-tree diff, each hunk header has **Stage** and **Discard** (discard asks in place). On a staged diff it has **Unstage**. To stage single lines, click or Shift+click line numbers; the selection gets the accent tint and a small floating bar offers **Stage 3 lines** or **Discard 3 lines**.
   - The manager builds the patch from a fresh diff. It refuses, then refreshes, when the file changed since you looked: the request carries a hash of the diff you saw. That matters, because an agent may be editing the same file.
   - Partial patches follow `git add -p`'s rules: unselected `+` lines are dropped and unselected `−` lines become context. They are applied with `git apply --cached` (stage), `git apply --cached -R` (unstage) or `git apply -R` (discard).
 - Binary files: `Binary file changed · 2.4 MB → 2.5 MB`, with stage and unstage on the file only.
+
+
+- A partly staged file never shows the combined HEAD diff: opening it from the tree or a link shows its unstaged half, and the bar reads `File | Changes | Staged`. A HEAD diff of a file that is only unstaged (or untracked) stages and discards like a working-tree diff, and one that is only staged unstages: its hunks are the same, so the hash matches. When staging from the diff makes a file partly staged, the viewer moves to the side it staged from; when a file stops being partly staged, back to HEAD.
+- More context is added in the UI rather than by asking git: the hunk header's ↑ shows 20 lines above the hunk, ↓ 20 lines below the previous one, and a row after the last hunk shows the rest of the file when needed. `GET .../git/side-text` supplies the diff's new side, so the patch and its line indexes stay as Git made them. **Show whole file** asks Git for broad context with `-U1000000`, which staging sends back as `context`.
+- **Ignore whitespace** is per panel and turns staging from the diff off (the buttons' tooltip says so): the apply route rebuilds the diff without `-w`, so the hash wouldn't match, and a `-w` patch may not apply. Truncated diffs stage only as a whole file.
+- Word highlights pair the n-th removed line of a run with its n-th added line and compare their tokens (words, spaces, symbols) with a longest common subsequence; pairs that share under 40 % stay a plain change. Split view wraps long lines.
+- Hunk and line discards write the panel's result line (`Discarded a change in app.ts`). Errors, the stale-hash 409 among them, show on a line above the diff, and a 409 also refreshes it. Esc clears a line selection before it closes the file.
+- The diff route's binary result has `sizes: { old, new }` (bytes, null for a missing side).
 
 ## 5. Sync and the remote
 
@@ -87,20 +102,30 @@ The panel's viewer, extended. It applies wherever a diff shows: Changes, Log, an
 - **Publish** (no upstream): `push -u <remote> <branch>`. With one remote it uses that one; with several, the menu asks which.
 - **Credentials.** Network commands run with `GIT_TERMINAL_PROMPT=0`, so git never waits for a terminal prompt that doesn't exist; Git Credential Manager's own window still works on Windows. A failure says `Git needs credentials for origin. Sign in once from a terminal (git fetch) and try again.` Network commands get a 5 minute timeout instead of 10 s, and a **Cancel** on the busy button.
 
+
+- The five remote routes return `{ status, commands, pulled, pushed, conflicted }`; Cancel returns `{ cancelled }` and stops the current network command for the repository without removing queued writes. Fetch uses the tracking remote, or all remotes if the branch has no upstream. Explicit Pull runs even when already up to date; Sync skips Pull and Push when their counts are zero. A conflicting Pull returns its status and leaves Push for another Sync.
+- `gitPull` is a documented config field, default `merge`. Both modes pass `--autostash`. Push uses git's normal fast-forward safety. A rejected push maps to `The remote has new commits`.
+- The branch row shows Publish or Sync, ahead and behind counts and a fetch-age tooltip. Its menu offers Push, Pull and Fetch; Publish asks which remote when there is more than one. Changes fetches once on opening when the last fetch is older than five minutes. The commit split button offers Commit and Push / Sync, and `Ctrl+Shift+Enter` commits and pushes. Without an upstream, either combined action publishes; with several remotes it asks which one before committing. The remote result and its commands use the result line.
+
 ## 6. Branches
 
 The branch row's name opens a popover in the model popover's style:
 
 - A field at the top, `Switch to or create a branch…`. Typing filters the branches. When nothing matches exactly, the first row is **Create `feature/x` from `feature/checkout`** (Enter); `⋯` on that row picks another start point.
-- **Update from `master`**: a prominent first action when the current branch isn't the default branch. It fetches, then merges `origin/master` (the remote's default branch, from `origin/HEAD`) into the current branch with `--autostash`. This is Rider's "merge master in", made one click, and it uses the fresh remote branch rather than a possibly stale local `master`.
+- **Update from the default branch** is the first action when the current branch differs. It fetches origin, then merges `origin/HEAD`, falling back to `origin/main` or `origin/master`, into the current branch with `--autostash`.
 - **Local branches**, current first with a check, each with its `↓↑` against its upstream in mono `--text-3`. Then **Remote** as a folded group. The `⋯` of a row (or →) offers:
   - **Switch**. A remote branch creates a tracking local branch.
   - **Merge into `feature/checkout`** (`merge --autostash`).
   - **Rebase `feature/checkout` onto this**, disabled with a reason when the current branch's commits are already pushed.
   - **Compare with current**: opens the Log filtered to `current..branch` and back.
   - **Delete**, local only. It asks in place, and asks again in stronger words when git says the branch isn't merged (`-D`).
-- **Switching with local changes.** When git refuses a switch because of local changes, the manager stashes them, switches and pops the stash, then reports it in the result line. If the pop conflicts, the stash is kept, the conflicts show, and the banner says `Restoring your changes conflicted · they are kept in the stash` with **Resolve**.
-- **Autostash and conflicts.** With `merge --autostash`, git restores the stash when the merge ends, by Continue or by Abort. So a conflicted merge never strands your changes. The plan relies on that, and the banner mentions `your changes come back when the merge ends`.
+- **Switching with local changes.** When Git refuses a switch, the manager stashes tracked and untracked changes, switches and pops with `--index`. If the pop conflicts, it keeps the stash, shows conflicts and reports the retained stash in the result line.
+- **Autostash and conflicts.** Git restores a merge's autostash on Continue or Abort. The operation banner says when local changes will return.
+
+
+- Branch create, delete, switch, merge, rebase, update-default, abort and continue use the per-repository queue, status refresh, error mapping and `git` SSE event. Create takes `{ name, from, switch }`; delete first runs `branch -d`, with `-D` only on the UI's second confirmation. Switch first tries normally; when local changes block it, it stashes untracked files too, switches and pops with `--index`. A conflicting pop retains the stash and reports it in the result line; Git has no resumable stash-pop operation for the banner. Merge, rebase and Update use `--autostash`. Rebase refuses a current-branch commit reachable from a remote-tracking branch, explaining the force push it would require. `GET .../git/rebase-safety?onto=` previews this per target for the disabled menu action; the write checks again under the queue.
+- Update fetches `origin`, then merges `origin/HEAD` (or `origin/main` / `origin/master`) into the current branch. The operation banner names branches and conflicts; Continue is disabled until conflicts are staged. On a merge it fills the commit box from Git's `MERGE_MSG`; the other operations continue directly. Existing operations started outside Centurion appear too. Git does not record whether an outside operation came from an agent or terminal, so the banner labels it "outside Centurion (agent or terminal)"; operations started here are labelled Centurion while the manager is running.
+- The branch menu has filter/create, alternate start points, Update, local and folded remote branches, and per-row switch, merge, rebase, compare and local delete. Compare opens the Log at `current..branch`.
 
 ## 7. Log
 
@@ -117,11 +142,16 @@ The third segment of the panel.
   - The changed files as Changes rows. Clicking one opens its diff against the first parent; merge commits say `against first parent`.
 - **Commit actions** (`⋯` on a row and in the details): **Copy hash**, **New branch from here**, **Undo commit** (top commit only, under the conditions in §3). Revert and cherry-pick come later.
 
+
+- The third segment fetches a 200-commit page on opening. Scope, range and subject/author/hash filter change the query; Load more appends pages. It fetches the remote once on open when the last fetch is over five minutes old. Refresh triggers reload the open Log.
+- SVG lanes follow parent hashes through merges and across loaded pages. HEAD has a hollow ring; the current branch's first-parent chain has a stronger neutral line. Refs are text with icons, and pushed/incoming metadata drives the `↑`/`↓` marks. Row arrow keys move focus, Enter opens details.
+- Commit details and first-parent file diffs use the read routes and `DiffView`. Files outside the agent folder stay listed and disabled. The row and details actions copy a hash, create a branch from the commit, or undo the current unpushed non-merge HEAD when no Git operation is active. Undo restores the message to the saved commit draft. Compare opens the Log at `current..branch`; clearing the comparison restores its normal scope.
+
 ## 8. Conflicts
 
 **Names, not sides.** Everywhere, the two sides are named after what they are: `feature/checkout (yours)` and `master (incoming)`. For a rebase, that's the commit being replayed and the branch you rebase onto. Never "ours" and "theirs", which swap meaning during a rebase.
 
-**8a. The list and inline resolution** (first step):
+**8a. The list and inline resolution:**
 - The Conflicts group lists the files. Each row's `⋯` offers **Take yours**, **Take incoming** and **Open**.
 - For delete/modify conflicts the choices are **Keep the file** and **Delete it**. Binary files get only the two takes.
 - **Resolve all simple ones** in the group header: the files where every block is whitespace-only, or where one side equals the base. It says how many it resolved and leaves the rest.
@@ -130,14 +160,20 @@ The third segment of the panel.
 - The three versions come from the index stages (`:1:`, `:2:`, `:3:`), not from parsing the markers, so `conflictStyle` doesn't matter. The non-conflicting parts are already merged by git.
 - **Ask the agent** in the banner and the group header fills the pane's composer (it doesn't send) with a short message: the operation, the branches and the conflicted files. You edit it and send it yourself, or don't.
 
-**8b. Three-pane resolver** (done):
+**8b. Three-pane resolver:**
 - Yours on the left, the result in the middle, incoming on the right, scrolling together.
 - Every change from either side is shown, the non-conflicting ones already applied (with **Ignore** to undo one).
 - A conflict gets `»` / `«` buttons in the gutter to take a side into the result, both in either order.
 - The result is editable per block, as in 8a. A **Base** toggle adds the common ancestor.
 - It needs room, so it takes the whole pane (Esc returns to the panel). Below 900 px of pane width it opens as 8a instead.
 
-As built: **Open in resolver** is in the Conflicts row menu and the inline conflict viewer. The three columns share one vertical scroll area, so long files stay aligned. The Base toggle shows the ancestor *inside each changed result block* as an overlay. Non-conflicting changes start in the result and have Ignore/Restore; every changed block has Edit. The bar counts remaining conflicts and moves between them with buttons or `Alt+↓` / `Alt+↑`. Revert resets choices and edits to the original conflicted state before Apply. Apply writes and stages through `git/resolve`, then opens the next conflicted file or returns to the list. Binary and delete/modify conflicts use the inline view. The resolver checks its reconstructed untouched text against Git's merged text before writing; an ambiguous alignment directs the user to the inline view.
+- **Open in resolver** is in the Conflicts row menu and the inline conflict viewer. The three columns share one vertical scroll area, so long files stay aligned. The Base toggle shows the ancestor *inside each changed result block* as an overlay. Non-conflicting changes start in the result and have Ignore/Restore; every changed block has Edit. The bar counts remaining conflicts and moves between them with buttons or `Alt+↓` / `Alt+↑`. Revert resets choices and edits to the original conflicted state before Apply. Apply writes and stages through `git/resolve`, then opens the next conflicted file or returns to the list. Binary and delete/modify conflicts use the inline view. The resolver checks its reconstructed untouched text against Git's merged text before writing; an ambiguous alignment directs the user to the inline view.
+
+
+- Conflict reads get blobs by index stage IDs. A synthetic `git merge-file --diff3` on those blobs supplies per-block versions; the working file supplies marker positions and the text between them. Marker text in the working file is never used as a side's content. The response also has `code`, `binary`, `deleted`, `merged`, UTF-16 `start`/`end` block offsets, and a `hash` for stale-save checks. Rebase and retained stash-pop conflicts map stage 3 to yours; ordinary merges map stage 2 to yours.
+- The resolve write accepts an optional `hash`, checks it inside the repository queue, writes a text result or an index side, and stages the path. Delete/modify offers Keep or Delete; binary conflicts offer whole-file takes. `resolve-simple` takes paths from the selected group and resolves only files where every block has an unambiguous choice. A whitespace-only difference keeps yours.
+- Conflict rows use `⋯` for whole-file choices and Open. Space opens an inside conflict instead of staging its markers. The group menu offers Resolve all simple ones and Ask the agent. In the viewer, each block has named stacked sides, Base, five choices, edit, and a collapsed result with Change. Mark resolved is enabled when all blocks have choices. Ask the agent only fills the composer.
+- Continue becomes enabled after the final file is staged. Retained stash-pop conflicts remain in the Conflicts group without an operation banner.
 
 ## 9. Errors and feedback
 
@@ -148,22 +184,24 @@ As built: **Open in resolver** is in the Conflicts row menu and the inline confl
   - Merge refused because untracked files would be overwritten (it names them).
   - Missing `user.name` / `user.email`.
   - A failing commit hook. Hooks run; `--no-verify` isn't offered.
-- After every write, the panel refetches status, the open diff and the Log, and the server sends a `git` SSE event per repository, so another pane on the same repo refreshes too. The existing refresh triggers stay: tool results, turn end, focus, the refresh button.
+- After every write, the panel refetches status, the open diff and the Log, and the server sends a `git` SSE event per repository, so another pane on the same repo refreshes too. Tool results, turn end, focus and the refresh button also refresh the panel.
 
 ## 10. API
 
-All under the token check. Each takes `root` (only 0 for writes) and resolves the repository from it. Writes return the new status. Paths are repo-relative for git routes, except the working-tree diff's `path`, which is relative to the root like the file routes (it only opens inside the folder); the status's `prefix` converts between the two.
+All routes require the token. Reads take `root`; writes allow only root 0. Group paths and whole-file write paths are repo-relative. Diff, side-text, conflict and partial apply paths are relative to the agent's root and stay inside it. Status's `prefix` converts between the two.
 
 | Method | Path | What |
 |---|---|---|
-| GET | `/api/agents/:id/git/status` | Extended: `{ branch, detached, head, upstream, ahead, behind, fetchedAt, operation: null \| { kind, onto, step, total }, conflicts, staged, unstaged, outside, files }` (`files` stays for the tree marks) |
+| GET | `/api/agents/:id/git/status` | `{ status }` with branch, upstream, operation, conflicts, staged, unstaged, outside and tree marks; `status: null` outside git |
 | GET | `/api/agents/:id/git/diff?path=&side=worktree\|staged\|head&context=&whitespace=` | A diff for one side, plus its hash |
+| GET | `/api/agents/:id/git/side-text?path=&side=` | Text from the diff's new side, for more context |
 | POST | `/api/agents/:id/git/stage`, `.../unstage`, `.../discard` | `{ paths }` |
-| POST | `/api/agents/:id/git/apply` | `{ path, side, hunks, lines, hash, action: 'stage' \| 'unstage' \| 'discard' }` |
+| POST | `/api/agents/:id/git/apply` | `{ path, side, hunks, lines, hash, context, action: 'stage' \| 'unstage' \| 'discard' }` |
 | POST | `/api/agents/:id/git/commit` | `{ message, amend, all }` → `{ hash }` |
 | POST | `/api/agents/:id/git/undo-commit` | Soft reset of an unpushed, non-merge HEAD |
 | POST | `/api/agents/:id/git/fetch`, `.../pull`, `.../push`, `.../sync`, `.../publish` | `{ remote? }` |
-| GET | `/api/agents/:id/git/branches` | `{ current, default, local: [...], remote: [...] }` with ahead/behind |
+| POST | `/api/agents/:id/git/cancel` | Stop the current network command; `{ cancelled }` |
+| GET | `/api/agents/:id/git/branches` | `{ current, default, remotes, local: [...], remote: [...] }` with ahead/behind |
 | POST | `/api/agents/:id/git/branch` | Create: `{ name, from, switch }`; delete: `{ name, delete: true, force? }` |
 | POST | `/api/agents/:id/git/switch` | `{ branch }` (with stash, switch, pop when needed) |
 | POST | `/api/agents/:id/git/merge`, `.../rebase` | `{ branch }` / `{ onto }`, with `--autostash` |
@@ -171,68 +209,25 @@ All under the token check. Each takes `root` (only 0 for writes) and resolves th
 | POST | `/api/agents/:id/git/abort`, `.../continue` | The operation in progress |
 | POST | `/api/agents/:id/git/update-default` | Fetch origin, then merge its default branch into the current branch with autostash |
 | GET | `/api/agents/:id/git/merge-message` | Git's prepared message while a merge is in progress |
-| GET | `/api/agents/:id/git/log?scope=&skip=&filter=&range=` | `{ commits: { hash, parents, subject, author, date, refs, pushed }[] }` |
+| GET | `/api/agents/:id/git/log?scope=&skip=&filter=&range=` | `{ commits: { hash, parents, subject, author, date, refs, pushed, incoming }[], more }` |
 | GET | `/api/agents/:id/git/commit/:hash` | Message, meta and changed files; `?path=` for one file's diff |
 | GET | `/api/agents/:id/git/conflict?path=` | `{ base, yours, incoming, labels, blocks }` |
-| POST | `/api/agents/:id/git/resolve` | `{ path, content }` or `{ path, take: 'yours' \| 'incoming' \| 'delete' }`, then stages it |
+| POST | `/api/agents/:id/git/resolve` | `{ path, content, hash? }` or `{ path, take: 'yours' \| 'incoming' \| 'delete', hash? }`, then stages it |
 | POST | `/api/agents/:id/git/resolve-simple` | `{ paths }`, resolves unambiguous text conflicts and returns `{ resolved, status, commands }` |
 
-As built in step 1 (the route table in `src/server.ts` has the exact shapes; `centurion api` prints them):
+
 - Status adds `prefix` (the root's path in the repository, `''` or ending in `/`). `outside` is `{ conflicts, staged, unstaged }`, the same groups as the root's. Group entries are `{ path, status, added, removed, oldPath?, code? }`, `code` being a conflict's two letters (`UU`, `DU`, …) for the delete/modify choices. `operation` also has `branch` (the branch a rebase is rebasing, as HEAD is detached meanwhile) and a kind `am`. Untracked files outside the folder get no line counts (they aren't read).
 - Diff: `context` is a number of lines, `whitespace=ignore` gives `-w`. `hash` is the sha1 of the whole diff before truncation. A staged rename diffs against its old path.
 - Log: commits also have `email` and `incoming` (on the upstream, not in HEAD), the result has `more`. `scope=branch` logs HEAD and its upstream, so incoming commits show; `pushed` means reachable from any remote-tracking branch. `filter` searches the newest 50 000 commits.
 - Commit details: `files` entries have `inside`; `?path=` is refused (403) for a file outside the agent's folder, like the working-tree diffs.
 - Branches add `remotes` (the remote names, for Publish). The `main` / `master` fallback for `default` counts a branch that exists locally or on origin, else `default` is null. `local` lists the current branch first; each has `upstream`, `ahead`, `behind` and `gone`.
-
-As built in step 2 (`src/gitwrite.ts`):
 - Write routes take `?root=` (only `0`, the default). They return `{ status, commands }` plus their own fields (`deleted`, `whole`, `hash`, `undone` and `message`); `commands` are `[{ command, code, output }]` for Details. Errors are `{ error, details, commands }`: the sentence, git's output, the commands that ran. Git refusals are 409, bad requests 400.
 - Stage is `add -A` on the paths (so deletions too); a conflicted path may be staged (marked resolved) once it has no conflict markers. Unstage is `reset -q -- paths` (works without commits) and takes a staged rename's old path along; conflicts are refused. Discard needs unstaged changes on every path and refuses conflicts. Paths go to git through `--pathspec-from-file` with `--literal-pathspecs`.
-- Apply: `path` is relative to the root (like the diff route, so the hash matches), `lines` are indexes into `diff.split('
-')`, `hunks` hunk indexes, and `context` must match the diff that was shown (`-U0` applies with `--unidiff-zero`). Stage and discard take `side: 'worktree'`, unstage `side: 'staged'`. When unstaging or discarding the patch applies with `-R`, so the `add -p` rules swap (an unselected `+` becomes context, an unselected `-` is dropped). Selecting every change does the whole-file action. Renamed, binary and truncated files, and deletions when unstaging or discarding, are whole-file only. Part of an untracked file is staged as a new file with only those lines.
+- Apply: `path` is relative to the root (like the diff route, so the hash matches), `lines` index the diff's lines, `hunks` index its hunks, and `context` must match the displayed diff (`-U0` applies with `--unidiff-zero`). Stage and discard take `side: 'worktree'`, unstage `side: 'staged'`. When unstaging or discarding, the patch applies with `-R`, so the `add -p` rules swap. Selecting every change does the whole-file action. Renamed, binary and truncated files, and deletions when unstaging or discarding, are whole-file only. Part of an untracked file is staged as a new file with only those lines.
 - Commit refuses with conflicts or nothing staged (a merge in progress may commit without changes). A failing hook is named when one of `pre-commit`, `prepare-commit-msg`, `commit-msg` exists. Undo also refuses the first commit and while a merge or rebase is in progress, and takes an optional `hash` that must still be HEAD.
 - The `git` SSE event is `{ repo, agentIds }`: the repository's top and the agents with a root in it. It follows every write that ran a git command, also a failed one (a failed commit may have staged everything first).
-
-As built in step 3 (`ui/src/Changes.tsx`, wired in `ui/src/Files.tsx`):
-- Status adds `headPushed` (HEAD is on a remote-tracking branch), which disables Amend with its reason. Amend fills in the last message from the commit route and puts the draft aside; unticking brings the draft back.
-- The branch line is a plain line for now (name, `↓n ↑n`, detached at a hash); the branch row with Sync comes in step 5. The split button's `⌄` already lists **Commit and Push** and **Commit and Sync**, disabled with `Comes with sync`; `Ctrl+Shift+Enter` waits for step 5 too.
-- Staging and unstaging leave the result line alone (the lists show them) unless they fail, so a commit's **Undo** survives staging the next files. Discard, commit, amend and undo write it. Undo isn't offered after an amend, since it would take back the whole commit.
-- A row opens the side of its group when the file is partly staged (`staged` or `worktree`), else `HEAD ↔ working tree` as before; the viewer bar says `Staged` / `Not staged`. Conflict rows open the file; their `+` marks them resolved (refused while markers remain). Rows outside the folder show the repo path and don't open.
-- The Changes group's `⋯` has **Stage tracked files only** and **Discard tracked changes only…**. The tab count is every changed path in the repository, outside the folder included, since a commit takes those too.
-- The draft is `centurion-commit-draft:<repo top>` and "always commit all" is `centurion-commit-all`, both in `localStorage`.
-
-As built in step 4 (`ui/src/DiffView.tsx`, `ui/src/diffModel.ts`, wired in the viewer in `ui/src/Files.tsx`):
-- A partly staged file never shows the combined HEAD diff: opening it from the tree or a link shows its unstaged half, and the bar reads `File | Changes | Staged`. A HEAD diff of a file that is only unstaged (or untracked) stages and discards like a working-tree diff, and one that is only staged unstages: its hunks are the same, so the hash matches. When staging from the diff makes a file partly staged, the viewer moves to the side it staged from; when a file stops being partly staged, back to HEAD.
-- More context is added in the UI rather than by asking git: the hunk header's ↑ shows 20 lines above the hunk, ↓ 20 lines below the previous one, and a row after the last hunk shows the rest of the file (left out when the last hunk already reaches the end). The lines come from the new route `GET .../git/side-text` (the diff's new side: the working tree, or the index for `staged`), so the diff and the line indexes staging sends stay as git made them. **Show whole file** does ask git, with `-U1000000`, and staging then sends that `context`.
-- **Ignore whitespace** is per panel and turns staging from the diff off (the buttons' tooltip says so): the apply route rebuilds the diff without `-w`, so the hash wouldn't match, and a `-w` patch may not apply. Truncated diffs stage only as a whole file.
-- Word highlights pair the n-th removed line of a run with its n-th added line and compare their tokens (words, spaces, symbols) with a longest common subsequence; pairs that share under 40 % stay a plain change. Split view wraps long lines.
-- Hunk and line discards write the panel's result line (`Discarded a change in app.ts`). Errors, the stale-hash 409 among them, show on a line above the diff, and a 409 also refreshes it. Esc clears a line selection before it closes the file.
-- The diff route's binary result has `sizes: { old, new }` (bytes, null for a missing side).
-
-As built in step 5 (`src/gitwrite.ts`, `ui/src/Changes.tsx`):
-- The five remote routes return `{ status, commands, pulled, pushed, conflicted }`; Cancel returns `{ cancelled }` and stops the current network command for the repository without removing queued writes. Fetch uses the tracking remote, or all remotes if the branch has no upstream. Explicit Pull runs even when already up to date; Sync skips Pull and Push when their counts are zero. A conflicting Pull returns its status and leaves Push for another Sync.
-- `gitPull` is a documented config field, default `merge`. Both modes pass `--autostash`. Push uses git's normal fast-forward safety. A rejected push maps to `The remote has new commits`.
-- The branch row shows Publish or Sync, ahead and behind counts and a fetch-age tooltip. Its menu offers Push, Pull and Fetch; Publish asks which remote when there is more than one. Changes fetches once on opening when the last fetch is older than five minutes. The commit split button now offers Commit and Push / Sync and `Ctrl+Shift+Enter` commits and pushes. Without an upstream, either combined action publishes; with several remotes it asks which one before committing. The remote result and its commands use the existing result line.
-
-As built in step 6 (`src/gitwrite.ts`, `ui/src/BranchPopover.tsx`, `ui/src/Changes.tsx`):
-- Branch create, delete, switch, merge, rebase, update-default, abort and continue use the existing per-repository queue, status refresh, error mapping and `git` SSE event. Create takes `{ name, from, switch }`; delete first runs `branch -d`, with `-D` only on the UI's second confirmation. Switch first tries normally; when local changes block it, it stashes untracked files too, switches and pops with `--index`. A conflicting pop retains the stash and reports it in the result line; Git has no resumable stash-pop operation for the banner. Merge, rebase and Update use `--autostash`. Rebase refuses a current-branch commit reachable from a remote-tracking branch, explaining the force push it would require. `GET .../git/rebase-safety?onto=` previews this per target for the disabled menu action; the write checks again under the queue.
-- Update fetches `origin`, then merges `origin/HEAD` (or `origin/main` / `origin/master`) into the current branch. The operation banner names branches and conflicts; Continue is disabled until conflicts are staged. On a merge it fills the commit box from Git's `MERGE_MSG`; the other operations continue directly. Existing operations started outside Centurion appear too. Git does not record whether an outside operation came from an agent or terminal, so the banner labels it "outside Centurion (agent or terminal)"; operations started here are labelled Centurion while the manager is running.
-- The branch menu has filter/create, alternate start points, Update, local and folded remote branches, and per-row switch, merge, rebase, compare and local delete. Compare opens the Log at `current..branch`.
-
-As built in step 7 (`ui/src/Log.tsx`, `ui/src/Files.tsx`):
-- The third segment fetches a 200-commit page on opening. Scope, range and subject/author/hash filter change the query; Load more appends pages. It fetches the remote once on open when the last fetch is over five minutes old. The existing refresh triggers reload the open Log.
-- SVG lanes follow parent hashes through merges and across loaded pages. HEAD has a hollow ring; the current branch's first-parent chain has a stronger neutral line. Refs are text with icons, and pushed/incoming metadata drives the `↑`/`↓` marks. Row arrow keys move focus, Enter opens details.
-- Commit details and first-parent file diffs use the existing read routes and `DiffView`. Files outside the agent folder stay listed and disabled. The row and details actions copy a hash, create a branch from the commit, or undo the current unpushed non-merge HEAD when no Git operation is active. Undo restores the message to the saved commit draft. Compare now opens the Log at `current..branch`; clearing the comparison restores its normal scope.
-- `scripts/test-log.mjs` uses an isolated manager and scratch repository with a bare origin and second clone. It covers branches, a merge, a tag, incoming and unpushed commits, details, a first-parent file diff and author filtering.
-- `scripts/test-branches.mjs` starts an isolated manager with its own config, port and state, removes inherited Claude/Anthropic environment variables, and checks scratch repositories against local bare origins. It covers clean and conflicting stash pops, clean and conflicting merges with Abort and Continue, allowed and refused rebases, Update, both delete confirmations and detached HEAD.
-
-As built in step 8a (`src/gitconflict.ts`, `src/gitwrite.ts`, `ui/src/ConflictViewer.tsx`, `ui/src/Changes.tsx`):
-- Conflict reads get blobs by index stage IDs. A synthetic `git merge-file --diff3` on those blobs supplies per-block versions; the working file supplies marker positions and the text between them. Marker text in the working file is never used as a side's content. The response also has `code`, `binary`, `deleted`, `merged`, UTF-16 `start`/`end` block offsets, and a `hash` for stale-save checks. Rebase and retained stash-pop conflicts map stage 3 to yours; ordinary merges map stage 2 to yours.
-- The resolve write accepts an optional `hash`, checks it inside the repository queue, writes a text result or an index side, and stages the path. Delete/modify offers Keep or Delete; binary conflicts offer whole-file takes. `resolve-simple` takes paths from the selected group and resolves only files where every block has an unambiguous choice. A whitespace-only difference keeps yours.
-- Conflict rows use `⋯` for whole-file choices and Open. Space opens an inside conflict instead of staging its markers. The group menu offers Resolve all simple ones and Ask the agent. In the viewer, each block has named stacked sides, Base, five choices, edit, and a collapsed result with Change. Mark resolved is enabled when all blocks have choices. Ask the agent only fills the composer.
-- The existing operation banner's Continue becomes enabled after the final file is staged. Git has no resumable stash-pop operation, so retained stash conflicts appear in the Conflicts group without an operation banner. `scripts/test-conflicts.mjs` exercises the API against a separate manager, seven scratch repositories and local bare origins.
-
-Backend notes (`src/git.ts`, new; the read helpers move there from `src/files.ts`, and the confinement helpers they share to `src/confine.ts`):
-- Git runs as `git` itself, as today: no shell, `core.quotepath=off`, `GIT_OPTIONAL_LOCKS=0` for reads only (writes need the locks).
+Git reads live in `src/git.ts`, writes in `src/gitwrite.ts`, and shared confinement in `src/confine.ts`:
+- Git runs without a shell, with `core.quotepath=off` and `GIT_OPTIONAL_LOCKS=0` for reads only (writes need the locks).
 - A per-repository promise queue for writes, keyed by `git rev-parse --show-toplevel`.
 - Timeouts: 10 s for local commands, 5 min for network commands and for commit (hooks).
 - Operation state comes from `.git/MERGE_HEAD`, `rebase-merge/`, `rebase-apply/`, `CHERRY_PICK_HEAD` and `REVERT_HEAD` (through `git rev-parse --git-path`, so worktrees work).
@@ -261,18 +256,3 @@ Backend notes (`src/git.ts`, new; the read helpers move there from `src/files.ts
 ## 12. Out of scope here
 
 Stash list and stash UI; cherry-pick, revert commit, interactive rebase; blame and file history; tags; git on the second root; worktrees for experts (separate branches for parallel tracks, a plan of its own); editing files outside conflict resolution; a background fetch timer; GitHub pull requests.
-
-## 13. Implementation plan
-
-Each step is shippable on its own and gets its own commit. Test against a test manager with scratch repositories and a local bare repository as `origin` (no network, no agents needed for most steps). Check every UI step in light, dark and a narrow width.
-
-1. **Backend reads:** `src/git.ts`, extended status (staged, unstaged, conflicts, operation, upstream, outside), diff sides and options, log, commit details, branches.
-2. **Backend writes:** the per-repo queue, error mapping, the `git` SSE event; stage, unstage, discard, partial apply with the diff hash, commit, amend, undo commit.
-3. **Changes view:** groups, row actions, discard in place, commit box with draft, split button, result line and Details. CLAUDE.md's "Files are read-only" rule becomes "the panel edits no files; git actions may write".
-4. **Diff viewer:** sides, `Changes | Staged`, split view, word highlights, whitespace and context, next and previous change, hunk and line staging.
-5. **Remote:** branch row, fetch on open, Sync, Push, Pull, Publish, credentials handling, Cancel, `gitPull` in the config.
-6. **Branches (done):** the popover, create, switch with stash, Update from `master`, merge and rebase with autostash, compare, delete; the operation banner with Abort and Continue.
-7. **Log (done):** the segment, rows with refs and ↑↓ marks, the graph, commit details and diffs, row actions.
-8. **Conflicts, inline (8a; done):** the group, takes per file, simple ones, conflict blocks in the viewer, Mark resolved, Ask the agent.
-9. **Three-pane resolver (8b; done).**
-10. **Docs:** `ui-design.md` §6a (Files and git), `CLAUDE.md` layout and status, `README.md` if usage changes.
