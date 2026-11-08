@@ -4625,6 +4625,16 @@ kbd.key {
   color: var(--text-3);
 }
 
+/* File mentions: the name, then its folder, quieter. */
+.mention-item .slash-description {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.mention-root {
+  color: var(--text-2);
+}
+
 .composer:focus-within {
   box-shadow: 0 0 0 1px var(--accent-line), var(--shadow-float);
 }

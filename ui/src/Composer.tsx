@@ -6,6 +6,8 @@ import { agentState, deliverable, isHeld } from './status';
 import { composerFill, lastSeen, pendingFor, transcriptPin, useManager } from './store';
 import { parsePrompt } from './timeline';
 import { continueList } from './listInput';
+import { baseName, dirName, filterPaths, filesApi, type Root } from './fileStore';
+import { promptHistory, type Recalled } from './promptHistory';
 
 type Props = {
   agent: AgentRecord;
@@ -46,6 +48,53 @@ export function Composer({ agent, agents, focused, run, onInterrupt }: Props) {
     setMenuClosedAt(null);
     box.current?.focus();
   };
+
+  // File mentions: `@` at the start or after a space, up to the caret.
+  const [caret, setCaret] = useState(0);
+  const pendingCaret = useRef<number | null>(null);
+  const mention = slash ? null : findMention(text, caret);
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const [mentionClosedAt, setMentionClosedAt] = useState<string | null>(null);
+  const mentionOpen = mention !== null && mentionClosedAt !== text;
+  const mentionFiles = useMentionFiles(agent.id, mention !== null);
+  const mentionMatches = mentionOpen && mentionFiles.list ? matchMentions(mentionFiles.list, mention.query) : [];
+  const mentionActive = Math.min(mentionIndex, Math.max(0, mentionMatches.length - 1));
+  useEffect(() => setMentionIndex(0), [mention?.query]);
+  const fillMention = (m: MentionOption) => {
+    if (!mention) return;
+    const inserted = `@${/\s/.test(m.value) ? `"${m.value}"` : m.value} `;
+    setText(text.slice(0, mention.start) + inserted + text.slice(caret));
+    pendingCaret.current = mention.start + inserted.length;
+    setMentionClosedAt(null);
+    box.current?.focus();
+  };
+  useLayoutEffect(() => {
+    const at = pendingCaret.current;
+    if (at === null || !box.current) return;
+    pendingCaret.current = null;
+    box.current.setSelectionRange(at, at);
+    setCaret(at);
+  }, [text]);
+  const trackCaret = () => {
+    const el = box.current;
+    if (el && el.selectionStart !== caret) setCaret(el.selectionStart);
+  };
+
+  // Prompt history: Up / Down walk through earlier prompts; `index` -1 is the draft you were typing.
+  const [history, setHistory] = useState<{ list: Recalled[]; index: number; draft: string } | null>(null);
+  useEffect(() => setHistory(null), [agent.id]);
+  const recall = (step: 1 | -1): boolean => {
+    const state = history ?? { list: promptHistory.for(agent.id), index: -1, draft: text };
+    const index = state.index + step;
+    if (index < -1 || index >= state.list.length) return false;
+    const next = index === -1 ? state.draft : state.list[index].text;
+    setHistory(index === -1 ? null : { ...state, index });
+    setText(next);
+    pendingCaret.current = next.length;
+    return true;
+  };
+  const recalled = history ? history.list[history.index] : null;
+  const recalledFrom = recalled && recalled.agentId !== agent.id ? (agents.get(recalled.agentId)?.name ?? 'another agent') : null;
 
   useEffect(() => writeDraft(agent.id, text), [agent.id, text]);
   // A rewound message comes back here to edit and resend.
@@ -101,6 +150,8 @@ export function Composer({ agent, agents, focused, run, onInterrupt }: Props) {
     transcriptPin.set({ agentId: agent.id, at: Date.now() });
     await run(async () => {
       await commands.send(agent.id, value, attached.map(({ mediaType, data }) => ({ mediaType, data })));
+      promptHistory.add(agent.id, value);
+      setHistory(null);
       // Keep anything typed or attached while the request was in flight.
       setText((current) => (current.trim() === value ? '' : current));
       images.remove(attached.map((a) => a.id));
@@ -123,6 +174,17 @@ export function Composer({ agent, agents, focused, run, onInterrupt }: Props) {
           {menuOpen && (skills.list === null || matches.length > 0) && (
             <SlashMenu matches={matches} loading={skills.list === null} error={skills.error} active={active} onHover={setMenuIndex} onPick={fillCommand} />
           )}
+          {mentionOpen && (mentionFiles.list === null || mentionFiles.error || mentionMatches.length > 0 || !mention.query) && (
+            <MentionMenu
+              matches={mentionMatches}
+              loading={mentionFiles.list === null}
+              error={mentionFiles.error}
+              empty={!mention.query}
+              active={mentionActive}
+              onHover={setMentionIndex}
+              onPick={fillMention}
+            />
+          )}
           {agent.notificationsPaused && <Paused agent={agent} run={run} />}
           {deliverable(agent).length > 0 && <Queue agent={agent} run={run} />}
           <div className="composer-body">
@@ -144,13 +206,55 @@ export function Composer({ agent, agents, focused, run, onInterrupt }: Props) {
               value={text}
               aria-label={running ? `Queue a message for ${agent.name}` : `Message ${agent.name}`}
               placeholder={running ? `Queue a message for ${agent.name}` : (decision?.placeholder ?? `Message ${agent.name}`)}
-              onChange={(e) => setText(e.target.value)}
+              onChange={(e) => {
+                setText(e.target.value);
+                setCaret(e.target.selectionStart);
+                setHistory(null); // typing keeps the recalled text as your own
+              }}
+              onSelect={trackCaret}
               onPaste={images.onPaste}
               aria-autocomplete="list"
-              aria-expanded={matches.length > 0}
-              aria-controls={matches.length > 0 ? 'slash-menu' : undefined}
-              aria-activedescendant={matches.length > 0 ? `slash-${active}` : undefined}
+              aria-expanded={matches.length > 0 || mentionMatches.length > 0}
+              aria-controls={matches.length > 0 ? 'slash-menu' : mentionMatches.length > 0 ? 'mention-menu' : undefined}
+              aria-activedescendant={
+                matches.length > 0 ? `slash-${active}` : mentionMatches.length > 0 ? `mention-${mentionActive}` : undefined
+              }
               onKeyDown={(e) => {
+                if (mentionMatches.length > 0 && !e.nativeEvent.isComposing) {
+                  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setMentionIndex((mentionActive + (e.key === 'ArrowDown' ? 1 : mentionMatches.length - 1)) % mentionMatches.length);
+                    return;
+                  }
+                  if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+                    e.preventDefault();
+                    fillMention(mentionMatches[mentionActive]);
+                    return;
+                  }
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setMentionClosedAt(text);
+                    return;
+                  }
+                }
+                if (
+                  (e.key === 'ArrowUp' || e.key === 'ArrowDown') &&
+                  !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey &&
+                  !e.nativeEvent.isComposing &&
+                  matches.length === 0
+                ) {
+                  const el = e.currentTarget;
+                  const collapsed = el.selectionStart === el.selectionEnd;
+                  const firstLine = !el.value.slice(0, el.selectionStart).includes('\n');
+                  const lastLine = !el.value.slice(el.selectionEnd).includes('\n');
+                  // Up: from an empty box, while walking the history, or with the caret at the very start.
+                  const up = e.key === 'ArrowUp' && collapsed && firstLine && (!el.value || history !== null || el.selectionStart === 0);
+                  const down = e.key === 'ArrowDown' && collapsed && lastLine && history !== null;
+                  if ((up || down) && recall(up ? 1 : -1)) {
+                    e.preventDefault();
+                    return;
+                  }
+                }
                 if (matches.length > 0 && !e.nativeEvent.isComposing) {
                   const picked = matches[active];
                   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -188,7 +292,12 @@ export function Composer({ agent, agents, focused, run, onInterrupt }: Props) {
               </button>
               {images.input}
               <span className={`composer-hint${images.error ? ' error' : ''}`}>
-                {images.error || (running ? 'Enter queues it for after this turn' : decision?.hint)}
+                {images.error ||
+                  (history
+                    ? `Earlier prompt${recalledFrom ? ` to ${recalledFrom}` : ''} · ${history.index + 1} of ${history.list.length} · ↑ older, ↓ newer`
+                    : running
+                      ? 'Enter queues it for after this turn'
+                      : decision?.hint)}
               </span>
               {running && (
                 <button className="round-button stop" aria-label="Interrupt the turn (Esc). The queue stays." title="Interrupt the turn (Esc). The queue stays." onClick={onInterrupt}>
@@ -432,6 +541,133 @@ function SlashMenu({ matches, loading, error, active, onHover, onPick }: SlashMe
             {c.argumentHint && <span className="slash-args"> {c.argumentHint}</span>}
           </span>
           <span className="slash-description">{c.description}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---------- file mentions ----------
+
+/** The `@query` the caret is in: `@` at the start or after whitespace, the query running up to the caret. */
+function findMention(text: string, caret: number): { start: number; query: string } | null {
+  const m = /(^|\s)@([^\s@"]*)$/.exec(text.slice(0, caret));
+  return m ? { start: m.index + m[1].length, query: m[2] } : null;
+}
+
+type MentionOption = {
+  /** What goes after the `@`: relative to the agent's folder, absolute for its other roots. */
+  value: string;
+  name: string;
+  dir: string;
+  folder: boolean;
+  /** The root's name, for roots other than the agent's own folder. */
+  rootName: string | null;
+};
+
+type MentionRoot = { root: Root; index: number; paths: string[] };
+
+/** Every file and folder of the agent's roots, fetched when a mention starts and reused for a minute. */
+const mentionCache = new Map<string, { roots: MentionRoot[]; at: number }>();
+
+function useMentionFiles(agentId: string, active: boolean): { list: MentionRoot[] | null; error: string | null } {
+  const [state, setState] = useState<{ id: string; list: MentionRoot[] | null; error: string | null }>(() => ({
+    id: agentId,
+    list: mentionCache.get(agentId)?.roots ?? null,
+    error: null,
+  }));
+  useEffect(() => {
+    if (!active) return;
+    const cached = mentionCache.get(agentId);
+    if (cached) setState({ id: agentId, list: cached.roots, error: null });
+    if (cached && Date.now() - cached.at < 60_000) return;
+    let live = true;
+    (async () => {
+      const { roots } = await filesApi.roots(agentId);
+      return Promise.all(
+        roots.map(async (root, index): Promise<MentionRoot> => {
+          const { files } = await filesApi.all(agentId, index);
+          const folders = new Set<string>();
+          for (const f of files) for (let d = dirName(f); d && !folders.has(d); d = dirName(d)) folders.add(d);
+          return { root, index, paths: [...[...folders].map((d) => `${d}/`), ...files] };
+        }),
+      );
+    })().then(
+      (roots) => {
+        mentionCache.set(agentId, { roots, at: Date.now() });
+        if (live) setState({ id: agentId, list: roots, error: null });
+      },
+      (err: unknown) => live && setState({ id: agentId, list: cached?.roots ?? [], error: err instanceof Error ? err.message : String(err) }),
+    );
+    return () => {
+      live = false;
+    };
+  }, [agentId, active]);
+  return state.id === agentId ? state : { list: mentionCache.get(agentId)?.roots ?? null, error: null };
+}
+
+/** The agent's own folder first, then its other roots; folders end in `/`. */
+function matchMentions(roots: MentionRoot[], query: string): MentionOption[] {
+  if (!query) return [];
+  const out: MentionOption[] = [];
+  for (const r of roots) {
+    for (const p of filterPaths(r.paths, query, 30 - out.length)) {
+      const folder = p.endsWith('/');
+      const rel = folder ? p.slice(0, -1) : p;
+      const absolute = `${r.root.path.replace(/\\/g, '/').replace(/\/$/, '')}/${rel}`;
+      out.push({
+        value: (r.index === 0 ? rel : absolute) + (folder ? '/' : ''),
+        name: baseName(rel) + (folder ? '/' : ''),
+        dir: dirName(rel),
+        folder,
+        rootName: r.index === 0 ? null : r.root.name,
+      });
+    }
+    if (out.length >= 30) break;
+  }
+  return out;
+}
+
+type MentionMenuProps = {
+  matches: MentionOption[];
+  loading: boolean;
+  error: string | null;
+  /** Just `@` so far. */
+  empty: boolean;
+  active: number;
+  onHover: (index: number) => void;
+  onPick: (m: MentionOption) => void;
+};
+
+function MentionMenu({ matches, loading, error, empty, active, onHover, onPick }: MentionMenuProps) {
+  const list = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    list.current?.querySelector(`#mention-${active}`)?.scrollIntoView({ block: 'nearest' });
+  }, [active]);
+  return (
+    <div className="slash-menu" id="mention-menu" role="listbox" aria-label="Files and folders" ref={list}>
+      {loading && <div className="slash-note">Loading files…</div>}
+      {error && <div className="slash-note">Could not load the files: {error}</div>}
+      {!loading && !error && empty && <div className="slash-note">Type to find a file or folder</div>}
+      {matches.map((m, n) => (
+        <div
+          key={m.value}
+          id={`mention-${n}`}
+          role="option"
+          aria-selected={n === active}
+          className={`slash-item mention-item${n === active ? ' active' : ''}`}
+          onMouseEnter={() => onHover(n)}
+          onMouseDown={(e) => {
+            e.preventDefault(); // keep the focus in the box
+            onPick(m);
+          }}
+        >
+          <span className="slash-name mono">{m.name}</span>
+          <span className="slash-description mono">
+            {m.rootName && <span className="mention-root">{m.rootName}</span>}
+            {m.rootName && m.dir ? ' / ' : ''}
+            {m.dir}
+          </span>
         </div>
       ))}
     </div>

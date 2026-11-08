@@ -141,6 +141,16 @@ export function Header({ agent, parent, agents, run, onSelect, onClose, onOpenDr
                 </button>
                 <button
                   role="menuitem"
+                  onClick={() => {
+                    setMenu(false);
+                    openInVsCode(agent.cwd);
+                  }}
+                >
+                  Open folder in VS Code
+                  <span className="menu-hint">Opens the agent's folder in a VS Code window</span>
+                </button>
+                <button
+                  role="menuitem"
                   disabled={blocker !== null}
                   title={blocker ?? undefined}
                   onClick={() => {
@@ -178,6 +188,14 @@ export function Header({ agent, parent, agents, run, onSelect, onClose, onOpenDr
       </div>
     </header>
   );
+}
+
+/** VS Code's own link handler opens a folder too; the browser asks once before handing the link over. */
+function openInVsCode(folder: string): void {
+  const p = folder.replace(/\\/g, '/');
+  const a = document.createElement('a');
+  a.href = `vscode://file/${encodeURI(p.startsWith('/') ? p.slice(1) : p)}`;
+  a.click();
 }
 
 /** Context in use after the last turn: a ring that turns amber from 70 % and coral from 85 %. */
