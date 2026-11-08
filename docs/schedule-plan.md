@@ -1,6 +1,16 @@
 # Scheduled tasks: research and plan
 
-Status: proposal (2026-11-08). Nothing here is implemented yet.
+Status: design decided (2026-11-08), not implemented yet. There are no open questions.
+
+**Decisions** (the user's and the orchestrator's, 2026-11-08):
+- **Default target**: a new chat each run, grouped under the task in the sidebar; run chats beyond the last 5 are archived (`keepRuns` 5).
+- **Permissions in scheduled runs**: set per task, default **deny and continue**. The agent reports what it needed in its reply (`unattended: 'deny'`; `ask` is the other choice).
+- **`schedule_task` only proposes**: the user activates the task from the decision block. No tool can activate or delete one.
+- **Missed runs**: a per-task setting (run once, ask me, skip), default **ask me** (`scheduleMissedRuns: 'ask'`).
+- **Quiet runs** ("Nothing to report" archived at once): not in v1.
+- **Cron**: the `croner` dependency, wrapped in `src/cron.ts`.
+- **Minimum interval**: 15 minutes.
+- **Name in the UI**: "Scheduled" for the group, "scheduled task" for an item.
 
 A **scheduled task** is a saved prompt that Centurion sends on a schedule: every morning at 9, on weekdays, every two hours, once next Monday, or only when you press **Run now**. This document compares how other apps do this, then proposes a design that fits Centurion's queues, permissions, keep-warm and state file.
 
@@ -26,7 +36,7 @@ A **scheduled task** is a saved prompt that Centurion sends on a schedule: every
 - **Runs don't overlap.** Desktop skips a run when the previous one is still going and records why; `/loop` folds missed fires into one. Skips belong in the history with a reason.
 - **Creating by asking is expected** (Desktop, `/schedule`, ChatGPT), but every one of them also has a form and a list page.
 
-## 2. Recommended design
+## 2. Design
 
 ### 2.1 The task
 
@@ -67,7 +77,7 @@ Nothing changes in `AgentRuntime`: a run is one queue entry and one turn.
 The scheduler doesn't trust one long `setTimeout` (Windows sleep and clock changes delay or skip them). It keeps each task's `nextAt` in the state file and **ticks every 30 seconds**: any active task with `nextAt <= now` is due. That one rule covers startup, waking from sleep and normal runs. If only the current occurrence is due (it's less than a tick late), it's a normal run. If one or more occurrences were missed (the manager was off, the machine slept), the task's **missed runs** setting decides:
 
 - **Run once.** One catch-up run for the **most recent** missed time, if that time is within `scheduleCatchUpDays` (default 7). Older misses are dropped and recorded as a single `skipped · missed while Centurion was off (3 runs)` history row. This is Claude Desktop's rule and the original lean.
-- **Ask me** (the recommended default). Nothing starts by itself. The task gets one **pending** missed run (the latest one, same window), and the task row goes into **Needs you**: `Missed Sat 09:00 · Run now / Skip`. **Run now** starts it as a catch-up run; **Skip** records it as skipped. A pending missed run that is still unanswered when the next occurrence comes due is recorded as skipped, and the new occurrence runs normally, so you never get a backlog of questions.
+- **Ask me** (the default, decided). Nothing starts by itself. The task gets one **pending** missed run (the latest one, same window), and the task row goes into **Needs you**: `Missed Sat 09:00 · Run now / Skip`. **Run now** starts it as a catch-up run; **Skip** records it as skipped. A pending missed run that is still unanswered when the next occurrence comes due is recorded as skipped, and the new occurrence runs normally, so you never get a backlog of questions.
 - **Skip.** The misses are recorded as one skipped row, and the task waits for the next occurrence (Codex and `/loop` behaviour). Right for frequent tasks (hourly checks) where a late run says nothing new.
 
 In every case `nextAt` then moves to the next future occurrence. A **once** task that was missed follows the same setting (run, ask or skip) and then becomes `done`.
@@ -88,7 +98,7 @@ A scheduled run is a turn, so keep-warm sees it like any other: no pings while t
 
 Auto mode already decides most calls. For what it can't decide, each task has a policy for the turns it starts (`unattended`):
 
-- **Deny and continue** (recommended default). The request is denied at once with the message *"This is a scheduled run and nobody is watching. Skip this step, and say in your reply what you needed permission for."* The request still shows as a step line (`denied: scheduled run`) and the run's history row counts it (`2 permissions denied`). This is Codex's behaviour, and it means a run always ends.
+- **Deny and continue** (the default, decided). The request is denied at once with the message *"This is a scheduled run and nobody is watching. Skip this step, and say in your reply what you needed permission for."* The request still shows as a step line (`denied: scheduled run`) and the run's history row counts it (`2 permissions denied`). This is Codex's behaviour, and it means a run always ends.
 - **Ask and wait.** The request waits like any other (the current behaviour): the agent shows in Needs you with `Needs permission`, and the run stays `running`. Right for runs you expect to watch.
 
 The policy applies only while the agent's current message is a scheduled one (`rec.current.schedule`), so an existing chat keeps its normal behaviour the rest of the time. "Allow for this session" rules the user granted earlier still apply, and allow rules in the folder's or user's settings keep working; the task page suggests running it once with **Run now** while watching, as Desktop does.
@@ -106,7 +116,7 @@ Chats get a `schedule_task` tool (and `list_scheduled_tasks`). It doesn't start 
 ### 2.9 Where results show
 
 - **Needs you**: a run chat with an unread reply is already a chat whose reply you haven't read, so it shows there with no new rule. An existing agent's run reply makes it unread the same way. A failed run (error, cancelled by a restart) adds the task row to Needs you (`Last run failed`) until you open it.
-- **"Nothing to report"** (later, see open questions): a run whose reply is exactly `Nothing to report.` could be marked quiet, archived at once and kept out of Needs you, like Codex's inbox.
+- **"Nothing to report"** (not in v1, decided): a later version could mark a run whose reply is exactly `Nothing to report.` as quiet, archive it at once and keep it out of Needs you, like Codex's inbox.
 - **The tab title and favicon** count Needs you as today; no separate notification system (configurable notifications are a later item in CLAUDE.md).
 
 ## 3. UI
@@ -168,7 +178,7 @@ Follows `docs/ui-design.md`: colour only with meaning, no new surface types.
   ```
   `AgentRecord.scheduleId?: string` on run chats (groups them in the sidebar). `StateFile` gets `version: 2`, `schedules: ScheduledTask[]` and `schedulesPaused?: boolean`.
 - **`src/state.ts`**: `STATE_VERSION = 2`; `MIGRATIONS[1] = (d) => ({ ...d, schedules: [] })`. The bump matters: an older Centurion would otherwise load a newer file, ignore `schedules` and drop them on its next write; now it refuses the file. `State` gains `schedules`.
-- **`src/cron.ts`** (new): parse and validate 5-field cron (numbers, `*`, steps, ranges, lists; vixie day-of-month / day-of-week OR rule), `nextAfter(spec, date)` in local time, `occurrencesBetween` (bounded count, for catch-up), `describe(spec)` (`Weekdays 09:00`), the 15-minute minimum check, and the presets. Either written in-house (about 150 lines; DST is the risky part and gets tests) or a thin wrapper over `croner` (MIT, no dependencies). Recommended: `croner`, to not own DST edge cases; the rest of the file is ours either way.
+- **`src/cron.ts`** (new): parse and validate 5-field cron (numbers, `*`, steps, ranges, lists; vixie day-of-month / day-of-week OR rule), `nextAfter(spec, date)` in local time, `occurrencesBetween` (bounded count, for catch-up), `describe(spec)` (`Weekdays 09:00`), the 15-minute minimum check, and the presets. It wraps `croner` (MIT, no dependencies of its own; decided), so DST edge cases aren't ours; presets, `describe`, the minimum check and the validation messages are ours. `package.json` gains `croner`.
 - **`src/schedule.ts`** (new): `Scheduler`, modelled on `KeepWarm`: hooks (`tasks()`, `startRun(task, run)`, `changed(task)`), a 30 s `unref`'d tick, the due / catch-up / skip rules of 2.4, the startup delay, and the `scheduleMaxRunning` limit (a small waiting list of `waiting` runs). Pure decisions (`dueRuns(task, now, opts)`) are separate functions so tests can drive them with fake clocks.
 - **`src/manager.ts`**: holds `schedules` (load, save in `state()`), CRUD (`createSchedule`, `updateSchedule`, `setSchedulePaused`, `activateSchedule`, `deleteSchedule`, `runScheduleNow`, `previewSchedule`), and `startRun`: for `newChat`, `createAgent('orchestrator', …)` with `scheduleId` and the task's model and effort, then `sendMessage(…, 'schedule')`; for `agent`, the overlap and archived checks, then `sendMessage`. `sendMessage` takes the `schedule` link and skips `unarchive` for schedule messages (the archived check happened before). Hooks: `onDeliver` → run `running` with the prompt uuid; `onTurnEnd` → run `done` / `failed` / `interrupted` with duration, cost and a preview, sets `reply.scheduled`, then archives old run chats (`keepRuns`); `removeQueued` and `stop` → `cancelled`; `recover` → `interrupted`. `askPermission`: when `rec.current?.schedule` points to a task with `unattended: 'deny'`, resolve at once with the deny message and count it on the run. `setArchived` on an agent that is a task target re-plans the task (shows paused). A new `schedule` event per change.
 - **`src/keepwarm.ts`**: `plan()` returns no ping while the agent's last reply is `scheduled`.
