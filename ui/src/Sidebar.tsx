@@ -576,13 +576,14 @@ function NewExpert({ chat, agents, onDone }: { chat: AgentRecord; agents: Map<st
 }
 
 /**
- * A new chat: a name and the folder it runs in, the default folder unless another is picked from the recent
- * ones or typed. The first message goes in the chat's own composer.
+ * A new chat: a name and the folder it runs in. The folder is a quiet line with the default folder; clicking it
+ * opens a path field with the recent folders. The first message goes in the chat's own composer.
  */
 function NewChat({ agents, onDone }: { agents: Map<string, AgentRecord>; onDone: (rec: AgentRecord | null) => void }) {
   const info = useServerInfo();
   const [name, setName] = useState('');
   const [folder, setFolder] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
@@ -620,15 +621,28 @@ function NewChat({ agents, onDone }: { agents: Map<string, AgentRecord>; onDone:
     >
       <div className="form-title">New chat</div>
       <input ref={nameRef} placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
-      <input
-        className="mono"
-        placeholder="Folder (absolute path)"
-        aria-label="Folder"
-        value={shown}
-        spellCheck={false}
-        onChange={(e) => setFolder(e.target.value)}
-      />
-      {choices.length > 1 && (
+      {!editing ? (
+        <button
+          type="button"
+          className="folder-toggle"
+          title={`${shown}\nClick to run the chat in another folder`}
+          disabled={!shown}
+          onClick={() => setEditing(true)}
+        >
+          in <span className="mono">{shown ? folderName(shown) : '…'}</span>
+        </button>
+      ) : (
+        <input
+          autoFocus
+          className="mono"
+          placeholder="Folder (absolute path)"
+          aria-label="Folder"
+          value={shown}
+          spellCheck={false}
+          onChange={(e) => setFolder(e.target.value)}
+        />
+      )}
+      {editing && choices.length > 1 && (
         <div className="recent-folders" role="listbox" aria-label="Folders">
           {choices.map((dir) => (
             <button
@@ -649,7 +663,6 @@ function NewChat({ agents, onDone }: { agents: Map<string, AgentRecord>; onDone:
           ))}
         </div>
       )}
-      <div className="hint">The chat loads this folder's CLAUDE.md, skills and settings. Start with /orchestrate to plan work with experts.</div>
       {error && <div className="form-error">{error}</div>}
       <div className="form-actions">
         <button type="button" className="button secondary small" onClick={() => onDone(null)}>
