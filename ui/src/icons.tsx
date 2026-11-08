@@ -12,6 +12,7 @@ export {
   Brain as ThinkIcon,
   Check as CheckIcon,
   ChevronDown as ChevronDownIcon,
+  ChevronUp as ChevronUpIcon,
   CircleX as ErrorIcon,
   Copy as CopyIcon,
   Ellipsis as MoreIcon,

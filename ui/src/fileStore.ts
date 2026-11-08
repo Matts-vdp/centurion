@@ -43,7 +43,18 @@ export type FileContent =
   | { kind: 'text'; text: string; size: number; truncated: boolean; lines: number }
   | { kind: 'image'; size: number; mediaType: string }
   | { kind: 'binary'; size: number };
-export type FileDiff = { diff: string; status: GitLetter | null; binary: boolean; truncated: boolean };
+/** `hash`: the sha1 of the whole diff, which partial staging sends back. `sizes`: a binary file's sides in bytes. */
+export type FileDiff = {
+  diff: string;
+  status: GitLetter | null;
+  binary: boolean;
+  truncated: boolean;
+  hash: string;
+  sizes?: { old: number | null; new: number | null };
+};
+/** `context`: lines around each change (git's default 3 when unset); `whitespace`: `-w`. */
+export type DiffOptions = { context?: number; ignoreWhitespace?: boolean };
+export type ApplyAction = 'stage' | 'unstage' | 'discard';
 
 const q = (root: number, path?: string) => `root=${root}${path !== undefined ? `&path=${encodeURIComponent(path)}` : ''}`;
 
@@ -56,8 +67,13 @@ export const filesApi = {
   rawUrl: (id: string, root: number, path: string, version: number) =>
     `/api/agents/${id}/files/read?${q(root, path)}&raw=1&token=${encodeURIComponent(token)}&v=${version}`,
   status: (id: string, root: number) => api<{ status: GitStatus | null }>(`/api/agents/${id}/git/status?${q(root)}`),
-  diff: (id: string, root: number, path: string, side: DiffSide = 'head') =>
-    api<FileDiff>(`/api/agents/${id}/git/diff?${q(root, path)}${side !== 'head' ? `&side=${side}` : ''}`),
+  diff: (id: string, root: number, path: string, side: DiffSide = 'head', opts: DiffOptions = {}) =>
+    api<FileDiff>(
+      `/api/agents/${id}/git/diff?${q(root, path)}${side !== 'head' ? `&side=${side}` : ''}${opts.context !== undefined ? `&context=${opts.context}` : ''}${opts.ignoreWhitespace ? '&whitespace=ignore' : ''}`,
+    ),
+  /** The new side of a diff as text (working tree, or the index for `staged`), for more context around hunks. */
+  sideText: (id: string, root: number, path: string, side: DiffSide) =>
+    api<{ text: string | null; truncated?: boolean }>(`/api/agents/${id}/git/side-text?${q(root, path)}&side=${side}`),
 };
 
 /** Git writes on the repository of the agent's own folder (root 0). Paths are relative to the repository. */
@@ -69,6 +85,10 @@ export const gitApi = {
     api<GitWrite & { hash: string }>(`/api/agents/${id}/git/commit`, { method: 'POST', body: req }),
   undoCommit: (id: string, hash: string) =>
     api<GitWrite & { undone: string; message: string }>(`/api/agents/${id}/git/undo-commit`, { method: 'POST', body: { hash } }),
+  /** Part of one file's diff; `path` relative to the root, `lines` indexes into `diff.split('
+')`. */
+  apply: (id: string, req: { path: string; side: 'worktree' | 'staged'; hunks: number[]; lines: number[]; hash: string; action: ApplyAction; context?: number }) =>
+    api<GitWrite & { whole: boolean }>(`/api/agents/${id}/git/apply`, { method: 'POST', body: req }),
   commitInfo: (id: string, hash: string) => api<{ hash: string; subject: string; body: string }>(`/api/agents/${id}/git/commit/${hash}?root=0`),
 };
 
@@ -266,6 +286,12 @@ export const commitDrafts = {
   write(top: string, text: string): void {
     writeValue(this.key(top), text ? text : null);
   },
+};
+
+/** Unified or split diffs, per browser. */
+export const diffLayout = {
+  get: (): 'unified' | 'split' => (readValue('centurion-diff-layout') === 'split' ? 'split' : 'unified'),
+  set: (layout: 'unified' | 'split') => writeValue('centurion-diff-layout', layout === 'split' ? 'split' : null),
 };
 
 /** "Commit all" without asking, when nothing is staged (chosen once with "Always"). */

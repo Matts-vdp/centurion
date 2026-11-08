@@ -40,6 +40,8 @@
   --id-on: #ffffff;
   --diff-add: rgb(30 138 76 / 0.12);
   --diff-del: rgb(194 57 42 / 0.1);
+  --diff-add-word: rgb(30 138 76 / 0.26);
+  --diff-del-word: rgb(194 57 42 / 0.22);
   --shadow-float: 0 8px 24px rgb(0 0 0 / 0.1), 0 1px 3px rgb(0 0 0 / 0.06);
   --focus: color-mix(in srgb, var(--accent) 70%, transparent);
 
@@ -85,6 +87,8 @@
     --id-on: #131211;
     --diff-add: rgb(99 201 138 / 0.12);
     --diff-del: rgb(255 122 107 / 0.12);
+    --diff-add-word: rgb(99 201 138 / 0.3);
+    --diff-del-word: rgb(255 122 107 / 0.3);
     --shadow-float: inset 0 1px 0 rgb(255 255 255 / 0.04), 0 0 0 1px var(--line), 0 12px 32px rgb(0 0 0 / 0.45);
     --focus: color-mix(in srgb, var(--accent) 70%, transparent);
 
@@ -130,6 +134,8 @@
   --id-on: #131211;
   --diff-add: rgb(99 201 138 / 0.12);
   --diff-del: rgb(255 122 107 / 0.12);
+  --diff-add-word: rgb(99 201 138 / 0.3);
+  --diff-del-word: rgb(255 122 107 / 0.3);
   --shadow-float: inset 0 1px 0 rgb(255 255 255 / 0.04), 0 0 0 1px var(--line), 0 12px 32px rgb(0 0 0 / 0.45);
   --focus: color-mix(in srgb, var(--accent) 70%, transparent);
   --hl-keyword: #c9a2ff;
@@ -5941,6 +5947,13 @@ body.resizing .pane {
   background: var(--sunken);
 }
 
+/* ---------- the viewer's diff (DiffView.tsx) ---------- */
+
+.diff-wrap {
+  position: relative;
+  min-height: 100%;
+}
+
 .viewer-diff {
   max-height: none;
   border-radius: 0;
@@ -5952,7 +5965,60 @@ body.resizing .pane {
   width: 40px;
 }
 
+.diff-nums {
+  flex: none;
+  display: flex;
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+}
+
+button.diff-nums {
+  cursor: pointer;
+}
+
+button.diff-nums:hover .diff-num {
+  color: var(--accent-text);
+}
+
+/* A changed word inside a paired line: a stronger tint of the line's own colour. */
+.diff-word {
+  border-radius: 2px;
+}
+
+.diff-line.add .diff-word,
+.diff-half.add .diff-word {
+  background: var(--diff-add-word);
+}
+
+.diff-line.del .diff-word,
+.diff-half.del .diff-word {
+  background: var(--diff-del-word);
+}
+
+/* Lines picked for staging: the accent tint over the diff colour. */
+.diff-line.selected,
+.diff-half.selected {
+  box-shadow: inset 0 0 0 100vmax var(--accent-soft);
+}
+
+.diff-line.selected .diff-num,
+.diff-half.selected .diff-num {
+  color: var(--accent-text);
+}
+
+/* The hunk header stays in view when the lines scroll sideways, with its actions on the right. */
 .diff-line.hunk {
+  position: sticky;
+  left: 0;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  min-height: 26px;
+  padding-right: 8px;
   color: var(--text-3);
   background: var(--sunken);
   margin: 6px 0 2px;
@@ -5960,6 +6026,228 @@ body.resizing .pane {
 
 .diff-line.hunk:first-child {
   margin-top: 0;
+}
+
+.diff-expand {
+  flex: none;
+  width: 80px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 2px;
+  padding-right: 8px;
+}
+
+.viewer-diff.split .diff-expand {
+  width: 40px;
+}
+
+.diff-arrow {
+  width: 22px;
+  height: 20px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-3);
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+}
+
+.diff-arrow:hover {
+  background: var(--fill);
+  color: var(--text);
+}
+
+.diff-hunk-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-hunk-actions {
+  flex: none;
+  display: inline-flex;
+  gap: 2px;
+}
+
+.diff-hunk-button {
+  border: 0;
+  background: none;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 4px;
+  font: 12px var(--font);
+  color: var(--text-2);
+}
+
+.diff-hunk-button:hover:not(:disabled) {
+  background: var(--fill);
+  color: var(--text);
+}
+
+.diff-hunk-button:disabled {
+  color: var(--text-3);
+  opacity: 0.7;
+  cursor: default;
+}
+
+.diff-confirm {
+  position: sticky;
+  left: 8px;
+  margin: 2px 8px 6px;
+  max-width: 520px;
+  font: 12.5px var(--font);
+}
+
+.diff-confirm .button:first-of-type {
+  margin-left: auto;
+}
+
+.diff-line.more .diff-num,
+.diff-half.more .diff-num {
+  opacity: 0.8;
+}
+
+/* Split: removed on the left, added on the right; long lines wrap, since each half can't scroll alone. */
+.viewer-diff.split .diff-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+}
+
+.diff-half {
+  display: flex;
+  min-width: 0;
+  padding-right: 8px;
+}
+
+.diff-half.add {
+  background: var(--diff-add);
+}
+
+.diff-half.del {
+  background: var(--diff-del);
+}
+
+.diff-half.empty {
+  background: color-mix(in srgb, var(--sunken) 55%, transparent);
+}
+
+.viewer-diff.split .diff-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.diff-half.add .diff-sign {
+  color: var(--done);
+}
+
+.diff-half.del .diff-sign {
+  color: var(--failed);
+}
+
+.diff-binary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 14px 16px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+/* The floating bar for selected lines, at the bottom of the view; the last lines stay reachable above it. */
+.diff-wrap.selecting .viewer-diff {
+  padding-bottom: 72px;
+}
+
+.diff-select-anchor {
+  position: sticky;
+  bottom: 14px;
+  height: 0;
+  z-index: 5;
+}
+
+.diff-select-bar {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 6px 6px 10px;
+  max-width: calc(100% - 24px);
+  width: max-content;
+  flex-wrap: wrap;
+  border-radius: 10px;
+  background: var(--raised);
+  box-shadow: var(--shadow-float);
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.viewer-notice {
+  padding: 8px 12px 0;
+}
+
+.viewer-notice .git-result {
+  margin-top: 0;
+}
+
+.viewer-bar {
+  flex-wrap: wrap;
+}
+
+.diff-nav {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.diff-nav-count {
+  font-size: 11.5px;
+  color: var(--text-3);
+  min-width: 44px;
+  text-align: center;
+}
+
+.icon-button.on {
+  color: var(--accent-text);
+}
+
+.segmented.viewer-toggle.three {
+  width: 200px;
+}
+
+.segmented button:disabled {
+  color: var(--text-3);
+  cursor: default;
+}
+
+.diff-menu {
+  min-width: 250px;
+}
+
+.diff-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.diff-menu-check {
+  width: 14px;
+  display: inline-grid;
+  place-items: center;
+  color: var(--accent-text);
+}
+
+.diff-menu .menu-hint {
+  padding-left: 20px;
 }
 
 /* Tool file paths in the transcript open the Files panel. */

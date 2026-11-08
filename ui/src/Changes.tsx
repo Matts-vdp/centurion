@@ -159,6 +159,7 @@ export function Changes({ agentId, rootPath, status, selected, result, onResult,
   const toggle = (it: Item) => (it.group === 'staged' ? unstage([it.entry.path], `row:${it.group}:${it.entry.path}`) : stage([it.entry.path], `row:${it.group}:${it.entry.path}`));
 
   const onRowKey = (e: ReactKeyboardEvent<HTMLButtonElement>, it: Item, index: number, groupKey: string) => {
+    if (e.altKey) return;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       const rows = [...(listRef.current?.querySelectorAll<HTMLButtonElement>('.change-main') ?? [])];
@@ -394,7 +395,7 @@ function BranchLine({ status }: { status: GitStatus }) {
 
 type MenuItem = { label: string; hint?: string; disabled?: boolean; title?: string; run?: () => void };
 
-function useDismiss(open: boolean, ref: RefObject<HTMLElement | null>, close: () => void) {
+export function useDismiss(open: boolean, ref: RefObject<HTMLElement | null>, close: () => void) {
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent | KeyboardEvent) => {
@@ -676,7 +677,7 @@ function CommitBox({
   );
 }
 
-function ResultView({ result, undoing, onUndo, onDismiss }: { result: ResultLine; undoing: boolean; onUndo: (hash: string) => void; onDismiss: () => void }) {
+export function ResultView({ result, undoing, onUndo, onDismiss }: { result: ResultLine; undoing: boolean; onUndo: (hash: string) => void; onDismiss: () => void }) {
   const [open, setOpen] = useState(false);
   // A new result starts folded.
   useEffect(() => setOpen(false), [result]);

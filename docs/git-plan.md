@@ -1,6 +1,6 @@
 # Git: changes, commits, sync, branches, log and conflicts
 
-**Status:** steps 1 to 3 (backend reads and writes, the Changes view) done; the rest planned. Builds on the Files panel (`docs/files-plan.md`), which already shows git status and a unified diff against `HEAD`.
+**Status:** steps 1 to 4 (backend reads and writes, the Changes view, the diff viewer) done; the rest planned. Builds on the Files panel (`docs/files-plan.md`), which already shows git status and a unified diff against `HEAD`.
 
 The goal: the git work you do around an agent's changes, without leaving the manager. You read the diff, stage what you want, type a message, then commit and push. You sync with the remote, switch or create a branch, and merge `master` in with your open changes put aside and restored on their own. When that conflicts, you resolve it in the same panel. Rider and VS Code are the model (research summary in §11); where they differ, this plan picks what fits a manager of agents.
 
@@ -193,6 +193,14 @@ As built in step 3 (`ui/src/Changes.tsx`, wired in `ui/src/Files.tsx`):
 - A row opens the side of its group when the file is partly staged (`staged` or `worktree`), else `HEAD ↔ working tree` as before; the viewer bar says `Staged` / `Not staged`. Conflict rows open the file; their `+` marks them resolved (refused while markers remain). Rows outside the folder show the repo path and don't open.
 - The Changes group's `⋯` has **Stage tracked files only** and **Discard tracked changes only…**. The tab count is every changed path in the repository, outside the folder included, since a commit takes those too.
 - The draft is `centurion-commit-draft:<repo top>` and "always commit all" is `centurion-commit-all`, both in `localStorage`.
+
+As built in step 4 (`ui/src/DiffView.tsx`, `ui/src/diffModel.ts`, wired in the viewer in `ui/src/Files.tsx`):
+- A partly staged file never shows the combined HEAD diff: opening it from the tree or a link shows its unstaged half, and the bar reads `File | Changes | Staged`. A HEAD diff of a file that is only unstaged (or untracked) stages and discards like a working-tree diff, and one that is only staged unstages: its hunks are the same, so the hash matches. When staging from the diff makes a file partly staged, the viewer moves to the side it staged from; when a file stops being partly staged, back to HEAD.
+- More context is added in the UI rather than by asking git: the hunk header's ↑ shows 20 lines above the hunk, ↓ 20 lines below the previous one, and a row after the last hunk shows the rest of the file (left out when the last hunk already reaches the end). The lines come from the new route `GET .../git/side-text` (the diff's new side: the working tree, or the index for `staged`), so the diff and the line indexes staging sends stay as git made them. **Show whole file** does ask git, with `-U1000000`, and staging then sends that `context`.
+- **Ignore whitespace** is per panel and turns staging from the diff off (the buttons' tooltip says so): the apply route rebuilds the diff without `-w`, so the hash wouldn't match, and a `-w` patch may not apply. Truncated diffs stage only as a whole file.
+- Word highlights pair the n-th removed line of a run with its n-th added line and compare their tokens (words, spaces, symbols) with a longest common subsequence; pairs that share under 40 % stay a plain change. Split view wraps long lines.
+- Hunk and line discards write the panel's result line (`Discarded a change in app.ts`). Errors, the stale-hash 409 among them, show on a line above the diff, and a 409 also refreshes it. Esc clears a line selection before it closes the file.
+- The diff route's binary result has `sizes: { old, new }` (bytes, null for a missing side).
 
 Backend notes (`src/git.ts`, new; the read helpers move there from `src/files.ts`, and the confinement helpers they share to `src/confine.ts`):
 - Git runs as `git` itself, as today: no shell, `core.quotepath=off`, `GIT_OPTIONAL_LOCKS=0` for reads only (writes need the locks).

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
-import type { AgentRecord, LiveMessage } from './api';
+import { ApiError, type AgentRecord, type LiveMessage } from './api';
 import {
   baseName,
+  diffLayout,
   dirName,
   editedPath,
   EDIT_TOOLS,
@@ -9,10 +10,13 @@ import {
   filesApi,
   filterPaths,
   formatSize,
+  gitApi,
+  gitFailure,
   joinPath,
   locate,
   panels,
   usePanel,
+  type ApplyAction,
   type DiffSide,
   type Entry,
   type FileContent,
@@ -23,8 +27,10 @@ import {
   type OpenRequest,
   type Root,
 } from './fileStore';
-import { BackIcon, CheckIcon, Chevron, CloseIcon, CopyIcon, FileCodeIcon, FileIcon, FileImageIcon, FolderIcon, FolderOpenIcon, RefreshIcon } from './icons';
-import { changeCount, Changes, type ResultLine } from './Changes';
+import { BackIcon, CheckIcon, Chevron, ChevronDownIcon, ChevronUpIcon, CloseIcon, CopyIcon, FileCodeIcon, FileIcon, FileImageIcon, FolderIcon, FolderOpenIcon, MoreIcon, RefreshIcon } from './icons';
+import { changeCount, Changes, ResultView, useDismiss, type ResultLine } from './Changes';
+import { DiffView, useHunkNav, type DiffActions } from './DiffView';
+import { parseDiff } from './diffModel';
 import { store } from './store';
 import { highlight, languageOf } from './highlight';
 import { Markdown } from './Transcript';
@@ -32,6 +38,26 @@ import { Markdown } from './Transcript';
 /** `line`: scroll to that line and mark it (a link from a visual). `side`: which diff (HEAD ↔ working tree when unset). */
 type View = { root: number; path: string; mode: 'file' | 'diff'; line?: number; side?: DiffSide };
 type Dir = { entries: Entry[]; truncated: boolean } | { error: string };
+/** Where a file of the agent's folder stands in git's groups; `repoPath` is its path in the repository. */
+type Parts = { repoPath: string; staged: boolean; unstaged: boolean; conflict: boolean; untracked: boolean };
+
+function partsOf(status: GitStatus | null, rel: string): Parts | null {
+  if (!status) return null;
+  const repoPath = status.prefix + rel;
+  const unstaged = status.unstaged.find((e) => e.path === repoPath);
+  return {
+    repoPath,
+    staged: status.staged.some((e) => e.path === repoPath),
+    unstaged: !!unstaged,
+    conflict: status.conflicts.some((e) => e.path === repoPath),
+    untracked: unstaged?.status === 'U',
+  };
+}
+
+/** Split view needs this much width; narrower viewers show unified diffs. */
+const SPLIT_FROM = 720;
+/** "Show whole file" asks git for this much context. */
+const WHOLE_FILE = 1_000_000;
 
 const COMPACT_BELOW = 620;
 const MIN_WIDTH = 220;
@@ -68,6 +94,10 @@ export function FilesPanel({ agent, pane, request, onRequestDone }: Props) {
   const [missing, setMissing] = useState('');
   /** What the last git action did, under the commit box; it stays while you switch between Files and Changes. */
   const [gitResult, setGitResult] = useState<ResultLine | null>(null);
+  /** Ignore whitespace in diffs, for every file of this panel. */
+  const [ignoreWhitespace, setIgnoreWhitespace] = useState(false);
+  /** The side the viewer staged from last, to keep showing it once the file becomes partly staged. */
+  const appliedSide = useRef<DiffSide | null>(null);
   const filterRef = useRef<HTMLInputElement>(null);
   const dirsRef = useRef(dirs);
   dirsRef.current = dirs;
@@ -218,14 +248,30 @@ export function FilesPanel({ agent, pane, request, onRequestDone }: Props) {
 
   const changed = useMemo(() => new Map((status?.files ?? []).map((f) => [f.path, f])), [status]);
 
+  const statusRef = useRef(status);
+  statusRef.current = status;
   const openFile = useCallback(
     (root: number, path: string, mode: 'file' | 'diff' = 'file', line?: number, side?: DiffSide) => {
       setMissing('');
-      setView({ root, path, mode, line, ...(side && side !== 'head' ? { side } : {}) });
+      // A partly staged file has no single diff against HEAD here: its unstaged half opens.
+      const parts = root === 0 ? partsOf(statusRef.current, path) : null;
+      const shown = parts?.staged && parts.unstaged && (!side || side === 'head') ? 'worktree' : side;
+      appliedSide.current = null;
+      setView({ root, path, mode, line, ...(shown && shown !== 'head' ? { side: shown } : {}) });
       reveal(root, path);
     },
     [reveal],
   );
+
+  // Staging from the diff can make a file partly staged, or whole again: the viewer follows.
+  useEffect(() => {
+    if (!view || view.root !== 0 || view.mode !== 'diff') return;
+    const parts = partsOf(status, view.path);
+    if (!parts) return;
+    const partly = parts.staged && parts.unstaged;
+    if (view.side && !partly) setView({ ...view, side: undefined });
+    else if (!view.side && partly) setView({ ...view, side: appliedSide.current === 'staged' ? 'staged' : 'worktree' });
+  }, [status]);
 
   // A transcript link: find the file's root, then show its diff if git has changes for it.
   useEffect(() => {
@@ -374,13 +420,23 @@ export function FilesPanel({ agent, pane, request, onRequestDone }: Props) {
             view &&
             roots && (
               <Viewer
-                key={`${view.root}:${view.path}:${view.line ?? ''}:${view.side ?? ''}`}
+                key={`${view.root}:${view.path}:${view.line ?? ''}`}
                 agentId={agent.id}
                 root={roots[view.root]}
                 view={view}
                 version={version}
                 change={view.root === 0 ? changed.get(view.path) : undefined}
-                onMode={(mode) => setView({ ...view, mode })}
+                parts={view.root === 0 ? partsOf(status, view.path) : null}
+                ignoreWhitespace={ignoreWhitespace}
+                onIgnoreWhitespace={setIgnoreWhitespace}
+                onView={(patch) => setView({ ...view, ...patch })}
+                onWritten={(next, appliedFrom) => {
+                  if (appliedFrom) appliedSide.current = appliedFrom;
+                  if (next) setStatus(next);
+                  scheduleRefresh();
+                }}
+                onResult={setGitResult}
+                onRefresh={refresh}
                 onClose={() => setView(null)}
                 onFolder={(dir) => {
                   setTab('files');
@@ -521,6 +577,7 @@ function Tree({
   const onKey = (e: ReactKeyboardEvent, row: Row) => {
     const buttons = [...(ref.current?.querySelectorAll<HTMLButtonElement>('.file-row') ?? [])];
     const at = buttons.indexOf(e.currentTarget as HTMLButtonElement);
+    if (e.altKey) return;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       buttons[Math.min(buttons.length - 1, Math.max(0, at + (e.key === 'ArrowDown' ? 1 : -1)))]?.focus();
@@ -652,7 +709,13 @@ function Viewer({
   view,
   version,
   change,
-  onMode,
+  parts,
+  ignoreWhitespace,
+  onIgnoreWhitespace,
+  onView,
+  onWritten,
+  onResult,
+  onRefresh,
   onClose,
   onFolder,
 }: {
@@ -661,35 +724,156 @@ function Viewer({
   view: View;
   version: number;
   change: GitFile | undefined;
-  onMode: (mode: 'file' | 'diff') => void;
+  /** The file's place in git's groups (the agent's own folder only). */
+  parts: Parts | null;
+  ignoreWhitespace: boolean;
+  onIgnoreWhitespace: (on: boolean) => void;
+  onView: (patch: Partial<View>) => void;
+  /** A write from the diff: the new status, and the side it acted on. */
+  onWritten: (status: GitStatus | null, side?: DiffSide) => void;
+  onResult: (r: ResultLine | null) => void;
+  onRefresh: () => void;
   onClose: () => void;
   onFolder: (dir: string) => void;
 }) {
   const rootIndex = view.root;
+  const ref = useRef<HTMLDivElement>(null);
+  const body = useRef<HTMLDivElement>(null);
   const [content, setContent] = useState<FileContent | null>(null);
   const [diff, setDiff] = useState<FileDiff | null>(null);
   const [error, setError] = useState('');
   // A link to a line shows a Markdown file's source, where the line is.
   const [source, setSource] = useState(view.line !== undefined);
   const [copied, setCopied] = useState(false);
+  const [whole, setWhole] = useState(false);
+  const [layout, setLayoutState] = useState(diffLayout.get);
+  const [narrow, setNarrow] = useState(false);
+  /** A failed write from the diff, above it. */
+  const [notice, setNotice] = useState<ResultLine | null>(null);
+  const [menu, setMenu] = useState(false);
+  const menuRef = useRef<HTMLSpanElement>(null);
+  const closeMenu = useMemo(() => () => setMenu(false), []);
+  useDismiss(menu, menuRef, closeMenu);
   const deleted = change?.status === 'D';
   const mode = deleted ? 'diff' : view.mode;
   const side = view.side ?? 'head';
+  const context = whole ? WHOLE_FILE : undefined;
 
   useEffect(() => {
     let cancelled = false;
     setError('');
     const load =
       mode === 'diff'
-        ? filesApi.diff(agentId, rootIndex, view.path, side).then((d) => !cancelled && setDiff(d))
+        ? filesApi.diff(agentId, rootIndex, view.path, side, { context, ignoreWhitespace }).then((d) => !cancelled && setDiff(d))
         : filesApi.read(agentId, rootIndex, view.path).then((c) => !cancelled && setContent(c));
     load.catch((err) => !cancelled && setError(err instanceof Error ? err.message : String(err)));
     return () => {
       cancelled = true;
     };
-  }, [agentId, rootIndex, view.path, mode, side, version]);
+  }, [agentId, rootIndex, view.path, mode, side, version, context, ignoreWhitespace]);
 
-  const parts = view.path.split('/');
+  // Split view needs room.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => setNarrow(el.clientWidth < SPLIT_FROM));
+    observer.observe(el);
+    setNarrow(el.clientWidth < SPLIT_FROM);
+    return () => observer.disconnect();
+  }, []);
+
+  const hunks = useMemo(() => (diff && !diff.binary ? parseDiff(diff.diff) : []), [diff]);
+  const shownDiff = mode === 'diff' && diff !== null && !error;
+  const nav = useHunkNav(body, shownDiff ? hunks.length : 0, `${diff?.hash ?? ''}:${side}`);
+  const navRef = useRef(nav);
+  navRef.current = nav;
+
+  // Alt+↓ / Alt+↑ anywhere in the panel move between hunks.
+  useEffect(() => {
+    const panel = ref.current?.closest('.files-panel');
+    if (!panel || !shownDiff) return;
+    const onKey = (e: Event) => {
+      const k = e as KeyboardEvent;
+      if (!k.altKey || (k.key !== 'ArrowDown' && k.key !== 'ArrowUp')) return;
+      k.preventDefault();
+      if (k.key === 'ArrowDown') navRef.current.next();
+      else navRef.current.prev();
+    };
+    panel.addEventListener('keydown', onKey);
+    return () => panel.removeEventListener('keydown', onKey);
+  }, [shownDiff]);
+
+  const p = parts ?? { repoPath: view.path, staged: false, unstaged: false, conflict: false, untracked: false };
+  const partly = p.staged && p.unstaged;
+  /** The side staging from this diff works on: the side shown, or for HEAD ↔ working tree the file's one group. */
+  const applySide: 'worktree' | 'staged' | null =
+    !parts || p.conflict
+      ? null
+      : side === 'staged'
+        ? 'staged'
+        : side === 'worktree'
+          ? 'worktree'
+          : p.unstaged && !p.staged
+            ? 'worktree'
+            : p.staged && !p.unstaged
+              ? 'staged'
+              : null;
+  const actions: DiffActions = !applySide
+    ? null
+    : diff?.binary
+      ? { side: applySide }
+      : ignoreWhitespace
+        ? { disabled: 'Turn off Ignore whitespace to stage from the diff' }
+        : diff?.truncated
+          ? { disabled: 'The diff is too big to stage in parts: stage the whole file from Changes' }
+          : { side: applySide };
+
+  const fail = (err: unknown) => {
+    const f = gitFailure(err);
+    setNotice({ error: true, text: f.error, details: f.details, commands: f.commands });
+    // The file changed since the diff was fetched: show the new one.
+    if (err instanceof ApiError && err.status === 409) onRefresh();
+  };
+
+  const apply = async (action: ApplyAction, hunkList: number[], lines: number[]): Promise<boolean> => {
+    if (!diff || !applySide) return false;
+    setNotice(null);
+    try {
+      const r = await gitApi.apply(agentId, { path: view.path, side: applySide, hunks: hunkList, lines, hash: diff.hash, action, ...(context !== undefined ? { context } : {}) });
+      onWritten(r.status, applySide);
+      if (action === 'discard') {
+        const what = hunkList.length ? 'a change' : `${lines.length} line${lines.length === 1 ? '' : 's'}`;
+        onResult({ error: false, text: r.whole && p.untracked ? `Deleted ${baseName(view.path)}` : `Discarded ${what} in ${baseName(view.path)}`, details: '', commands: r.commands });
+      }
+      return true;
+    } catch (err) {
+      fail(err);
+      return false;
+    }
+  };
+
+  const fileAction = async (action: 'stage' | 'unstage'): Promise<boolean> => {
+    if (!parts) return false;
+    setNotice(null);
+    try {
+      const r = action === 'stage' ? await gitApi.stage(agentId, [p.repoPath]) : await gitApi.unstage(agentId, [p.repoPath]);
+      onWritten(r.status, applySide ?? undefined);
+      return true;
+    } catch (err) {
+      fail(err);
+      return false;
+    }
+  };
+
+  const loadText = async (): Promise<string[] | null> => {
+    const r = await filesApi.sideText(agentId, rootIndex, view.path, side);
+    if (r.text === null) return null;
+    const lines = r.text.split('\n');
+    if (r.text.endsWith('\n')) lines.pop();
+    return lines;
+  };
+
+  const crumbs = view.path.split('/');
   const isMarkdown = MARKDOWN_EXT.test(view.path);
   const absolute = `${root.path.replace(/[\\/]+$/, '')}${root.path.includes('\\') ? '\\' : '/'}${view.path.split('/').join(root.path.includes('\\') ? '\\' : '/')}`;
   const copy = () =>
@@ -706,20 +890,28 @@ function Viewer({
       : change?.added !== null && change && side === 'head'
         ? `+${change.added} −${change.removed ?? 0}`
         : '';
+  const sideLabel = mode !== 'diff' ? '' : side === 'staged' || (side === 'head' && p.staged && !p.unstaged) ? 'Staged' : side === 'worktree' ? 'Not staged' : '';
+  const effectiveLayout = narrow ? 'unified' : layout;
+  const setLayout = (l: 'unified' | 'split') => {
+    diffLayout.set(l);
+    setLayoutState(l);
+  };
+  const segment = mode === 'diff' ? (side === 'staged' ? 'staged' : 'changes') : 'file';
+  const textDiff = mode === 'diff' && diff !== null && !diff.binary;
 
   return (
-    <div className="viewer">
+    <div className="viewer" ref={ref}>
       <div className="viewer-head">
         <button className="icon-button" title="Back to the files (Esc)" aria-label="Back to the files" onClick={onClose}>
           <BackIcon size={15} />
         </button>
         <nav className="viewer-path mono" aria-label="Path" title={absolute}>
-          {parts.map((part, i) => {
-            const last = i === parts.length - 1;
+          {crumbs.map((part, i) => {
+            const last = i === crumbs.length - 1;
             return (
               <span key={i} className="viewer-crumb">
                 {i > 0 && <span className="viewer-sep">/</span>}
-                {last ? <span className="viewer-file">{part}</span> : <button onClick={() => onFolder(parts.slice(0, i + 1).join('/'))}>{part}</button>}
+                {last ? <span className="viewer-file">{part}</span> : <button onClick={() => onFolder(crumbs.slice(0, i + 1).join('/'))}>{part}</button>}
               </span>
             );
           })}
@@ -730,13 +922,23 @@ function Viewer({
       </div>
       <div className="viewer-bar">
         {change && !deleted && (
-          <div className="segmented viewer-toggle" style={{ gridTemplateColumns: '1fr 1fr' }}>
-            <button className={mode === 'file' ? 'on' : ''} aria-pressed={mode === 'file'} onClick={() => onMode('file')}>
+          <div className={`segmented viewer-toggle${partly ? ' three' : ''}`} style={{ gridTemplateColumns: partly ? '1fr 1fr 1fr' : '1fr 1fr' }}>
+            <button className={segment === 'file' ? 'on' : ''} aria-pressed={segment === 'file'} onClick={() => onView({ mode: 'file' })}>
               File
             </button>
-            <button className={mode === 'diff' ? 'on' : ''} aria-pressed={mode === 'diff'} onClick={() => onMode('diff')}>
+            <button
+              className={segment === 'changes' ? 'on' : ''}
+              aria-pressed={segment === 'changes'}
+              title={partly ? 'What is not staged yet (index ↔ working tree)' : undefined}
+              onClick={() => onView(partly ? { mode: 'diff', side: 'worktree' } : { mode: 'diff' })}
+            >
               Changes
             </button>
+            {partly && (
+              <button className={segment === 'staged' ? 'on' : ''} aria-pressed={segment === 'staged'} title="What is staged (HEAD ↔ index)" onClick={() => onView({ mode: 'diff', side: 'staged' })}>
+                Staged
+              </button>
+            )}
           </div>
         )}
         {mode === 'file' && isMarkdown && content?.kind === 'text' && (
@@ -749,18 +951,100 @@ function Viewer({
             </button>
           </div>
         )}
+        {textDiff && (
+          <div
+            className="segmented viewer-toggle"
+            style={{ gridTemplateColumns: '1fr 1fr' }}
+            title={narrow ? `Split needs ${SPLIT_FROM} px: this viewer is narrower, so it shows unified` : undefined}
+          >
+            <button className={effectiveLayout === 'unified' ? 'on' : ''} aria-pressed={effectiveLayout === 'unified'} onClick={() => setLayout('unified')}>
+              Unified
+            </button>
+            <button className={effectiveLayout === 'split' ? 'on' : ''} aria-pressed={effectiveLayout === 'split'} disabled={narrow} onClick={() => setLayout('split')}>
+              Split
+            </button>
+          </div>
+        )}
         <span className="viewer-meta mono">
-          {mode === 'diff' && side !== 'head' && <span>{side === 'staged' ? 'Staged' : 'Not staged'} · </span>}
-          {change && <span title={gitTitle(change.status)}>{gitTitle(change.status)} · </span>}
-          {meta}
+          {[sideLabel, change ? gitTitle(change.status) : '', meta].filter(Boolean).join(' · ')}
         </span>
+        {shownDiff && hunks.length > 0 && (
+          <span className="diff-nav">
+            <button className="icon-button small" title="Previous change (Alt+↑)" aria-label="Previous change" onClick={nav.prev}>
+              <ChevronUpIcon size={14} />
+            </button>
+            <span className="diff-nav-count mono" aria-live="polite">
+              {Math.min(nav.current + 1, hunks.length)} of {hunks.length}
+            </span>
+            <button className="icon-button small" title="Next change (Alt+↓)" aria-label="Next change" onClick={nav.next}>
+              <ChevronDownIcon size={14} />
+            </button>
+          </span>
+        )}
+        {textDiff && (
+          <span className="menu-anchor" ref={menuRef}>
+            <button className={`icon-button small${ignoreWhitespace || whole ? ' on' : ''}`} title="Diff options" aria-label="Diff options" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)}>
+              <MoreIcon size={14} />
+            </button>
+            {menu && (
+              <div className="menu git-menu diff-menu" role="menu">
+                <button
+                  role="menuitemcheckbox"
+                  aria-checked={ignoreWhitespace}
+                  onClick={() => {
+                    closeMenu();
+                    onIgnoreWhitespace(!ignoreWhitespace);
+                  }}
+                >
+                  <span className="diff-menu-item">
+                    <span className="diff-menu-check">{ignoreWhitespace && <CheckIcon size={13} />}</span>
+                    Ignore whitespace
+                  </span>
+                  <span className="menu-hint">Hides changes to spaces only. Staging from the diff is off meanwhile</span>
+                </button>
+                <button
+                  role="menuitemcheckbox"
+                  aria-checked={whole}
+                  onClick={() => {
+                    closeMenu();
+                    setWhole(!whole);
+                  }}
+                >
+                  <span className="diff-menu-item">
+                    <span className="diff-menu-check">{whole && <CheckIcon size={13} />}</span>
+                    Show whole file
+                  </span>
+                  <span className="menu-hint">Every line, with the changes in place</span>
+                </button>
+              </div>
+            )}
+          </span>
+        )}
       </div>
-      <div className="viewer-body">
+      <div className="viewer-body" ref={body} tabIndex={-1}>
+        {notice && (
+          <div className="viewer-notice">
+            <ResultView result={notice} undoing={false} onUndo={() => undefined} onDismiss={() => setNotice(null)} />
+          </div>
+        )}
         {error ? (
           <p className="files-note error">{error}</p>
         ) : mode === 'diff' ? (
           diff ? (
-            <UnifiedDiff diff={diff} side={side} />
+            <DiffView
+              key={`${diff.hash}:${side}:${context ?? ''}:${ignoreWhitespace}`}
+              diff={diff}
+              hunks={hunks}
+              layout={effectiveLayout}
+              actions={actions}
+              untracked={p.untracked}
+              name={baseName(view.path)}
+              emptyText={side === 'staged' ? 'Nothing staged in this file.' : side === 'worktree' ? 'No unstaged changes in this file.' : 'No changes against HEAD.'}
+              context={context}
+              loadText={loadText}
+              onApply={apply}
+              onFile={fileAction}
+            />
           ) : (
             <p className="files-note">Loading…</p>
           )
@@ -807,46 +1091,5 @@ function Code({ text, path, line }: { text: string; path: string; line?: number 
       {/* highlight.js escapes the text, so its output is safe to insert. */}
       {html !== null ? <pre className="code-text mono hljs" dangerouslySetInnerHTML={{ __html: html }} /> : <pre className="code-text mono">{text}</pre>}
     </div>
-  );
-}
-
-/** A git diff's hunks, in the transcript's diff style, with old and new line numbers. */
-function UnifiedDiff({ diff, side }: { diff: FileDiff; side: DiffSide }) {
-  if (diff.binary) return <p className="files-note">Binary file changed.</p>;
-  if (!diff.diff.trim()) return <p className="files-note">{side === 'staged' ? 'Nothing staged in this file.' : side === 'worktree' ? 'No unstaged changes in this file.' : 'No changes against HEAD.'}</p>;
-  let oldLine = 0;
-  let newLine = 0;
-  const rows = diff.diff.split('\n').flatMap((line, n) => {
-    if (line.startsWith('@@')) {
-      const m = /^@@ -(\d+)(?:,\d+)? \+(\d+)/.exec(line);
-      if (m) [oldLine, newLine] = [Number(m[1]), Number(m[2])];
-      return [
-        <div key={n} className="diff-line hunk">
-          <span className="diff-num" />
-          <span className="diff-num" />
-          <span className="diff-text">{line}</span>
-        </div>,
-      ];
-    }
-    if (line.startsWith('\\')) return [];
-    if (line === '' && n === diff.diff.split('\n').length - 1) return [];
-    const kind = line[0] === '+' ? 'add' : line[0] === '-' ? 'del' : 'ctx';
-    const row = (
-      <div key={n} className={`diff-line ${kind}`}>
-        <span className="diff-num">{kind !== 'add' ? oldLine : ''}</span>
-        <span className="diff-num">{kind !== 'del' ? newLine : ''}</span>
-        <span className="diff-sign">{kind === 'add' ? '+' : kind === 'del' ? '−' : ' '}</span>
-        <span className="diff-text">{line.slice(1) || ' '}</span>
-      </div>
-    );
-    if (kind !== 'add') oldLine++;
-    if (kind !== 'del') newLine++;
-    return [row];
-  });
-  return (
-    <>
-      {diff.truncated && <p className="files-note">The diff is cut off at 1 MB.</p>}
-      <div className="diff viewer-diff">{rows}</div>
-    </>
   );
 }

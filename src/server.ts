@@ -9,7 +9,7 @@ import { apiJson, apiMarkdown } from './docs.js';
 import { packageVersion } from './paths.js';
 import { bold, cyan, dim } from './term.js';
 import { allFiles, FileError, listFolder, RawBody, readFileContent } from './files.js';
-import { commitFileDiff, DIFF_SIDES, fileDiff, gitBranches, gitCommit, gitLog, gitStatus, repoInfo, type DiffSide } from './git.js';
+import { commitFileDiff, DIFF_SIDES, diffSideText, fileDiff, gitBranches, gitCommit, gitLog, gitStatus, repoInfo, type DiffSide } from './git.js';
 import { APPLY_ACTIONS, applyPartial, commit, discardPaths, gitEvents, GitError, stagePaths, undoCommit, unstagePaths, type ApplyAction } from './gitwrite.js';
 import { isInside } from './confine.js';
 import { EFFORT_LEVELS, IMAGE_TYPES, type EffortLevel, type ImageData, type PermissionDecision } from './types.js';
@@ -363,7 +363,7 @@ export const routes: Route[] = [
     summary:
       "A file's hunks (`path` relative to the root, like the file routes): `side=head` HEAD ↔ working tree (the default), `staged` HEAD ↔ index, `worktree` index ↔ working tree. Untracked: all added. 400 outside git",
     query: '`root`, `path`, `side?`, `context?` (lines around each change), `whitespace?` (`ignore` for `-w`)',
-    result: '`{ diff, status, binary, truncated, hash }`; `hash` is the sha1 of the whole diff',
+    result: '`{ diff, status, binary, truncated, hash, sizes? }`; `hash` is the sha1 of the whole diff; `sizes` (binary files): `{ old, new }` in bytes, null for a side that is missing',
     handler: (ctx) => {
       const { root, rel } = fileRoot(ctx);
       if (!rel) throw new HttpError(400, '"path" is required');
@@ -375,6 +375,21 @@ export const routes: Route[] = [
       const whitespace = q.get('whitespace');
       if (whitespace !== null && whitespace !== 'ignore' && whitespace !== 'show') throw new HttpError(400, '"whitespace" must be "ignore" or "show"');
       return fileDiff(root, rel, { side, context: context === null ? undefined : Number(context), ignoreWhitespace: whitespace === 'ignore' });
+    },
+  },
+  {
+    method: 'GET',
+    path: '/api/agents/:id/git/side-text',
+    summary:
+      "The text a diff's context comes from, its new side (`path` relative to the root): the working tree for `side=head` and `worktree` (the default), the index for `staged`. The first 1 MB, for showing more context around hunks",
+    query: '`root`, `path`, `side?`',
+    result: '`{ text, truncated }`, or `{ text: null }` for a binary file',
+    handler: async (ctx) => {
+      const { root, rel } = fileRoot(ctx);
+      if (!rel) throw new HttpError(400, '"path" is required');
+      const side = (ctx.url.searchParams.get('side') ?? 'worktree') as DiffSide;
+      if (!DIFF_SIDES.includes(side)) throw new HttpError(400, `"side" must be one of ${DIFF_SIDES.join(', ')}`);
+      return (await diffSideText(root, rel, side)) ?? { text: null };
     },
   },
   {

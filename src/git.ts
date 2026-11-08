@@ -442,6 +442,8 @@ export type FileDiff = {
   truncated: boolean;
   /** sha1 of the whole diff (before truncation), so a later write can tell the file changed since. */
   hash: string;
+  /** Binary files: the size in bytes of each side, null where the side doesn't exist. */
+  sizes?: { old: number | null; new: number | null };
 };
 
 /** Hunks only (the file headers dropped: the panel shows the path itself), truncated, with the hash. */
@@ -486,7 +488,9 @@ export async function fileDiff(root: string, rel: string, opts: DiffOptions = {}
   if (file?.status === 'U') {
     if (side === 'staged') return finishDiff('', null);
     await resolveInside(root, rel);
-    return addedDiff(full);
+    const added = await addedDiff(full);
+    if (added.binary) added.sizes = { old: null, new: await stat(full).then((s) => s.size, () => null) };
+    return added;
   }
   const base = repo.hasHead ? 'HEAD' : EMPTY_TREE;
   const args = ['--literal-pathspecs', 'diff', '--no-color', '--no-ext-diff'];
@@ -498,7 +502,41 @@ export async function fileDiff(root: string, rel: string, opts: DiffOptions = {}
   const oldPath = side !== 'worktree' ? status?.staged.find((e) => e.path === repoPath)?.oldPath : undefined;
   const res = await tryGit(repo.top, [...args, '-M', '--', ...(oldPath ? [oldPath] : []), repoPath]);
   if (!res || res.code !== 0) throw new FileError(500, res?.stderr.trim() || 'git diff failed');
-  return finishDiff(res.stdout.toString('utf8'), entry?.status ?? null);
+  const result = finishDiff(res.stdout.toString('utf8'), entry?.status ?? null);
+  if (result.binary) {
+    // HEAD (or the index, for the working-tree side) against the index (staged) or the working tree.
+    const blobSize = async (spec: string) => {
+      const r = await tryGit(repo.top, ['cat-file', '-s', spec]);
+      return r && r.code === 0 ? Number(r.stdout.toString('utf8').trim()) : null;
+    };
+    const oldSize = side === 'worktree' ? blobSize(`:${repoPath}`) : repo.hasHead ? blobSize(`HEAD:${oldPath ?? repoPath}`) : Promise.resolve(null);
+    const newSize = side === 'staged' ? blobSize(`:${repoPath}`) : stat(full).then((s) => (s.isFile() ? s.size : null), () => null);
+    result.sizes = { old: await oldSize, new: await newSize };
+  }
+  return result;
+}
+
+/**
+ * The text a diff's context lines come from (its new side), for showing more context in the UI:
+ * the working tree for `head` and `worktree`, the index for `staged`. The first MB; null for a binary file.
+ */
+export async function diffSideText(root: string, rel: string, side: DiffSide): Promise<{ text: string; truncated: boolean } | null> {
+  const repo = await needRepo(root);
+  const full = await resolveInside(root, rel, side === 'staged' ? false : true);
+  if (side !== 'staged') {
+    const content = await readUntracked(full);
+    if (!content) throw new FileError(404, 'The file is gone');
+    return content.binary ? null : { text: content.text, truncated: content.truncated };
+  }
+  const repoPath = repo.prefix + toPosix(path.relative(root, full));
+  const res = await tryGit(repo.top, ['cat-file', 'blob', `:${repoPath}`]);
+  if (!res || res.code !== 0) throw new FileError(404, 'The file is not in the index');
+  const data = res.stdout.subarray(0, MAX_TEXT);
+  if (isBinary(data)) return null;
+  let text = data.toString('utf8');
+  const truncated = res.stdout.length > MAX_TEXT;
+  if (truncated) text = text.slice(0, Math.max(0, text.lastIndexOf('\n')));
+  return { text, truncated };
 }
 
 // ---------- log ----------
