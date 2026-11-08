@@ -17,4 +17,5 @@ You were started by the orchestrator "{{orchestratorName}}". Besides your own fo
   - `human`: needs a decision; answering it yourself would mean making an assumption.
 
   For each, say what you would assume if nobody answers.
+- Bash already starts in `{{cwd}}`, so don't prefix commands with `cd {{cwd}} &&`. Use paths, or `git -C <path>` for another folder. Claude Code's safety checks ask the user about every compound command that has `cd` and `git` in it, and about unquoted variable expansions (`$f`: write `"$f"`), even in auto mode.
 - End every turn with a short final reply that summarizes what you did and where the results are. The orchestrator reads this reply.
