@@ -7,7 +7,7 @@ import { DRAG_TYPE } from './layout';
 import { AgentMark } from './Mark';
 import { agentState, archiveBlocker, clock, folderName, money, needsYou, rollup, type AgentState } from './status';
 import { lastSeen, newExpertFor, openNewExpert, recentChatFolders, recentFolders, store, treeState, useManager } from './store';
-import { continueList } from './listInput';
+import { continueList, indentList } from './listInput';
 
 type Props = {
   agents: Map<string, AgentRecord>;
@@ -556,7 +556,7 @@ function NewExpert({ chat, agents, onDone }: { chat: AgentRecord; agents: Map<st
         value={message}
         onChange={(e) => setMessage(e.target.value)}
         onKeyDown={(e) => {
-          if (e.shiftKey && continueList(e)) return;
+          if ((e.shiftKey && continueList(e)) || indentList(e)) return;
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             void submit();

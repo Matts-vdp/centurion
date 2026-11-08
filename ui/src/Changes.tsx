@@ -16,7 +16,7 @@ import {
   type GitWrite,
 } from './fileStore';
 import { Chevron, ChevronDownIcon, DiscardIcon, FileIcon, ForkIcon, MinusIcon, MoreIcon, PlusIcon } from './icons';
-import { continueList } from './listInput';
+import { continueList, indentList } from './listInput';
 import { BranchPopover } from './BranchPopover';
 import { composerFill } from './store';
 
@@ -814,7 +814,7 @@ function CommitBox({
             if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
               e.preventDefault();
               start(e.shiftKey ? 'push' : null);
-            } else continueList(e);
+            } else if (!indentList(e)) continueList(e);
           }}
         />
         {firstLine >= LENGTH_FROM && (

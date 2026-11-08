@@ -40,7 +40,7 @@ import { clock, duration, money } from './status';
 import { composerFill, pendingPermissions, permissionFor, store, transcriptPin, useManager, viewPrefs } from './store';
 import { displayName, shortPath, summarize } from './tools';
 import { fromSubagent, type Item, type PromptItem, type Sub, type ToolItem, type Transcript as T } from './timeline';
-import { continueList } from './listInput';
+import { continueList, indentList } from './listInput';
 
 type Props = {
   transcript: T;
@@ -826,7 +826,7 @@ function PermissionView({ request, ctx, autoFocus }: { request: PermissionReques
             value={note}
             onChange={(e) => setNote(e.target.value)}
             onKeyDown={(e) => {
-              if (e.shiftKey && continueList(e)) return;
+              if ((e.shiftKey && continueList(e)) || indentList(e)) return;
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 void answer('deny');

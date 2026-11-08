@@ -6,7 +6,7 @@ import { createDictation, dictationSupported } from './dictation';
 import { agentState, deliverable, isHeld } from './status';
 import { composerFill, lastSeen, pendingFor, transcriptPin, useManager } from './store';
 import { parsePrompt } from './timeline';
-import { continueList } from './listInput';
+import { continueList, indentList } from './listInput';
 import { baseName, dirName, filterPaths, filesApi, type Root } from './fileStore';
 import { promptHistory, type Recalled } from './promptHistory';
 
@@ -304,7 +304,7 @@ export function Composer({ agent, agents, focused, run, onInterrupt }: Props) {
                     return;
                   }
                 }
-                if (e.shiftKey && continueList(e)) return;
+                if ((e.shiftKey && continueList(e)) || indentList(e)) return;
                 if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault();
                   void send();
