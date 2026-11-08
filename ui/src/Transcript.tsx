@@ -494,7 +494,7 @@ function CodeBlock({ children }: { children: ReactNode }) {
 function WorkLog({ steps, live, ctx }: { steps: Step[]; live: boolean; ctx: Ctx }) {
   const failed = steps.filter((s) => s.kind === 'tool' && (s.isError || s.denied)).length;
   const [open, setOpen] = useState<boolean | null>(null);
-  const isOpen = open ?? (ctx.verbose || failed > 0);
+  const isOpen = open ?? ctx.verbose;
   const ms = workDuration(steps);
   const summary = workSummary(steps);
   const current = live ? steps.findLast((s) => s.kind === 'tool' && s.result === undefined && !s.denied) : undefined;
