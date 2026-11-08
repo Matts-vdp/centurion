@@ -32,7 +32,7 @@ export const configSchema = z.strictObject({
     .nullable()
     .default(null)
     .describe(
-      'Folder every top-level chat runs in, relative to the config file or absolute. `null` or missing: the managing folder (the one holding `.centurion/`). Checked at startup.',
+      'Default folder for new chats (a chat can also start in another folder), relative to the config file or absolute. `null` or missing: the managing folder (the one holding `.centurion/`). Checked at startup.',
     ),
   permissionMode: z
     .enum(PERMISSION_MODES)
@@ -77,7 +77,7 @@ export type Config = Omit<FileConfig, 'orchestratorFolder'> & {
   configFile: string;
   /** The config file's folder (normally `<managing folder>/.centurion`); relative paths resolve against it. */
   configDir: string;
-  /** The repo's prompt replacements (`<configDir>/prompts/<kind>.md`). */
+  /** The prompt replacements for chats in `orchestratorFolder` (`<configDir>/prompts/<kind>.md`); chats elsewhere use `<folder>/.centurion/prompts`. */
   repoPromptsDir: string;
   /** The packaged default prompts. */
   promptsDir: string;

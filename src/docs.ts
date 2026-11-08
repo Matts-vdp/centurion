@@ -144,7 +144,7 @@ function filesInUse(config: Config) {
     stateFile: config.stateFile,
     tokenFile: config.sources.token === 'generated' ? config.tokenFile : null,
     orchestratorFolder: config.orchestratorFolder,
-    prompts: { expert: promptFile(config, 'expert'), orchestrator: promptFile(config, 'orchestrator') },
+    prompts: { expert: promptFile(config, 'expert', config.orchestratorFolder), orchestrator: promptFile(config, 'orchestrator', config.orchestratorFolder) },
     uiDir: config.uiDir,
   };
 }
@@ -172,9 +172,10 @@ export function configMarkdown(config: Config): string {
     `- Config file: \`${files.configFile}\``,
     `- State file: \`${files.stateFile}\``,
     ...(files.tokenFile ? [`- Token file: \`${files.tokenFile}\``] : []),
-    `- Chats run in: \`${files.orchestratorFolder}\``,
+    `- Default chat folder: \`${files.orchestratorFolder}\``,
     `- Expert prompt: ${files.prompts.expert ? `\`${files.prompts.expert}\`` : 'none'}`,
     `- Chat prompt: ${files.prompts.orchestrator ? `\`${files.prompts.orchestrator}\`` : 'none (chats get no appended prompt)'}`,
+    "- Chats in other folders, and their experts, use that folder's `.centurion/prompts/<kind>.md`, else the packaged prompt.",
     '',
     '## Values',
     '',

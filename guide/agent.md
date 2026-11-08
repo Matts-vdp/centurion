@@ -37,9 +37,9 @@ Relative paths resolve against the config file's folder. `CENTURION_PORT`, `CENT
 
 In order of preference:
 
-1. **The agent's folder.** Experts load their own repo's `CLAUDE.md`, skills, `.mcp.json` and settings; chats load the managing folder's. Most changes belong there and need nothing from Centurion.
+1. **The agent's folder.** Experts load their own repo's `CLAUDE.md`, skills, `.mcp.json` and settings; chats load their folder's, which is the managing folder unless the user picked another one. Most changes belong there and need nothing from Centurion.
 2. **Skills in the managing folder.** Orchestration is a skill the repo owns (for example `.claude/skills/orchestrate/SKILL.md`, run as `/orchestrate`). Centurion ships none. A skill says how to use the tools below: how to split work into tracks, where task and findings files go, which templates they follow.
-3. **Prompt files** in `{{home}}/prompts/`. A file replaces the packaged prompt of that kind as a whole, and is appended to Claude Code's system prompt. Delete a file to go back to the packaged default; a copied prompt does not follow later package changes.
+3. **Prompt files** in `{{home}}/prompts/`. A file replaces the packaged prompt of that kind as a whole, and is appended to Claude Code's system prompt. A chat in another folder, and its experts, use that folder's `.centurion/prompts/<kind>.md` instead, else the packaged prompt (the managing folder's files don't apply there). Delete a file to go back to the packaged default; a copied prompt does not follow later package changes.
 
 Prompt kinds:
 

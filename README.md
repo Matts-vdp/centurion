@@ -45,7 +45,7 @@ A managing repo runs in one environment (the host or a dev container), because C
 centurion
 ```
 
-Open the URL it prints (it includes the token). Start a chat with **+** in the sidebar, then run your skill in it (`/orchestrate …`) or just talk to it. Experts, plans and questions show up in the chat; you can also message any expert directly.
+Open the URL it prints (it includes the token). Start a chat with **+** in the sidebar (it runs in the managing repo unless you pick another folder), then run your skill in it (`/orchestrate …`) or just talk to it. Experts, plans and questions show up in the chat; you can also message any expert directly.
 
 | Command | What it does |
 |---|---|

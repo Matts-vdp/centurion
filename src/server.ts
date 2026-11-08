@@ -122,7 +122,7 @@ export function startServer(manager: Manager, config: Config): http.Server {
     const token = config.token ? `?token=${encodeURIComponent(config.token)}` : '';
     console.log(`${bold(cyan('Centurion'))} listening on ${cyan(`http://${shown}:${config.port}/${token}`)}`);
     console.log(`${dim('Permission mode:')} ${config.permissionMode}  ${dim('State:')} ${config.stateFile}`);
-    console.log(`${dim('Chats run in:')} ${config.orchestratorFolder}`);
+    console.log(`${dim('Default chat folder:')} ${config.orchestratorFolder}`);
   });
   return server;
 }
@@ -273,10 +273,11 @@ export const routes: Route[] = [
   {
     method: 'POST',
     path: '/api/agents',
-    summary: 'Creates a chat in `orchestratorFolder`',
-    body: '`{ name, message? }`',
+    summary: 'Creates a chat in `cwd` (an absolute path to an existing folder), else in `orchestratorFolder`',
+    body: '`{ name, cwd?, message? }`',
     result: 'The new agent record',
-    handler: ({ manager, body }) => manager.createOrchestrator({ name: str(body.name, 'name'), message: optionalText(body.message) }),
+    handler: ({ manager, body }) =>
+      manager.createOrchestrator({ name: str(body.name, 'name'), cwd: optionalText(body.cwd), message: optionalText(body.message) }),
   },
   {
     method: 'GET',

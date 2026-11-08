@@ -274,9 +274,9 @@ export class Manager extends EventEmitter<ManagerEvents> {
 
   // ---------- commands ----------
 
-  /** Orchestrators all run in the configured `orchestratorFolder`. */
-  createOrchestrator(input: { name: string; message?: string }): AgentRecord {
-    const rec = this.createAgent('orchestrator', input.name, this.config.orchestratorFolder, null);
+  /** A new chat, in `cwd` (absolute, must exist) or else the configured `orchestratorFolder`. */
+  createOrchestrator(input: { name: string; cwd?: string; message?: string }): AgentRecord {
+    const rec = this.createAgent('orchestrator', input.name, input.cwd ?? this.config.orchestratorFolder, null);
     if (input.message) this.sendMessage(rec.id, input.message, 'user', false);
     return rec;
   }
@@ -1123,6 +1123,7 @@ export class Manager extends EventEmitter<ManagerEvents> {
   }
 
   private buildOptions(rec: AgentRecord): Options {
+    if (!existsSync(rec.cwd) || !statSync(rec.cwd).isDirectory()) throw new Error(`The folder ${rec.cwd} does not exist anymore`);
     const options: Options = {
       cwd: rec.cwd,
       resume: rec.sessionId ?? undefined,
@@ -1134,7 +1135,7 @@ export class Manager extends EventEmitter<ManagerEvents> {
       permissionPrompts: 'host',
       canUseTool: (...args) => this.askPermission(rec.id, ...args),
       // Every agent gets what its own folder (and the user's ~/.claude) sets up: CLAUDE.md, skills,
-      // settings. Top-level chats get the orchestrate skill from the managing folder's .claude/skills.
+      // settings. A chat in the managing folder gets the orchestrate skill from its .claude/skills.
       settingSources: ['user', 'project', 'local'],
       skills: 'all',
       // One-line summaries of what running subagents do, on task_progress events (the UI's subagent line).
@@ -1172,14 +1173,15 @@ export class Manager extends EventEmitter<ManagerEvents> {
   }
 
   /**
-   * The instructions appended to an agent's system prompt: the repo's `.centurion/prompts/<kind>.md` if it has one
-   * (it replaces the packaged prompt as a whole), else the packaged one. A top-level chat (kind
-   * `orchestrator`) gets `orchestrator.md`; it becomes an orchestrator through the managing repo's orchestrate skill.
+   * The instructions appended to an agent's system prompt: the chat's repo's `.centurion/prompts/<kind>.md` if it
+   * has one (it replaces the packaged prompt as a whole), else the packaged one. The repo is a chat's own folder,
+   * and an expert's chat's folder. A top-level chat (kind `orchestrator`) gets `orchestrator.md`; it becomes an
+   * orchestrator through an orchestrate skill in its folder.
    */
   private instructions(rec: AgentRecord): string {
-    const file = promptFile(this.config, rec.kind);
-    const template = file ? readFileSync(file, 'utf8') : '';
     const parent = rec.parentId ? this.get(rec.parentId) : null;
+    const file = promptFile(this.config, rec.kind, (parent ?? rec).cwd);
+    const template = file ? readFileSync(file, 'utf8') : '';
     const values: Record<PromptPlaceholder, string> = {
       id: rec.id,
       name: rec.name,
@@ -1256,6 +1258,12 @@ function effortError(info: ModelOption, effort: EffortLevel): string {
     : `${info.displayName} has no effort levels; leave effort out.`;
 }
 
+/** Whether two absolute paths name the same folder (case-insensitive on Windows). */
+export function samePath(a: string, b: string): boolean {
+  const norm = (p: string) => (process.platform === 'win32' ? path.resolve(p).toLowerCase() : path.resolve(p));
+  return norm(a) === norm(b);
+}
+
 function validateDir(dir: string): string {
   if (!dir || !path.isAbsolute(dir)) throw new Error(`Folder must be an absolute path: "${dir}"`);
   const resolved = path.resolve(dir);
@@ -1304,9 +1312,18 @@ export const PROMPT_PLACEHOLDERS = {
 
 export type PromptPlaceholder = keyof typeof PROMPT_PLACEHOLDERS;
 
-/** The prompt file used for a kind of agent: the repo's replacement, else the packaged one, else none. */
-export function promptFile(config: Pick<Config, 'repoPromptsDir' | 'promptsDir'>, kind: string): string | null {
-  for (const dir of [config.repoPromptsDir, config.promptsDir]) {
+/**
+ * The prompt file used for a kind of agent whose chat runs in `chatFolder`: that repo's replacement, else the
+ * packaged one, else none. The default chat folder's replacements are `repoPromptsDir` (next to the config);
+ * any other folder's are `<folder>/.centurion/prompts`.
+ */
+export function promptFile(
+  config: Pick<Config, 'repoPromptsDir' | 'promptsDir' | 'orchestratorFolder'>,
+  kind: string,
+  chatFolder: string,
+): string | null {
+  const repoDir = samePath(chatFolder, config.orchestratorFolder) ? config.repoPromptsDir : path.join(chatFolder, '.centurion', 'prompts');
+  for (const dir of [repoDir, config.promptsDir]) {
     const file = path.join(dir, `${kind}.md`);
     if (existsSync(file)) return file;
   }
