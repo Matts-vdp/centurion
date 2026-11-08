@@ -126,7 +126,7 @@ Primary buttons and the send button are the accent with `--on-accent` text. An e
 
 Orchestrator rows add a roll-up of their experts on the second line when collapsed (`2 running · 1 failed`), so trouble shows with the tree closed.
 
-**Folder on every expert row.** The first line of an expert row is its name followed by the last part of its folder in mono `--text-3` (`web-checkout  shop-web`). The name truncates first; the folder always stays visible. The full path is in the tooltip and in the header's repo chip. Orchestrator rows leave it out, since they all run in `orchestratorFolder`.
+**Folder on every expert row.** The first line of an expert row is its name followed by the last part of its folder in mono `--text-3` (`web-checkout  shop-web`). The name truncates first; the folder always stays visible. The full path is in the tooltip and in the header's repo chip. Chat rows show it the same way only when the chat runs outside the default folder (`orchestratorFolder`); in the default folder they leave it out.
 
 ## 5. Transcript
 

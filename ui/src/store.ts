@@ -258,8 +258,13 @@ export const transcriptPin = new Signal<{ agentId: string; at: number } | null>(
 /** The chat whose New expert form is open in the sidebar (the header menu opens it too). */
 export const newExpertFor = new Signal<string | null>(null);
 
-/** Folders experts have used, newest first, then the managing folder. */
-export function recentFolders(agents: Map<string, AgentRecord>): string[] {
+/** Folders for a new chat: chats' folders first, then experts', newest first, without repeats. */
+export function recentChatFolders(agents: Map<string, AgentRecord>): string[] {
+  return recentFolders(agents, ['orchestrator', 'expert']);
+}
+
+/** Folders experts have used, newest first, then chats' folders (or the kinds in `order`, in that order). */
+export function recentFolders(agents: Map<string, AgentRecord>, order: AgentRecord['kind'][] = ['expert', 'orchestrator']): string[] {
   const list = [...agents.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const seen = new Set<string>();
   const out: string[] = [];
@@ -269,8 +274,7 @@ export function recentFolders(agents: Map<string, AgentRecord>): string[] {
     seen.add(key);
     out.push(dir);
   };
-  for (const a of list) if (a.kind === 'expert') add(a.cwd);
-  for (const a of list) if (a.kind === 'orchestrator') add(a.cwd);
+  for (const kind of order) for (const a of list) if (a.kind === kind) add(a.cwd);
   return out;
 }
 

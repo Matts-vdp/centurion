@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { commands, type AgentRecord } from './api';
-import { useNow } from './hooks';
+import { sameFolder, useNow, useServerInfo } from './hooks';
 import { ArchiveIcon, Chevron, PlusIcon, SearchIcon } from './icons';
 import { DRAG_TYPE } from './layout';
 import { AgentMark } from './Mark';
 import { agentState, archiveBlocker, clock, folderName, money, needsYou, rollup, type AgentState } from './status';
-import { lastSeen, newExpertFor, openNewExpert, recentFolders, store, treeState, useManager } from './store';
+import { lastSeen, newExpertFor, openNewExpert, recentChatFolders, recentFolders, store, treeState, useManager } from './store';
 import { continueList } from './listInput';
 
 type Props = {
@@ -152,6 +152,7 @@ export function Sidebar({ agents, selected, open: openIds, onSelect, onOpenInSpl
       </button>
       {creating && (
         <NewChat
+          agents={agents}
           onDone={(rec) => {
             setCreating(false);
             if (rec) onSelect(rec.id);
@@ -396,7 +397,10 @@ type RowProps = {
 };
 
 function Row({ agent, state, selected, onScreen, onSelect, parentId, line, extra, meta, expander, dim, archiveBlocked, onArchive, onMenu }: RowProps) {
+  const info = useServerInfo();
   const folder = folderName(agent.cwd);
+  // Chats show their folder only when it isn't the default one.
+  const showFolder = agent.kind === 'expert' || (info !== null && !sameFolder(agent.cwd, info.orchestratorFolder, info.platform));
   const title = [`${agent.name} (${agent.kind === 'expert' ? 'expert' : 'chat'})`, agent.cwd, agent.lastError && state.key === 'failed' ? agent.lastError.slice(0, 300) : '']
     .filter(Boolean)
     .join('\n');
@@ -432,7 +436,7 @@ function Row({ agent, state, selected, onScreen, onSelect, parentId, line, extra
       <span className="row-text">
         <span className="row-title">
           <span className="row-name">{agent.name}</span>
-          {agent.kind === 'expert' && <span className="row-folder">{folder}</span>}
+          {showFolder && <span className="row-folder">{folder}</span>}
         </span>
         <span className="row-status">
           {statusLine}
@@ -571,29 +575,33 @@ function NewExpert({ chat, agents, onDone }: { chat: AgentRecord; agents: Map<st
   );
 }
 
-function NewChat({ onDone }: { onDone: (rec: AgentRecord | null) => void }) {
+/**
+ * A new chat: a name and the folder it runs in, the default folder unless another is picked from the recent
+ * ones or typed. The first message goes in the chat's own composer.
+ */
+function NewChat({ agents, onDone }: { agents: Map<string, AgentRecord>; onDone: (rec: AgentRecord | null) => void }) {
+  const info = useServerInfo();
   const [name, setName] = useState('');
-  const [message, setMessage] = useState('');
-  const [folder, setFolder] = useState('');
+  const [folder, setFolder] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
+  useEffect(() => nameRef.current?.focus(), []);
 
-  useEffect(() => {
-    nameRef.current?.focus();
-    commands
-      .info()
-      .then((i) => setFolder(i.orchestratorFolder))
-      .catch(() => {});
-  }, []);
+  const defaultFolder = info?.orchestratorFolder ?? '';
+  const shown = folder ?? defaultFolder;
+  const same = (a: string, b: string) => sameFolder(a, b, info?.platform);
+  // The default first, then other chats' folders, then experts' (each newest first).
+  const choices = defaultFolder ? [defaultFolder, ...recentChatFolders(agents).filter((d) => !same(d, defaultFolder))].slice(0, 6) : [];
 
   const submit = async (e?: FormEvent) => {
     e?.preventDefault();
-    if (!name.trim() || busy) return;
+    if (!name.trim() || !shown.trim() || busy) return;
     setBusy(true);
     setError('');
     try {
-      const rec = await commands.createChat(name.trim(), message.trim() || undefined);
+      const cwd = shown.trim();
+      const rec = await commands.createChat(name.trim(), defaultFolder && same(cwd, defaultFolder) ? undefined : cwd);
       store.upsert(rec);
       onDone(rec);
     } catch (err) {
@@ -612,30 +620,42 @@ function NewChat({ onDone }: { onDone: (rec: AgentRecord | null) => void }) {
     >
       <div className="form-title">New chat</div>
       <input ref={nameRef} placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
-      <textarea
-        placeholder="First message (optional). Start with /orchestrate to plan work with experts."
-        rows={3}
-        value={message}
-        onChange={(e) => setMessage(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.shiftKey && continueList(e)) return;
-          if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            void submit();
-          }
-        }}
+      <input
+        className="mono"
+        placeholder="Folder (absolute path)"
+        aria-label="Folder"
+        value={shown}
+        spellCheck={false}
+        onChange={(e) => setFolder(e.target.value)}
       />
-      {folder && (
-        <div className="hint" title={folder}>
-          Runs in <span className="mono">{folderName(folder)}</span>
+      {choices.length > 1 && (
+        <div className="recent-folders" role="listbox" aria-label="Folders">
+          {choices.map((dir) => (
+            <button
+              type="button"
+              key={dir}
+              role="option"
+              aria-selected={same(dir, shown)}
+              className={`recent-folder${same(dir, shown) ? ' selected' : ''}`}
+              title={dir}
+              onClick={() => setFolder(dir)}
+            >
+              <span className="recent-name">
+                {folderName(dir)}
+                {dir === defaultFolder ? ' (default)' : ''}
+              </span>
+              <span className="recent-path mono">{dir}</span>
+            </button>
+          ))}
         </div>
       )}
+      <div className="hint">The chat loads this folder's CLAUDE.md, skills and settings. Start with /orchestrate to plan work with experts.</div>
       {error && <div className="form-error">{error}</div>}
       <div className="form-actions">
         <button type="button" className="button secondary small" onClick={() => onDone(null)}>
           Cancel
         </button>
-        <button type="submit" className="button primary small" disabled={!name.trim() || busy}>
+        <button type="submit" className="button primary small" disabled={!name.trim() || !shown.trim() || busy}>
           Start
         </button>
       </div>

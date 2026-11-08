@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { commands, type ServerInfo } from './api';
 
 /** The current time, refreshed every second while `active` (for live timers). */
 export function useNow(active: boolean, everyMs = 1000): number {
@@ -43,4 +44,29 @@ export function useWindowActive(): boolean {
     };
   }, []);
   return active;
+}
+
+/** The server's `/api/info` (fetched once and shared), or null until it arrives. */
+export function useServerInfo(): ServerInfo | null {
+  const [info, setInfo] = useState<ServerInfo | null>(null);
+  useEffect(() => {
+    let live = true;
+    commands
+      .info()
+      .then((i) => live && setInfo(i))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
+  return info;
+}
+
+/** Whether two folder paths are the same (case-insensitive on Windows, like the server). */
+export function sameFolder(a: string, b: string, platform: string | undefined): boolean {
+  const norm = (p: string) => {
+    const trimmed = p.trim().replace(/[\\/]+$/, '');
+    return platform === 'win32' ? trimmed.replace(/\//g, '\\').toLowerCase() : trimmed;
+  };
+  return norm(a) === norm(b);
 }

@@ -85,9 +85,18 @@ export type LiveMessage = {
   [key: string]: unknown;
 };
 
+export type ServerInfo = { orchestratorFolder: string; permissionMode: string; platform: string; defaultModel: string | null };
+
+/** `/api/info` doesn't change while the server runs, so it is fetched once (again after a failure). */
+let infoCache: Promise<ServerInfo> | null = null;
+const fetchInfo = () =>
+  api<ServerInfo>('/api/info').catch((err) => {
+    infoCache = null;
+    throw err;
+  });
+
 export const commands = {
-  createChat: (name: string, message?: string) =>
-    api<AgentRecord>('/api/agents', { method: 'POST', body: { name, message } }),
+  createChat: (name: string, cwd?: string) => api<AgentRecord>('/api/agents', { method: 'POST', body: { name, cwd } }),
   createExpert: (chatId: string, input: { name: string; cwd?: string; message?: string }) =>
     api<AgentRecord>(`/api/agents/${chatId}/experts`, { method: 'POST', body: input }),
   fork: (id: string, promptUuid: string) => api<AgentRecord>(`/api/agents/${id}/fork`, { method: 'POST', body: { promptUuid } }),
@@ -116,5 +125,6 @@ export const commands = {
     api<QuestionSet>(`/api/questions/${id}/answer`, { method: 'POST', body: { answers, corrections } }),
   answerPermission: (agentId: string, requestId: string, decision: PermissionDecision, message?: string) =>
     api<PermissionRequest>(`/api/agents/${agentId}/permission`, { method: 'POST', body: { requestId, decision, message } }),
-  info: () => api<{ orchestratorFolder: string; permissionMode: string; platform: string; defaultModel: string | null }>('/api/info'),
+  info: () => (infoCache ??= fetchInfo()),
+
 };
