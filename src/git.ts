@@ -40,6 +40,8 @@ export type GitStatus = GitGroups & {
   detached: boolean;
   /** HEAD's commit, null without commits. */
   head: string | null;
+  /** HEAD is on a remote-tracking branch, so amending or undoing it would need a force push. */
+  headPushed: boolean;
   upstream: string | null;
   ahead: number;
   behind: number;
@@ -232,12 +234,13 @@ async function loadStatus(root: string): Promise<GitStatus | null> {
   const { top, prefix } = repo;
   const base = repo.hasHead ? 'HEAD' : EMPTY_TREE;
   // Everything runs from the top, so paths are relative to the repository whatever `diff.relative` says.
-  const [res, headCounts, stagedCounts, unstagedCounts, state] = await Promise.all([
+  const [res, headCounts, stagedCounts, unstagedCounts, state, pushed] = await Promise.all([
     tryGit(top, ['status', '--porcelain=v2', '-z', '--branch', '--untracked-files=all']),
     numstat(top, [base]),
     numstat(top, ['--cached', base]),
     numstat(top, []),
     repoState(top),
+    repo.hasHead ? gitText(top, ['for-each-ref', '--contains', 'HEAD', '--count=1', '--format=%(refname)', 'refs/remotes']) : null,
   ]);
   if (!res || res.code !== 0) return null;
 
@@ -245,6 +248,7 @@ async function loadStatus(root: string): Promise<GitStatus | null> {
     branch: null,
     detached: false,
     head: null,
+    headPushed: !!pushed?.trim(),
     upstream: null,
     ahead: 0,
     behind: 0,

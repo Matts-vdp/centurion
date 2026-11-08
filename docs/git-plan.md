@@ -1,6 +1,6 @@
 # Git: changes, commits, sync, branches, log and conflicts
 
-**Status:** steps 1 and 2 (backend reads and writes) done; the rest planned. Builds on the Files panel (`docs/files-plan.md`), which already shows git status and a unified diff against `HEAD`.
+**Status:** steps 1 to 3 (backend reads and writes, the Changes view) done; the rest planned. Builds on the Files panel (`docs/files-plan.md`), which already shows git status and a unified diff against `HEAD`.
 
 The goal: the git work you do around an agent's changes, without leaving the manager. You read the diff, stage what you want, type a message, then commit and push. You sync with the remote, switch or create a branch, and merge `master` in with your open changes put aside and restored on their own. When that conflicts, you resolve it in the same panel. Rider and VS Code are the model (research summary in §11); where they differ, this plan picks what fits a manager of agents.
 
@@ -185,6 +185,14 @@ As built in step 2 (`src/gitwrite.ts`):
 ')`, `hunks` hunk indexes, and `context` must match the diff that was shown (`-U0` applies with `--unidiff-zero`). Stage and discard take `side: 'worktree'`, unstage `side: 'staged'`. When unstaging or discarding the patch applies with `-R`, so the `add -p` rules swap (an unselected `+` becomes context, an unselected `-` is dropped). Selecting every change does the whole-file action. Renamed, binary and truncated files, and deletions when unstaging or discarding, are whole-file only. Part of an untracked file is staged as a new file with only those lines.
 - Commit refuses with conflicts or nothing staged (a merge in progress may commit without changes). A failing hook is named when one of `pre-commit`, `prepare-commit-msg`, `commit-msg` exists. Undo also refuses the first commit and while a merge or rebase is in progress, and takes an optional `hash` that must still be HEAD.
 - The `git` SSE event is `{ repo, agentIds }`: the repository's top and the agents with a root in it. It follows every write that ran a git command, also a failed one (a failed commit may have staged everything first).
+
+As built in step 3 (`ui/src/Changes.tsx`, wired in `ui/src/Files.tsx`):
+- Status adds `headPushed` (HEAD is on a remote-tracking branch), which disables Amend with its reason. Amend fills in the last message from the commit route and puts the draft aside; unticking brings the draft back.
+- The branch line is a plain line for now (name, `↓n ↑n`, detached at a hash); the branch row with Sync comes in step 5. The split button's `⌄` already lists **Commit and Push** and **Commit and Sync**, disabled with `Comes with sync`; `Ctrl+Shift+Enter` waits for step 5 too.
+- Staging and unstaging leave the result line alone (the lists show them) unless they fail, so a commit's **Undo** survives staging the next files. Discard, commit, amend and undo write it. Undo isn't offered after an amend, since it would take back the whole commit.
+- A row opens the side of its group when the file is partly staged (`staged` or `worktree`), else `HEAD ↔ working tree` as before; the viewer bar says `Staged` / `Not staged`. Conflict rows open the file; their `+` marks them resolved (refused while markers remain). Rows outside the folder show the repo path and don't open.
+- The Changes group's `⋯` has **Stage tracked files only** and **Discard tracked changes only…**. The tab count is every changed path in the repository, outside the folder included, since a commit takes those too.
+- The draft is `centurion-commit-draft:<repo top>` and "always commit all" is `centurion-commit-all`, both in `localStorage`.
 
 Backend notes (`src/git.ts`, new; the read helpers move there from `src/files.ts`, and the confinement helpers they share to `src/confine.ts`):
 - Git runs as `git` itself, as today: no shell, `core.quotepath=off`, `GIT_OPTIONAL_LOCKS=0` for reads only (writes need the locks).

@@ -43,6 +43,17 @@ function loadToken(): string {
 
 export const token = loadToken();
 
+/** A failed request: the server's sentence as the message, its whole JSON body as `data` (git errors add `details` and `commands`). */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly data: Record<string, unknown>,
+  ) {
+    super(message);
+  }
+}
+
 export async function api<T = unknown>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
   const res = await fetch(path, {
     method: init.method ?? 'GET',
@@ -50,7 +61,7 @@ export async function api<T = unknown>(path: string, init: { method?: string; bo
     body: init.body === undefined ? undefined : JSON.stringify(init.body),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error((data as { error?: string }).error ?? res.statusText);
+  if (!res.ok) throw new ApiError((data as { error?: string }).error ?? res.statusText, res.status, data as Record<string, unknown>);
   return data as T;
 }
 

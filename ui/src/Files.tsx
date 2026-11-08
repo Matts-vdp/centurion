@@ -13,6 +13,7 @@ import {
   locate,
   panels,
   usePanel,
+  type DiffSide,
   type Entry,
   type FileContent,
   type FileDiff,
@@ -22,13 +23,14 @@ import {
   type OpenRequest,
   type Root,
 } from './fileStore';
-import { BackIcon, CheckIcon, Chevron, CloseIcon, CopyIcon, FileCodeIcon, FileIcon, FileImageIcon, FolderIcon, FolderOpenIcon, ForkIcon, RefreshIcon } from './icons';
+import { BackIcon, CheckIcon, Chevron, CloseIcon, CopyIcon, FileCodeIcon, FileIcon, FileImageIcon, FolderIcon, FolderOpenIcon, RefreshIcon } from './icons';
+import { changeCount, Changes, type ResultLine } from './Changes';
 import { store } from './store';
 import { highlight, languageOf } from './highlight';
 import { Markdown } from './Transcript';
 
-/** `line`: scroll to that line and mark it (a link from a visual). */
-type View = { root: number; path: string; mode: 'file' | 'diff'; line?: number };
+/** `line`: scroll to that line and mark it (a link from a visual). `side`: which diff (HEAD ↔ working tree when unset). */
+type View = { root: number; path: string; mode: 'file' | 'diff'; line?: number; side?: DiffSide };
 type Dir = { entries: Entry[]; truncated: boolean } | { error: string };
 
 const COMPACT_BELOW = 620;
@@ -64,6 +66,8 @@ export function FilesPanel({ agent, pane, request, onRequestDone }: Props) {
   const [allFiles, setAllFiles] = useState<string[][] | null>(null);
   const [touched, setTouched] = useState<Set<string>>(new Set());
   const [missing, setMissing] = useState('');
+  /** What the last git action did, under the commit box; it stays while you switch between Files and Changes. */
+  const [gitResult, setGitResult] = useState<ResultLine | null>(null);
   const filterRef = useRef<HTMLInputElement>(null);
   const dirsRef = useRef(dirs);
   dirsRef.current = dirs;
@@ -174,6 +178,10 @@ export function FilesPanel({ agent, pane, request, onRequestDone }: Props) {
     });
   }, [agent.id, scheduleRefresh]);
 
+  // Git writes in this agent's repository, from this pane or any other.
+  useEffect(() => store.onGit((e) => e.agentIds.includes(agent.id) && scheduleRefresh()), [agent.id, scheduleRefresh]);
+  useEffect(() => setGitResult(null), [agent.id]);
+
   // Changes made elsewhere (an editor) show when you come back to the window.
   useEffect(() => {
     const onFocus = () => scheduleRefresh();
@@ -211,9 +219,9 @@ export function FilesPanel({ agent, pane, request, onRequestDone }: Props) {
   const changed = useMemo(() => new Map((status?.files ?? []).map((f) => [f.path, f])), [status]);
 
   const openFile = useCallback(
-    (root: number, path: string, mode: 'file' | 'diff' = 'file', line?: number) => {
+    (root: number, path: string, mode: 'file' | 'diff' = 'file', line?: number, side?: DiffSide) => {
       setMissing('');
-      setView({ root, path, mode, line });
+      setView({ root, path, mode, line, ...(side && side !== 'head' ? { side } : {}) });
       reveal(root, path);
     },
     [reveal],
@@ -284,7 +292,7 @@ export function FilesPanel({ agent, pane, request, onRequestDone }: Props) {
                   Files
                 </button>
                 <button role="tab" aria-selected={tab === 'changes'} className={tab === 'changes' ? 'on' : ''} onClick={() => setTab('changes')}>
-                  Changes{status && status.files.length > 0 ? ` · ${status.files.length}` : ''}
+                  Changes{changeCount(status) > 0 ? ` · ${changeCount(status)}` : ''}
                 </button>
               </div>
             ) : (
@@ -334,7 +342,20 @@ export function FilesPanel({ agent, pane, request, onRequestDone }: Props) {
               )}
             </>
           ) : (
-            <Changes status={status} view={view} onOpen={(p) => openFile(0, p, 'diff')} />
+            <Changes
+              agentId={agent.id}
+              rootPath={roots[0].path}
+              status={status}
+              selected={view && view.root === 0 ? { path: view.path, side: view.mode === 'diff' ? (view.side ?? 'head') : 'head' } : null}
+              result={gitResult}
+              onResult={setGitResult}
+              onWritten={(next, deleted) => {
+                setStatus(next);
+                if (deleted && view?.root === 0 && deleted.includes(view.path)) setView(null);
+                scheduleRefresh();
+              }}
+              onOpen={(p, mode, side) => openFile(0, p, mode, undefined, side)}
+            />
           )}
         </div>
       )}
@@ -353,7 +374,7 @@ export function FilesPanel({ agent, pane, request, onRequestDone }: Props) {
             view &&
             roots && (
               <Viewer
-                key={`${view.root}:${view.path}:${view.line ?? ''}`}
+                key={`${view.root}:${view.path}:${view.line ?? ''}:${view.side ?? ''}`}
                 agentId={agent.id}
                 root={roots[view.root]}
                 view={view}
@@ -623,44 +644,6 @@ function FilterResults({
   );
 }
 
-// ---------- changes ----------
-
-function Changes({ status, view, onOpen }: { status: GitStatus | null; view: View | null; onOpen: (path: string) => void }) {
-  if (!status) return <p className="files-note">Loading…</p>;
-  return (
-    <div className="file-tree">
-      <div className="git-branch mono" title="Branch">
-        <ForkIcon size={13} />
-        <span>{status.branch ?? 'detached HEAD'}</span>
-        {status.ahead > 0 && <span className="git-ab">{status.ahead} ahead</span>}
-        {status.behind > 0 && <span className="git-ab">{status.behind} behind</span>}
-      </div>
-      {status.files.length === 0 && <p className="files-note">No changes against HEAD.</p>}
-      {status.files.map((f) => (
-        <ChangeRow key={f.path} file={f} selected={view?.root === 0 && view.path === f.path} onOpen={onOpen} />
-      ))}
-    </div>
-  );
-}
-
-function ChangeRow({ file, selected, onOpen }: { file: GitFile; selected: boolean; onOpen: (path: string) => void }) {
-  const dir = dirName(file.path);
-  return (
-    <button className={`file-row flat${selected ? ' selected' : ''}${file.status === 'D' ? ' deleted' : ''}`} title={file.oldPath ? `${file.oldPath} → ${file.path}` : file.path} onClick={() => onOpen(file.path)}>
-      <span className="git-letter mono lead" title={gitTitle(file.status)}>
-        {file.status}
-      </span>
-      <span className="file-name">{baseName(file.path)}</span>
-      <span className="file-dir">{dir}</span>
-      {file.added !== null && (
-        <span className="git-lines mono">
-          <span className="add">+{file.added}</span> <span className="del">−{file.removed ?? 0}</span>
-        </span>
-      )}
-    </button>
-  );
-}
-
 // ---------- viewer ----------
 
 function Viewer({
@@ -691,16 +674,20 @@ function Viewer({
   const [copied, setCopied] = useState(false);
   const deleted = change?.status === 'D';
   const mode = deleted ? 'diff' : view.mode;
+  const side = view.side ?? 'head';
 
   useEffect(() => {
     let cancelled = false;
     setError('');
-    const load = mode === 'diff' ? filesApi.diff(agentId, rootIndex, view.path).then((d) => !cancelled && setDiff(d)) : filesApi.read(agentId, rootIndex, view.path).then((c) => !cancelled && setContent(c));
+    const load =
+      mode === 'diff'
+        ? filesApi.diff(agentId, rootIndex, view.path, side).then((d) => !cancelled && setDiff(d))
+        : filesApi.read(agentId, rootIndex, view.path).then((c) => !cancelled && setContent(c));
     load.catch((err) => !cancelled && setError(err instanceof Error ? err.message : String(err)));
     return () => {
       cancelled = true;
     };
-  }, [agentId, rootIndex, view.path, mode, version]);
+  }, [agentId, rootIndex, view.path, mode, side, version]);
 
   const parts = view.path.split('/');
   const isMarkdown = MARKDOWN_EXT.test(view.path);
@@ -716,7 +703,7 @@ function Viewer({
       ? content.kind === 'text'
         ? `${content.lines.toLocaleString()} line${content.lines === 1 ? '' : 's'} · ${formatSize(content.size)}`
         : formatSize(content.size)
-      : change?.added !== null && change
+      : change?.added !== null && change && side === 'head'
         ? `+${change.added} −${change.removed ?? 0}`
         : '';
 
@@ -763,6 +750,7 @@ function Viewer({
           </div>
         )}
         <span className="viewer-meta mono">
+          {mode === 'diff' && side !== 'head' && <span>{side === 'staged' ? 'Staged' : 'Not staged'} · </span>}
           {change && <span title={gitTitle(change.status)}>{gitTitle(change.status)} · </span>}
           {meta}
         </span>
@@ -772,7 +760,7 @@ function Viewer({
           <p className="files-note error">{error}</p>
         ) : mode === 'diff' ? (
           diff ? (
-            <UnifiedDiff diff={diff} />
+            <UnifiedDiff diff={diff} side={side} />
           ) : (
             <p className="files-note">Loading…</p>
           )
@@ -823,9 +811,9 @@ function Code({ text, path, line }: { text: string; path: string; line?: number 
 }
 
 /** A git diff's hunks, in the transcript's diff style, with old and new line numbers. */
-function UnifiedDiff({ diff }: { diff: FileDiff }) {
+function UnifiedDiff({ diff, side }: { diff: FileDiff; side: DiffSide }) {
   if (diff.binary) return <p className="files-note">Binary file changed.</p>;
-  if (!diff.diff.trim()) return <p className="files-note">No changes against HEAD.</p>;
+  if (!diff.diff.trim()) return <p className="files-note">{side === 'staged' ? 'Nothing staged in this file.' : side === 'worktree' ? 'No unstaged changes in this file.' : 'No changes against HEAD.'}</p>;
   let oldLine = 0;
   let newLine = 0;
   const rows = diff.diff.split('\n').flatMap((line, n) => {

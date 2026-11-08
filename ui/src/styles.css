@@ -5389,20 +5389,376 @@ body.resizing .pane {
 }
 
 .git-branch {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 8px 8px;
+  padding: 2px 14px 6px;
   font-size: 12px;
   color: var(--text-2);
 }
 
 .git-branch svg {
+  flex: none;
   color: var(--text-3);
 }
 
+.git-branch-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .git-ab {
+  flex: none;
+  color: var(--text-2);
+}
+
+/* ---------- the Changes segment (docs/git-plan.md §3) ---------- */
+
+.changes {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.changes-list {
+  flex: 1;
+  /* The commit box and its details never squeeze the list away. */
+  min-height: 84px;
+  overflow: auto;
+  padding: 0 6px 12px;
+  display: flex;
+  flex-direction: column;
+}
+
+.change-group {
+  display: flex;
+  flex-direction: column;
+}
+
+/* The sidebar's group style: mono, --text-3, with the actions on hover. */
+.change-group-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  margin-top: 6px;
+  padding: 0 2px 0 8px;
+}
+
+.change-group:first-child > .change-group-head {
+  margin-top: 0;
+}
+
+.change-group-head.nested {
+  padding-left: 25px;
+  margin-top: 0;
+}
+
+.change-group-head.fold {
+  width: 100%;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  padding-left: 4px;
+  text-align: left;
   color: var(--text-3);
+}
+
+.change-group-head.fold:hover .change-group-label {
+  color: var(--text-2);
+}
+
+.change-group-label {
+  flex: 1;
+  min-width: 0;
+  font: 500 11.5px/1 var(--mono);
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.change-group-actions,
+.change-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+.change-group-head:hover .change-group-actions,
+.change-group-head:focus-within .change-group-actions,
+.change-group-actions:has([aria-expanded='true']) {
+  opacity: 1;
+}
+
+.change-row {
+  position: relative;
+  flex: none;
+}
+
+.change-row .change-main {
+  padding-right: 8px;
+}
+
+.change-row.outside .change-main {
+  padding-left: 25px;
+}
+
+.change-row.selected .change-main {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.change-actions {
+  position: absolute;
+  top: 1px;
+  right: 2px;
+  pointer-events: none;
+}
+
+.change-row:hover .change-actions,
+.change-row:focus-within .change-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* The actions take the place of the line counts. */
+.change-row:hover .change-main,
+.change-row:focus-within .change-main {
+  padding-right: 78px;
+}
+
+.change-row:hover .git-lines,
+.change-row:focus-within .git-lines {
+  display: none;
+}
+
+@media (hover: none) {
+  .change-group-actions,
+  .change-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .change-row .change-main {
+    padding-right: 78px;
+  }
+
+  .change-row .git-lines {
+    display: none;
+  }
+}
+
+.git-letter.conflict {
+  color: var(--waiting);
+  font-weight: 600;
+}
+
+.change-confirm {
+  margin: 4px 0 6px;
+  font-size: 12.5px;
+}
+
+.change-confirm > span {
+  flex-basis: 100%;
+}
+
+.change-confirm .button:first-of-type {
+  margin-left: auto;
+}
+
+/* Pinned to the bottom of the panel, so it doesn't move as the lists grow. */
+.commit-box {
+  flex: none;
+  padding: 10px 8px 10px;
+  box-shadow: inset 0 1px 0 var(--line);
+}
+
+.commit-field {
+  position: relative;
+}
+
+.commit-field textarea {
+  display: block;
+  resize: none;
+  font-size: 13px;
+  line-height: 19.5px;
+  padding: 6px 34px 6px 10px;
+  min-height: 53px;
+  max-height: 170px;
+  overflow-y: auto;
+}
+
+.commit-length {
+  position: absolute;
+  top: 7px;
+  right: 10px;
+  font-size: 11.5px;
+  color: var(--text-3);
+  pointer-events: none;
+}
+
+.commit-ask {
+  margin-top: 8px;
+  font-size: 12.5px;
+}
+
+.commit-ask > span {
+  flex-basis: 100%;
+}
+
+.commit-ask .button:first-of-type {
+  margin-left: auto;
+}
+
+.commit-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.commit-amend {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.commit-amend.disabled {
+  color: var(--text-3);
+  cursor: default;
+}
+
+.commit-amend input {
+  width: auto;
+  margin: 0;
+  padding: 0;
+  box-shadow: none;
+  accent-color: var(--accent);
+}
+
+.split-button {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 1px;
+}
+
+.split-button .split-main {
+  border-radius: 6px 0 0 6px;
+}
+
+.split-button .split-more {
+  border-radius: 0 6px 6px 0;
+  padding: 0 6px;
+}
+
+.menu.git-menu {
+  min-width: 200px;
+}
+
+.menu.git-menu.up {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+
+/* The last action in words, under the commit box; errors in --failed. */
+.git-result {
+  margin-top: 8px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-3);
+}
+
+.git-result-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 5px;
+}
+
+.git-result-text {
+  overflow-wrap: anywhere;
+}
+
+.git-result.error .git-result-text {
+  color: var(--failed);
+}
+
+.git-result-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  font-size: 12.5px;
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-decoration-color: var(--accent-line);
+  text-underline-offset: 3px;
+}
+
+.git-result-link:hover:not(:disabled) {
+  text-decoration-color: var(--accent-text);
+}
+
+.git-result-link.git-result-close {
+  margin-left: auto;
+  padding: 0 2px;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-3);
+  text-decoration: none;
+}
+
+.git-result-link.git-result-close:hover {
+  color: var(--text);
+}
+
+.git-details {
+  margin-top: 6px;
+  max-height: 180px;
+  overflow: auto;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--raised);
+  box-shadow: inset 0 0 0 1px var(--line);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.git-command + .git-command {
+  margin-top: 6px;
+}
+
+.git-command-line {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.git-command-code {
+  color: var(--text-3);
+}
+
+.git-result-action {
+  display: inline-flex;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.git-details pre {
+  margin: 2px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text-2);
+  font: inherit;
 }
 
 .file-note {

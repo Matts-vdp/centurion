@@ -7,6 +7,8 @@ export type LiveEvent =
   /** `images`: sent with the message, carried once by the event (history has them afterwards). */
   | { kind: 'delivered'; agentId: string; message: QueuedMessage; images?: ImageData[] };
 
+export type GitEvent = { repo: string; agentIds: string[] };
+
 /** What a running agent is doing right now, from the live stream (not persisted). */
 export type Activity = {
   tool: { id: string; name: string; detail: string; since: number } | null;
@@ -42,6 +44,13 @@ class ManagerStore {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
   };
+
+  private readonly gitListeners = new Set<(e: GitEvent) => void>();
+  /** A git write in a repository (`repo`: its top folder; `agentIds`: the agents with a root in it). */
+  onGit(fn: (e: GitEvent) => void): () => void {
+    this.gitListeners.add(fn);
+    return () => this.gitListeners.delete(fn);
+  }
 
   onLive(fn: (e: LiveEvent) => void): () => void {
     this.liveListeners.add(fn);
@@ -97,6 +106,10 @@ class ManagerStore {
     es.addEventListener('plan', (e) => this.upsertPlan(JSON.parse((e as MessageEvent).data) as Plan));
     es.addEventListener('questions', (e) => this.upsertQuestions(JSON.parse((e as MessageEvent).data) as QuestionSet));
     es.addEventListener('permission', (e) => this.upsertPermission(JSON.parse((e as MessageEvent).data) as PermissionRequest));
+    es.addEventListener('git', (e) => {
+      const d = JSON.parse((e as MessageEvent).data) as GitEvent;
+      for (const fn of this.gitListeners) fn(d);
+    });
     es.addEventListener('message', (e) => {
       const d = JSON.parse((e as MessageEvent).data) as { agentId: string; message: LiveMessage };
       this.track(d.agentId, d.message);

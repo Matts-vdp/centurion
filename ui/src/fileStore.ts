@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { api, token } from './api';
+import { api, ApiError, token } from './api';
 
 // ---------- API ----------
 
@@ -15,7 +15,30 @@ export type Entry = {
   changes?: number;
 };
 export type GitFile = { path: string; status: GitLetter; added: number | null; removed: number | null; oldPath?: string };
-export type GitStatus = { branch: string | null; ahead: number; behind: number; files: GitFile[] };
+/** One side of a change, path relative to the repository; `code` is a conflict's two letters (`UU`, `DU`, …). */
+export type GitEntry = { path: string; status: GitLetter; added: number | null; removed: number | null; oldPath?: string; code?: string };
+export type GitGroups = { conflicts: GitEntry[]; staged: GitEntry[]; unstaged: GitEntry[] };
+export type GitOperation = { kind: 'merge' | 'rebase' | 'cherry-pick' | 'revert' | 'am'; onto: string | null; step: number | null; total: number | null; branch: string | null };
+export type GitStatus = GitGroups & {
+  branch: string | null;
+  detached: boolean;
+  head: string | null;
+  headPushed: boolean;
+  upstream: string | null;
+  ahead: number;
+  behind: number;
+  fetchedAt: number | null;
+  operation: GitOperation | null;
+  /** The root's path in the repository: `''`, or ending in `/`. */
+  prefix: string;
+  outside: GitGroups;
+  /** The root's changes against HEAD, paths relative to the root (the tree marks). */
+  files: GitFile[];
+};
+export type DiffSide = 'head' | 'staged' | 'worktree';
+/** A git command a write ran, with its output, for Details. */
+export type GitCommand = { command: string; code: number; output: string };
+export type GitWrite = { status: GitStatus | null; commands: GitCommand[] };
 export type FileContent =
   | { kind: 'text'; text: string; size: number; truncated: boolean; lines: number }
   | { kind: 'image'; size: number; mediaType: string }
@@ -33,8 +56,32 @@ export const filesApi = {
   rawUrl: (id: string, root: number, path: string, version: number) =>
     `/api/agents/${id}/files/read?${q(root, path)}&raw=1&token=${encodeURIComponent(token)}&v=${version}`,
   status: (id: string, root: number) => api<{ status: GitStatus | null }>(`/api/agents/${id}/git/status?${q(root)}`),
-  diff: (id: string, root: number, path: string) => api<FileDiff>(`/api/agents/${id}/git/diff?${q(root, path)}`),
+  diff: (id: string, root: number, path: string, side: DiffSide = 'head') =>
+    api<FileDiff>(`/api/agents/${id}/git/diff?${q(root, path)}${side !== 'head' ? `&side=${side}` : ''}`),
 };
+
+/** Git writes on the repository of the agent's own folder (root 0). Paths are relative to the repository. */
+export const gitApi = {
+  stage: (id: string, paths: string[]) => api<GitWrite>(`/api/agents/${id}/git/stage`, { method: 'POST', body: { paths } }),
+  unstage: (id: string, paths: string[]) => api<GitWrite>(`/api/agents/${id}/git/unstage`, { method: 'POST', body: { paths } }),
+  discard: (id: string, paths: string[]) => api<GitWrite & { deleted: string[] }>(`/api/agents/${id}/git/discard`, { method: 'POST', body: { paths } }),
+  commit: (id: string, req: { message: string; amend: boolean; all: boolean }) =>
+    api<GitWrite & { hash: string }>(`/api/agents/${id}/git/commit`, { method: 'POST', body: req }),
+  undoCommit: (id: string, hash: string) =>
+    api<GitWrite & { undone: string; message: string }>(`/api/agents/${id}/git/undo-commit`, { method: 'POST', body: { hash } }),
+  commitInfo: (id: string, hash: string) => api<{ hash: string; subject: string; body: string }>(`/api/agents/${id}/git/commit/${hash}?root=0`),
+};
+
+/** A failed git write as the panel shows it: the sentence, git's output and the commands that ran. */
+export type GitFailure = { error: string; details: string; commands: GitCommand[] };
+
+export function gitFailure(err: unknown): GitFailure {
+  if (err instanceof ApiError) {
+    const commands = Array.isArray(err.data.commands) ? (err.data.commands as GitCommand[]) : [];
+    return { error: err.message, details: typeof err.data.details === 'string' ? err.data.details : '', commands };
+  }
+  return { error: err instanceof Error ? err.message : String(err), details: '', commands: [] };
+}
 
 // ---------- paths ----------
 
@@ -181,6 +228,50 @@ export const expanded = {
       // storage blocked
     }
   },
+};
+
+// ---------- commit drafts ----------
+
+/** The repository's top folder, from the root's folder and its path in the repository (`prefix`). */
+export function repoTop(rootPath: string, prefix: string): string {
+  const root = rootPath.replace(/\\/g, '/').replace(/\/+$/, '');
+  const up = prefix.split('/').filter(Boolean).length;
+  return up === 0 ? root : root.split('/').slice(0, -up).join('/');
+}
+
+/** Small per-browser values; storage may be blocked, then nothing is remembered. */
+function readValue(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeValue(key: string, value: string | null): void {
+  try {
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
+  } catch {
+    // storage blocked
+  }
+}
+
+/** The commit message being written, per repository, so switching agents doesn't lose it. */
+export const commitDrafts = {
+  key: (top: string) => `centurion-commit-draft:${norm(top)}`,
+  read(top: string): string {
+    return readValue(this.key(top)) ?? '';
+  },
+  write(top: string, text: string): void {
+    writeValue(this.key(top), text ? text : null);
+  },
+};
+
+/** "Commit all" without asking, when nothing is staged (chosen once with "Always"). */
+export const commitAllAlways = {
+  get: () => readValue('centurion-commit-all') === 'always',
+  set: (on: boolean) => writeValue('centurion-commit-all', on ? 'always' : null),
 };
 
 // ---------- requests to open a file (from transcript links) ----------

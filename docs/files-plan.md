@@ -2,7 +2,7 @@
 
 **Status:** done (steps 1–7). The UI data module is `ui/src/fileStore.ts`, not `files.ts`, because `Files.tsx` exists and Windows file names are case-insensitive.
 
-A read-only view of an agent's folder: browse its files, read one with highlighting, and see what changed in git. It answers "what did this expert actually touch?" without leaving the manager. Editing, staging, committing and merging are a separate, later plan (the git panel).
+A read-only view of an agent's folder: browse its files, read one with highlighting, and see what changed in git. It answers "what did this expert actually touch?" without leaving the manager. Staging, committing and merging are in `docs/git-plan.md` (the Changes segment edits no files, but its git actions write); editing files is later.
 
 ## 1. Where it lives
 
