@@ -34,6 +34,7 @@ import { parseDiff } from './diffModel';
 import { store } from './store';
 import { highlight, languageOf } from './highlight';
 import { Markdown } from './Transcript';
+import { Log, LogViewer } from './Log';
 
 /** `line`: scroll to that line and mark it (a link from a visual). `side`: which diff (HEAD ↔ working tree when unset). */
 type View = { root: number; path: string; mode: 'file' | 'diff'; line?: number; side?: DiffSide };
@@ -82,7 +83,9 @@ export function FilesPanel({ agent, pane, request, onRequestDone }: Props) {
   const [compact, setCompact] = useState(false);
   const [roots, setRoots] = useState<Root[] | null>(null);
   const [rootsError, setRootsError] = useState('');
-  const [tab, setTab] = useState<'files' | 'changes'>('files');
+  const [tab, setTab] = useState<'files' | 'changes' | 'log'>('files');
+  const [logRange, setLogRange] = useState<string | null>(null);
+  const [logHash, setLogHash] = useState<string | null>(null);
   const [dirs, setDirs] = useState<Map<string, Dir>>(new Map());
   const [open, setOpen] = useState<Set<string>[]>([]);
   const [status, setStatus] = useState<GitStatus | null>(null);
@@ -253,6 +256,7 @@ export function FilesPanel({ agent, pane, request, onRequestDone }: Props) {
   const openFile = useCallback(
     (root: number, path: string, mode: 'file' | 'diff' = 'file', line?: number, side?: DiffSide) => {
       setMissing('');
+      setLogHash(null);
       // A partly staged file has no single diff against HEAD here: its unstaged half opens.
       const parts = root === 0 ? partsOf(statusRef.current, path) : null;
       const shown = parts?.staged && parts.unstaged && (!side || side === 'head') ? 'worktree' : side;
@@ -297,6 +301,7 @@ export function FilesPanel({ agent, pane, request, onRequestDone }: Props) {
       window.setTimeout(() => filterRef.current?.focus());
     } else if (e.key === 'Escape') {
       if (filter) setFilter('');
+      else if (logHash) setLogHash(null);
       else if (view) setView(null);
       else return;
       e.preventDefault();
@@ -315,7 +320,7 @@ export function FilesPanel({ agent, pane, request, onRequestDone }: Props) {
     };
   }, [filter, allFiles, roots, agent.id]);
 
-  const viewing = view !== null || missing !== '';
+  const viewing = view !== null || logHash !== null || missing !== '';
   const width = viewing ? (state.viewWidth !== null ? `${state.viewWidth}px` : '60%') : `${state.width}px`;
   const running = agent.status === 'running';
   const showTree = !(compact && viewing);
@@ -333,13 +338,14 @@ export function FilesPanel({ agent, pane, request, onRequestDone }: Props) {
         <div className="files-side">
           <div className="files-top">
             {roots?.[0]?.git ? (
-              <div className="segmented files-tabs" role="tablist" style={{ gridTemplateColumns: '1fr 1fr' }}>
+              <div className="segmented files-tabs" role="tablist" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
                 <button role="tab" aria-selected={tab === 'files'} className={tab === 'files' ? 'on' : ''} onClick={() => setTab('files')}>
                   Files
                 </button>
                 <button role="tab" aria-selected={tab === 'changes'} className={tab === 'changes' ? 'on' : ''} onClick={() => setTab('changes')}>
                   Changes{changeCount(status) > 0 ? ` · ${changeCount(status)}` : ''}
                 </button>
+                <button role="tab" aria-selected={tab === 'log'} className={tab === 'log' ? 'on' : ''} onClick={() => setTab('log')}>Log</button>
               </div>
             ) : (
               <span className="files-title">Files</span>
@@ -387,6 +393,8 @@ export function FilesPanel({ agent, pane, request, onRequestDone }: Props) {
                 />
               )}
             </>
+          ) : tab === 'log' ? (
+            <Log agentId={agent.id} rootPath={roots[0].path} status={status} version={version} range={logRange} selected={logHash} onSelect={(hash) => { setLogHash(hash); if (hash) setView(null); }} onClearRange={() => { setLogRange(null); setLogHash(null); }} onWritten={(next) => { setStatus(next); scheduleRefresh(); }} onResult={setGitResult} />
           ) : (
             <Changes
               agentId={agent.id}
@@ -401,6 +409,7 @@ export function FilesPanel({ agent, pane, request, onRequestDone }: Props) {
                 scheduleRefresh();
               }}
               onOpen={(p, mode, side) => openFile(0, p, mode, undefined, side)}
+              onCompare={(range) => { setLogRange(range); setLogHash(null); setView(null); setTab('log'); }}
             />
           )}
         </div>
@@ -416,6 +425,8 @@ export function FilesPanel({ agent, pane, request, onRequestDone }: Props) {
               </div>
               <p className="files-note">{missing}</p>
             </div>
+          ) : logHash ? (
+            <LogViewer agentId={agent.id} rootPath={roots?.[0]?.path ?? ''} status={status} hash={logHash} onClose={() => setLogHash(null)} onSelect={setLogHash} onWritten={(next) => { setStatus(next); scheduleRefresh(); }} onResult={setGitResult} />
           ) : (
             view &&
             roots && (

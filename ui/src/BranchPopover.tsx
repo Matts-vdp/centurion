@@ -5,10 +5,11 @@ import type { ResultLine } from './Changes';
 type Props = {
   at: { left: number; top: number }; agentId: string; status: GitStatus; onWritten: (status: GitStatus | null) => void;
   onResult: (result: ResultLine) => void; onClose: () => void;
+  onCompare: (range: string) => void;
 };
 
-/** Step 6 branch picker. The comparison uses the existing log range route until the Log segment lands. */
-export function BranchPopover({ at, agentId, status, onWritten, onResult, onClose }: Props) {
+/** Branch picker; Compare opens the Log at the selected range. */
+export function BranchPopover({ at, agentId, status, onWritten, onResult, onClose, onCompare }: Props) {
   const [data, setData] = useState<GitBranches | null>(null);
   const [filter, setFilter] = useState('');
   const [from, setFrom] = useState(status.branch ?? status.head ?? 'HEAD');
@@ -18,7 +19,6 @@ export function BranchPopover({ at, agentId, status, onWritten, onResult, onClos
   const [rebaseState, setRebaseState] = useState<{ name: string; blocked: boolean | null; error?: string } | null>(null);
   const [confirm, setConfirm] = useState<{ name: string; force: boolean } | null>(null);
   const [busy, setBusy] = useState('');
-  const [comparison, setComparison] = useState<{ branch: string; incoming: { hash: string; subject: string }[]; outgoing: { hash: string; subject: string }[] } | null>(null);
   const input = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -59,19 +59,7 @@ export function BranchPopover({ at, agentId, status, onWritten, onResult, onClos
       else onResult({ error: true, text: f.error, details: f.details, commands: f.commands });
     } finally { setBusy(''); }
   };
-  const compare = async (branch: string) => {
-    if (!status.branch) return;
-    setBusy('Comparing…');
-    try {
-      const [incoming, outgoing] = await Promise.all([
-        gitApi.compare(agentId, `${status.branch}..${branch}`),
-        gitApi.compare(agentId, `${branch}..${status.branch}`),
-      ]);
-      setComparison({ branch, incoming: incoming.commits, outgoing: outgoing.commits });
-    } catch (err) {
-      const f = gitFailure(err); onResult({ error: true, text: f.error, details: f.details, commands: f.commands });
-    } finally { setBusy(''); }
-  };
+  const compare = (branch: string) => { if (status.branch) { onCompare(`${status.branch}..${branch}`); onClose(); } };
   const openRow = (name: string) => {
     if (row === name) { setRow(null); return; }
     setRow(name); setConfirm(null);
@@ -112,14 +100,7 @@ export function BranchPopover({ at, agentId, status, onWritten, onResult, onClos
   return <div className="branch-popover" role="dialog" aria-label="Branches" style={{ left: at.left, top: at.top }}>
     <input ref={input} type="search" placeholder="Switch to or create a branch…" aria-label="Switch to or create a branch" value={filter} onChange={(e) => setFilter(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && canCreate) create(); if (e.key === 'Escape') onClose(); }} />
     {busy && <div className="branch-pop-note">{busy}</div>}
-    {comparison ? <div className="branch-pop-compare">
-      <button onClick={() => setComparison(null)}>← Branches</button>
-      <strong>{current} ↔ {comparison.branch}</strong>
-      <span>On {comparison.branch} only · {comparison.incoming.length}</span>
-      {comparison.incoming.slice(0, 20).map((c) => <div className="mono" key={c.hash}>{c.hash.slice(0, 7)} {c.subject}</div>)}
-      <span>On {current} only · {comparison.outgoing.length}</span>
-      {comparison.outgoing.slice(0, 20).map((c) => <div className="mono" key={c.hash}>{c.hash.slice(0, 7)} {c.subject}</div>)}
-    </div> : <>
+    <>
       {data?.default && status.branch && status.branch !== data.default && <button className="branch-pop-primary" disabled={!!busy} onClick={() => void run(`Updated from ${data.default}`, () => gitApi.updateDefault(agentId))}>Update from {data.default}</button>}
       {canCreate && <div className="branch-pop-create">
         <button disabled={!!busy} onClick={create}>Create <code>{filter.trim()}</code> from <code>{from}</code></button>
@@ -131,6 +112,6 @@ export function BranchPopover({ at, agentId, status, onWritten, onResult, onClos
       <button className="branch-pop-heading fold" aria-expanded={remoteOpen} onClick={() => setRemoteOpen(!remoteOpen)}>{remoteOpen ? '⌄' : '›'} Remote branches · {data?.remote.length ?? 0}</button>
       {remoteOpen && data?.remote.filter((b) => b.name.toLowerCase().includes(query)).map((b) => branchRow(b.name, false))}
       {!data && <div className="branch-pop-note">Loading branches…</div>}
-    </>}
+    </>
   </div>;
 }

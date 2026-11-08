@@ -5477,6 +5477,54 @@ body.resizing .pane {
 
 /* ---------- the Changes segment (docs/git-plan.md §3) ---------- */
 
+/* Log keeps the Changes row density and uses neutral graph strokes. */
+.log-panel { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.log-controls { display: flex; flex-direction: column; gap: 7px; padding: 10px 12px 4px; min-width: 0; }
+.log-controls > span { color: var(--text-2); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.log-controls .segmented { align-self: stretch; grid-template-columns: 1fr 1fr; margin: 0; }
+.log-controls .segmented button { flex: 1; }
+.log-clear, .log-load { background: transparent; border: 0; color: var(--accent-text); cursor: pointer; padding: 7px 12px; text-align: left; }
+.log-list { flex: 1; min-height: 0; overflow: auto; padding: 2px 6px 12px; }
+.log-row { position: relative; height: 26px; }
+.log-row-main { display: flex; align-items: center; width: 100%; height: 26px; min-width: 0; padding: 0 5px; border: 0; border-radius: 5px; background: transparent; color: var(--text); text-align: left; cursor: pointer; }
+.log-row-main:hover { background: var(--sunken); }
+.log-row.selected .log-row-main { background: var(--accent-soft); }
+.log-graph { flex: none; overflow: visible; margin-right: 3px; }
+.log-graph path { fill: none; stroke: var(--text-3); stroke-width: 1; }
+.log-graph path.main { stroke: var(--text-2); }
+.log-graph circle { fill: var(--text-3); stroke: none; }
+.log-graph circle.main-dot { fill: var(--text-2); }
+.log-graph circle.head { fill: var(--canvas); stroke: var(--text-2); stroke-width: 1.5; }
+.log-message { display: flex; align-items: center; gap: 4px; flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; }
+.log-ref { display: inline-flex; align-items: center; gap: 2px; flex: none; max-width: 72px; color: var(--text-2); font-size: 10px; overflow: hidden; text-overflow: ellipsis; }
+.log-subject { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+.log-author, .log-time, .log-sync { flex: none; color: var(--text-3); font-size: 10px; margin-left: 5px; }
+.log-author { max-width: 55px; overflow: hidden; text-overflow: ellipsis; }
+.log-time { width: 24px; text-align: right; }
+.log-sync { width: 9px; text-align: center; }
+.log-more { position: absolute; top: 2px; right: 2px; opacity: 0; }
+.log-row:hover .log-more, .log-row:focus-within .log-more { opacity: 1; }
+.log-row:hover .log-sync, .log-row:focus-within .log-sync { visibility: hidden; }
+.log-menu { position: absolute; z-index: 12; right: 0; top: 24px; min-width: 180px; }
+.log-branch-create { display: flex; padding: 5px; gap: 4px; }
+.log-branch-create input { min-width: 0; width: 125px; }
+.log-viewer { height: 100%; display: flex; flex-direction: column; }
+.log-details, .log-file-diff { flex: 1; min-height: 0; overflow: auto; padding: 16px; }
+.log-details h2 { font-size: 15px; line-height: 1.4; margin: 0 0 10px; }
+.log-details pre { white-space: pre-wrap; font: 12px/1.5 var(--mono); margin: 0 0 16px; color: var(--text-2); }
+.log-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 12px; font-size: 11px; color: var(--text-3); }
+.log-meta button { display: inline-flex; align-items: center; gap: 3px; border: 0; background: transparent; color: var(--text-2); font: inherit; cursor: pointer; padding: 0; }
+.log-meta button:hover { color: var(--accent-text); }
+.log-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.log-detail-actions > button { border: 0; background: transparent; padding: 3px 0; color: var(--accent-text); cursor: pointer; font-size: 12px; }
+.log-files { margin-top: 20px; }
+.log-files h3 { color: var(--text-2); font: 500 12px var(--mono); margin: 0 0 5px; }
+.log-files .file-row { width: 100%; }
+.log-files .file-row:disabled { opacity: .65; cursor: default; }
+.log-diff-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--text-3); font: 11px var(--mono); margin-bottom: 10px; }
+@media (hover: none) { .log-more { opacity: 1; } }
+@media (max-width: 420px) { .log-author { max-width: 35px; } .log-ref { max-width: 48px; } }
+
 .changes {
   flex: 1;
   min-height: 0;

@@ -59,6 +59,7 @@ type Props = {
   /** A write's new status (and the paths it deleted, relative to the root). */
   onWritten: (status: GitStatus | null, deleted?: string[]) => void;
   onOpen: (path: string, mode: 'file' | 'diff', side: DiffSide) => void;
+  onCompare: (range: string) => void;
 };
 
 const GROUP_NAMES: Record<Group, string> = { conflicts: 'Conflicts', staged: 'Staged', unstaged: 'Changes' };
@@ -74,7 +75,7 @@ export function changeCount(status: GitStatus | null): number {
   return all.size;
 }
 
-export function Changes({ agentId, rootPath, status, selected, result, onResult, onWritten, onOpen }: Props) {
+export function Changes({ agentId, rootPath, status, selected, result, onResult, onWritten, onOpen, onCompare }: Props) {
   const listRef = useRef<HTMLDivElement>(null);
   const [busy, setBusy] = useState<Set<string>>(new Set());
   const [remoteBusy, setRemoteBusy] = useState<string | null>(null);
@@ -355,7 +356,7 @@ export function Changes({ agentId, rootPath, status, selected, result, onResult,
 
   return (
     <div className="changes">
-      <BranchLine status={status} agentId={agentId} busy={remoteBusy} onAction={(action, remote) => void doRemote(action, remote)} onCancel={() => void gitApi.cancel(agentId)} onWritten={onWritten} onResult={onResult} />
+      <BranchLine status={status} agentId={agentId} busy={remoteBusy} onAction={(action, remote) => void doRemote(action, remote)} onCancel={() => void gitApi.cancel(agentId)} onWritten={onWritten} onResult={onResult} onCompare={onCompare} />
       {status.operation && <OperationBanner status={status} busy={operationBusy} onAction={(action) => void doOperation(action)} />}
       <div className="changes-list" ref={listRef}>
         {total === 0 && <p className="files-note">No changes. Working tree clean.</p>}
@@ -429,7 +430,7 @@ function letterTitle(letter: GitLetter): string {
   return { M: 'Modified', A: 'Added', D: 'Deleted', R: 'Renamed', U: 'Untracked', C: 'Conflict' }[letter];
 }
 
-function BranchLine({ status, agentId, busy, onAction, onCancel, onWritten, onResult }: { status: GitStatus; agentId: string; busy: string | null; onAction: (action: 'fetch' | 'pull' | 'push' | 'sync' | 'publish', remote?: string) => void; onCancel: () => void; onWritten: (status: GitStatus | null) => void; onResult: (result: ResultLine) => void }) {
+function BranchLine({ status, agentId, busy, onAction, onCancel, onWritten, onResult, onCompare }: { status: GitStatus; agentId: string; busy: string | null; onAction: (action: 'fetch' | 'pull' | 'push' | 'sync' | 'publish', remote?: string) => void; onCancel: () => void; onWritten: (status: GitStatus | null) => void; onResult: (result: ResultLine) => void; onCompare: (range: string) => void }) {
   const [menu, setMenu] = useState(false);
   const [branches, setBranches] = useState(false);
   const [branchAt, setBranchAt] = useState({ left: 12, top: 70 });
@@ -463,7 +464,7 @@ function BranchLine({ status, agentId, busy, onAction, onCancel, onWritten, onRe
       <ForkIcon size={13} />
       <span className="git-branch-picker" ref={branchRef}>
         <button className="git-branch-name" aria-haspopup="dialog" aria-expanded={branches} onClick={() => { positionBranches(); setBranches(!branches); }}>{name} <ChevronDownIcon size={12} /></button>
-        {branches && <BranchPopover at={branchAt} agentId={agentId} status={status} onWritten={onWritten} onResult={onResult} onClose={() => setBranches(false)} />}
+        {branches && <BranchPopover at={branchAt} agentId={agentId} status={status} onWritten={onWritten} onResult={onResult} onCompare={onCompare} onClose={() => setBranches(false)} />}
       </span>
       {status.behind > 0 && (
         <span className="git-ab" title={`${plural(status.behind, 'commit')} on ${status.upstream} you don't have · ${fetched}`}>

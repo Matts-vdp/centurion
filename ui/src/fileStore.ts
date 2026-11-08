@@ -45,6 +45,9 @@ export type GitBranches = {
   local: { name: string; hash: string; upstream: string | null; ahead: number; behind: number; gone: boolean; current: boolean; date: string; subject: string }[];
   remote: { name: string; remote: string; hash: string; date: string; subject: string }[];
 };
+export type LogRef = { name: string; kind: 'branch' | 'remote' | 'tag' | 'head'; head?: boolean };
+export type LogCommit = { hash: string; parents: string[]; subject: string; author: string; email: string; date: string; refs: LogRef[]; pushed: boolean; incoming: boolean };
+export type CommitDetails = { hash: string; parents: string[]; subject: string; body: string; author: { name: string; email: string; date: string }; committer: { name: string; email: string; date: string }; refs: LogRef[]; files: (GitEntry & { inside: boolean })[] };
 export type FileContent =
   | { kind: 'text'; text: string; size: number; truncated: boolean; lines: number }
   | { kind: 'image'; size: number; mediaType: string }
@@ -97,7 +100,10 @@ export const gitApi = {
   updateDefault: (id: string) => api<GitWrite & { conflicted: boolean }>(`/api/agents/${id}/git/update-default`, { method: 'POST', body: {} }),
   operation: (id: string, action: 'abort' | 'continue') => api<GitWrite>(`/api/agents/${id}/git/${action}`, { method: 'POST', body: {} }),
   mergeMessage: (id: string) => api<{ message: string }>(`/api/agents/${id}/git/merge-message?root=0`),
-  compare: (id: string, range: string) => api<{ commits: { hash: string; subject: string }[]; more: boolean }>(`/api/agents/${id}/git/log?root=0&range=${encodeURIComponent(range)}`),
+  log: (id: string, query: { scope: 'branch' | 'all'; skip: number; filter: string; range?: string }) =>
+    api<{ commits: LogCommit[]; more: boolean }>(`/api/agents/${id}/git/log?root=0&scope=${query.scope}&skip=${query.skip}&filter=${encodeURIComponent(query.filter)}${query.range ? `&range=${encodeURIComponent(query.range)}` : ''}`),
+  details: (id: string, hash: string) => api<CommitDetails>(`/api/agents/${id}/git/commit/${hash}?root=0`),
+  commitDiff: (id: string, hash: string, path: string) => api<FileDiff>(`/api/agents/${id}/git/commit/${hash}?root=0&path=${encodeURIComponent(path)}`),
   stage: (id: string, paths: string[]) => api<GitWrite>(`/api/agents/${id}/git/stage`, { method: 'POST', body: { paths } }),
   unstage: (id: string, paths: string[]) => api<GitWrite>(`/api/agents/${id}/git/unstage`, { method: 'POST', body: { paths } }),
   discard: (id: string, paths: string[]) => api<GitWrite & { deleted: string[] }>(`/api/agents/${id}/git/discard`, { method: 'POST', body: { paths } }),
