@@ -45,6 +45,7 @@ export function Sidebar({ agents, selected, open: openIds, onSelect, onOpenInSpl
   const open = selected ? agents.get(selected) : undefined;
   const openParent = open?.parentId ?? null;
   const openArchived = open?.archived === true;
+  const openSchedule = open?.scheduleId;
   const chatArchived = (open?.parentId ? agents.get(open.parentId)?.archived : open?.archived) === true;
   useEffect(() => {
     if (chatArchived) {
@@ -52,10 +53,13 @@ export function Sidebar({ agents, selected, open: openIds, onSelect, onOpenInSpl
       if (openParent) treeState.set(`open:${openParent}`, true);
       return;
     }
-    if (!openParent) return;
+    if (!openParent) {
+      if (openSchedule) treeState.set(`schedule:${openSchedule}`, false);
+      return;
+    }
     treeState.set(openParent, false);
     if (openArchived) treeState.set(`archived:${openParent}`, true);
-  }, [selected, openParent, openArchived, chatArchived]);
+  }, [selected, openParent, openArchived, chatArchived, openSchedule]);
 
   const archive = async (a: AgentRecord) => {
     setError('');
@@ -196,7 +200,12 @@ export function Sidebar({ agents, selected, open: openIds, onSelect, onOpenInSpl
           const pending = task.runs.some((run) => run.status === 'pending');
           const archivedTarget = task.target.kind === 'agent' && agents.get(task.target.agentId)?.archived;
           const runs = list.filter((a) => a.scheduleId === task.id && !a.archived).slice(-task.keepRuns).reverse();
-          return <div key={task.id} className="schedule-tree-group"><button className={`schedule-row${selected === `schedule:${task.id}` ? ' selected' : ''}`} onClick={() => onSelect(`schedule:${task.id}`)} onContextMenu={(e) => { e.preventDefault(); onSelect(`schedule:${task.id}`); }}><span className="schedule-mark">◷</span><span><strong>{task.name}</strong><small className={last?.status === 'failed' ? 'schedule-error' : ''}>{pending ? 'Missed run · needs you' : last?.status === 'failed' ? 'Last run failed' : task.status === 'proposed' ? 'Proposed · activate' : archivedTarget ? 'Paused · its chat is archived' : task.status === 'paused' ? 'Paused' : task.nextAt ? `Next ${clock(task.nextAt)}` : 'Manual only'}</small></span></button>{runs.length > 0 && <div className="tree-children">{runs.map((a) => <Row key={a.id} {...rowProps(a)} parentId={task.id} />)}</div>}</div>;
+          const key = `schedule:${task.id}`;
+          const collapsed = runs.length > 0 && tree[key] === true;
+          const toggle = () => treeState.set(key, !collapsed);
+          const stateText = pending ? 'Missed run · needs you' : last?.status === 'failed' ? 'Last run failed' : task.status === 'proposed' ? 'Proposed · activate' : archivedTarget ? 'Paused · its chat is archived' : task.status === 'paused' ? 'Paused' : task.nextAt ? `Next ${clock(task.nextAt)}` : 'Manual only';
+          const summary = collapsed ? [stateText, `${runs.length} run${runs.length === 1 ? '' : 's'}`, rollup(runs, seen)].filter(Boolean).join(' · ') : stateText;
+          return <div key={task.id} role="group" className="schedule-tree-group"><div className="schedule-line" role="treeitem" tabIndex={-1} data-id={key} aria-expanded={runs.length > 0 ? !collapsed : undefined} onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); onSelect(key); } }}><button className={`schedule-row${selected === key ? ' selected' : ''}`} onClick={() => onSelect(key)} onContextMenu={(e) => { e.preventDefault(); onSelect(key); }}><span className="schedule-mark">◷</span><span><strong>{task.name}</strong><small className={last?.status === 'failed' ? 'schedule-error' : ''}>{summary}</small></span></button>{runs.length > 0 && <button className="expander" tabIndex={-1} aria-label={collapsed ? 'Expand' : 'Collapse'} onClick={toggle}><Chevron open={!collapsed} size={14} /></button>}</div>{!collapsed && runs.length > 0 && <div className="tree-children">{runs.map((a) => <Row key={a.id} {...rowProps(a)} parentId={key} />)}</div>}</div>;
         })}
         {archivedChats.length > 0 && (
           <div className="archived-chats">

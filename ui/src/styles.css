@@ -845,6 +845,8 @@ kbd {
 .schedule-group-head { display: flex; align-items: center; gap: 6px; padding: 20px 8px 8px; color: var(--text-3); font: 500 11.5px/1 var(--mono); }
 .schedule-group-head > span { flex: 1; }
 .schedule-group-head .link-button { font: inherit; }
+.schedule-line { display: flex; align-items: center; gap: 2px; border-radius: 8px; outline-offset: -2px; }
+.schedule-line > .schedule-row { flex: 1; width: auto; min-width: 0; }
 .schedule-row { width: 100%; display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 8px; border: 0; border-radius: 8px; background: none; color: var(--text); text-align: left; cursor: pointer; }
 .schedule-row:hover { background: var(--fill); }
 .schedule-row.selected { background: var(--accent-soft); }

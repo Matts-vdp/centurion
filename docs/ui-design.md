@@ -206,7 +206,7 @@ A view of the agent's folder and its repository, so you can see what an expert t
 
 ## 6b. Scheduled tasks
 
-The sidebar has a **Scheduled** group below chats. Task rows use a sunken clock mark and a second line for the next run or a state. Run chats appear under their task; older archived runs remain in the task's history. Pending missed runs and failed tasks also appear in Needs you.
+The sidebar has a **Scheduled** group below chats. Task rows use a sunken clock mark and a second line for the next run or a state. Run chats appear under their task and can be collapsed with the chevron, which then adds the run count and a roll-up of running, failed and new runs to the task's second line; older archived runs remain in the task's history. Pending missed runs and failed tasks also appear in Needs you.
 
 A task opens in either pane. Its header names the task and next run, followed by Run now, Pause or Resume, Edit and Delete. The body shows the schedule, target, policies, prompt and newest-first history. History rows use hairlines and the existing state colours. A proposed task renders as a raised decision block in the transcript with Activate and Edit; activation sends no chat message.
 
