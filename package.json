@@ -1,6 +1,6 @@
 {
   "name": "centurion",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Local manager for orchestrator and expert Claude agents across repositories",
   "license": "Apache-2.0",
   "private": true,
