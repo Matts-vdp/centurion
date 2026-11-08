@@ -30,6 +30,7 @@ export {
   ImagePlus as AttachImageIcon,
   ListTodo as TodoIcon,
   Menu as MenuIcon,
+  Mic as MicIcon,
   Minus as MinusIcon,
   MessageSquare as ChatIcon,
   Plus as PlusIcon,

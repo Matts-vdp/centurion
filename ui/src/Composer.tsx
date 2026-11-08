@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { commands, type AgentRecord, type CommandOption, type ImageData, type QueuedMessage } from './api';
 import { useNow } from './hooks';
-import { AttachImageIcon, CloseIcon, SendIcon } from './icons';
+import { AttachImageIcon, CloseIcon, MicIcon, SendIcon } from './icons';
+import { createDictation, dictationSupported } from './dictation';
 import { agentState, deliverable, isHeld } from './status';
 import { composerFill, lastSeen, pendingFor, transcriptPin, useManager } from './store';
 import { parsePrompt } from './timeline';
@@ -25,6 +26,35 @@ export function Composer({ agent, agents, focused, run, onInterrupt }: Props) {
   const box = useRef<HTMLTextAreaElement>(null);
   const images = useAttachments(agent.id);
   const running = agent.status === 'running';
+
+  // Speech to text (browser speech recognition, English): each final phrase goes in at the caret.
+  const [dictating, setDictating] = useState<{ listening: boolean; error: string | null }>({ listening: false, error: null });
+  const textNow = useRef(text);
+  textNow.current = text;
+  const dictateAt = useRef(0);
+  const dictation = useRef<ReturnType<typeof createDictation> | null>(null);
+  if (!dictation.current) {
+    dictation.current = createDictation(
+      (said) => {
+        const current = textNow.current;
+        const at = Math.min(dictateAt.current, current.length);
+        const before = current.slice(0, at);
+        const inserted = (before && !/\s$/.test(before) ? ' ' : '') + said + ' ';
+        const next = before + inserted + current.slice(at);
+        textNow.current = next;
+        dictateAt.current = at + inserted.length;
+        setText(next);
+        pendingCaret.current = dictateAt.current;
+        setHistory(null);
+      },
+      setDictating,
+    );
+  }
+  useEffect(() => {
+    setDictating({ listening: false, error: null });
+    const d = dictation.current;
+    return () => d?.abort();
+  }, [agent.id]);
   const { plans, questionSets } = useManager();
   // A plan or a question set waits for the user: the composer says it never carries their state.
   const pending = agent.kind === 'orchestrator' ? pendingFor(agent.id, { plans, questionSets }) : { plan: null, questions: 0 };
@@ -145,6 +175,7 @@ export function Composer({ agent, agents, focused, run, onInterrupt }: Props) {
     const value = text.trim();
     const attached = images.list;
     if ((!value && attached.length === 0) || sending || images.busy) return;
+    dictation.current?.stop();
     setSending(true);
     // Your own message should be in view when it lands, even if you had scrolled up.
     transcriptPin.set({ agentId: agent.id, at: Date.now() });
@@ -290,10 +321,27 @@ export function Composer({ agent, agents, focused, run, onInterrupt }: Props) {
               >
                 <AttachImageIcon size={16} />
               </button>
+              {dictationSupported() && (
+                <button
+                  className={`icon-button${dictating.listening ? ' dictating' : ''}`}
+                  aria-label={dictating.listening ? 'Stop dictation' : 'Dictate (English)'}
+                  aria-pressed={dictating.listening}
+                  title={dictating.listening ? 'Stop dictation' : 'Dictate in English (speech to text in this browser)'}
+                  onClick={() => {
+                    dictateAt.current = box.current?.selectionStart ?? text.length;
+                    dictation.current?.toggle();
+                  }}
+                >
+                  <MicIcon size={16} />
+                </button>
+              )}
               {images.input}
-              <span className={`composer-hint${images.error ? ' error' : ''}`}>
+              <span className={`composer-hint${images.error || dictating.error ? ' error' : ''}`}>
                 {images.error ||
-                  (history
+                  dictating.error ||
+                  (dictating.listening
+                    ? 'Listening in English · click the mic to stop'
+                    : history
                     ? `Earlier prompt${recalledFrom ? ` to ${recalledFrom}` : ''} · ${history.index + 1} of ${history.list.length} · ↑ older, ↓ newer`
                     : running
                       ? 'Enter queues it for after this turn'

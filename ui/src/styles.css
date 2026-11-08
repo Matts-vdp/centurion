@@ -5134,6 +5134,13 @@ body.resizing .pane {
   color: var(--text);
 }
 
+/* Dictation is on: the mic takes the accent wash while it listens. */
+.composer-foot > .icon-button.dictating,
+.composer-foot > .icon-button.dictating:hover:not(:disabled) {
+  color: var(--accent-text);
+  background: var(--accent-soft);
+}
+
 .attachments {
   display: flex;
   flex-wrap: wrap;
