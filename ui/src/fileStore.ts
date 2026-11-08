@@ -18,7 +18,7 @@ export type GitFile = { path: string; status: GitLetter; added: number | null; r
 /** One side of a change, path relative to the repository; `code` is a conflict's two letters (`UU`, `DU`, …). */
 export type GitEntry = { path: string; status: GitLetter; added: number | null; removed: number | null; oldPath?: string; code?: string };
 export type GitGroups = { conflicts: GitEntry[]; staged: GitEntry[]; unstaged: GitEntry[] };
-export type GitOperation = { kind: 'merge' | 'rebase' | 'cherry-pick' | 'revert' | 'am'; onto: string | null; step: number | null; total: number | null; branch: string | null };
+export type GitOperation = { kind: 'merge' | 'rebase' | 'cherry-pick' | 'revert' | 'am'; onto: string | null; step: number | null; total: number | null; branch: string | null; startedBy: 'Centurion' | 'external' };
 export type GitStatus = GitGroups & {
   branch: string | null;
   detached: boolean;
@@ -40,6 +40,11 @@ export type DiffSide = 'head' | 'staged' | 'worktree';
 export type GitCommand = { command: string; code: number; output: string };
 export type GitWrite = { status: GitStatus | null; commands: GitCommand[] };
 export type GitRemoteWrite = GitWrite & { pulled: number; pushed: number; conflicted: boolean };
+export type GitBranches = {
+  current: string | null; default: string | null; remotes: string[];
+  local: { name: string; hash: string; upstream: string | null; ahead: number; behind: number; gone: boolean; current: boolean; date: string; subject: string }[];
+  remote: { name: string; remote: string; hash: string; date: string; subject: string }[];
+};
 export type FileContent =
   | { kind: 'text'; text: string; size: number; truncated: boolean; lines: number }
   | { kind: 'image'; size: number; mediaType: string }
@@ -82,7 +87,17 @@ export const gitApi = {
   remote: (id: string, action: 'fetch' | 'pull' | 'push' | 'sync' | 'publish', remote?: string) =>
     api<GitRemoteWrite>(`/api/agents/${id}/git/${action}`, { method: 'POST', body: remote ? { remote } : {} }),
   cancel: (id: string) => api<{ cancelled: boolean }>(`/api/agents/${id}/git/cancel`, { method: 'POST' }),
-  branches: (id: string) => api<{ remotes: string[] }>(`/api/agents/${id}/git/branches?root=0`),
+  branches: (id: string) => api<GitBranches>(`/api/agents/${id}/git/branches?root=0`),
+  branch: (id: string, req: { name: string; from: string; switch: boolean } | { name: string; delete: true; force?: boolean }) =>
+    api<GitWrite & { stashConflict?: boolean; deleted?: string }>(`/api/agents/${id}/git/branch`, { method: 'POST', body: req }),
+  switch: (id: string, branch: string) => api<GitWrite & { stashConflict: boolean }>(`/api/agents/${id}/git/switch`, { method: 'POST', body: { branch } }),
+  merge: (id: string, branch: string) => api<GitWrite & { conflicted: boolean }>(`/api/agents/${id}/git/merge`, { method: 'POST', body: { branch } }),
+  rebase: (id: string, onto: string) => api<GitWrite & { conflicted: boolean }>(`/api/agents/${id}/git/rebase`, { method: 'POST', body: { onto } }),
+  rebaseSafety: (id: string, onto: string) => api<{ blocked: boolean }>(`/api/agents/${id}/git/rebase-safety?root=0&onto=${encodeURIComponent(onto)}`),
+  updateDefault: (id: string) => api<GitWrite & { conflicted: boolean }>(`/api/agents/${id}/git/update-default`, { method: 'POST', body: {} }),
+  operation: (id: string, action: 'abort' | 'continue') => api<GitWrite>(`/api/agents/${id}/git/${action}`, { method: 'POST', body: {} }),
+  mergeMessage: (id: string) => api<{ message: string }>(`/api/agents/${id}/git/merge-message?root=0`),
+  compare: (id: string, range: string) => api<{ commits: { hash: string; subject: string }[]; more: boolean }>(`/api/agents/${id}/git/log?root=0&range=${encodeURIComponent(range)}`),
   stage: (id: string, paths: string[]) => api<GitWrite>(`/api/agents/${id}/git/stage`, { method: 'POST', body: { paths } }),
   unstage: (id: string, paths: string[]) => api<GitWrite>(`/api/agents/${id}/git/unstage`, { method: 'POST', body: { paths } }),
   discard: (id: string, paths: string[]) => api<GitWrite & { deleted: string[] }>(`/api/agents/${id}/git/discard`, { method: 'POST', body: { paths } }),

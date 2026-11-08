@@ -32,7 +32,12 @@ export type GitOperation = {
   total: number | null;
   /** Rebases: the branch being rebased (HEAD is detached meanwhile). */
   branch: string | null;
+  /** Git has no durable actor metadata; distinguishes actions started in this manager from outside it. */
+  startedBy: 'Centurion' | 'external';
 };
+
+const operationStarters = new Map<string, GitOperation['startedBy']>();
+export function markOperationStarted(top: string): void { operationStarters.set(top, 'Centurion'); }
 
 export type GitStatus = GitGroups & {
   /** The branch, or null when HEAD is detached. An unborn branch (no commits yet) has its name. */
@@ -400,13 +405,16 @@ async function repoState(top: string): Promise<{ operation: GitOperation | null;
     .slice(0, names.length)
     .map((p) => path.resolve(top, p));
   const fetchedAt = await stat(fetchHead).then((s) => Math.round(s.mtimeMs), () => null);
-  return { operation: await operationOf(), fetchedAt };
+  const operation = await operationOf();
+  if (!operation) operationStarters.delete(top);
+  else operation.startedBy = operationStarters.get(top) ?? 'external';
+  return { operation, fetchedAt };
 
   async function operationOf(): Promise<GitOperation | null> {
     for (const dir of [rebaseMerge, rebaseApply]) {
       if (!(await isDir(dir))) continue;
       const apply = dir === rebaseApply;
-      if (apply && (await exists(path.join(dir, 'applying')))) return { kind: 'am', onto: null, step: null, total: null, branch: null };
+      if (apply && (await exists(path.join(dir, 'applying')))) return { kind: 'am', onto: null, step: null, total: null, branch: null, startedBy: 'external' };
       const [headName, onto, step, total] = await Promise.all(
         ['head-name', 'onto', apply ? 'next' : 'msgnum', apply ? 'last' : 'end'].map((f) => readTrim(path.join(dir, f))),
       );
@@ -416,18 +424,19 @@ async function repoState(top: string): Promise<{ operation: GitOperation | null;
         step: toNumber(step),
         total: toNumber(total),
         branch: headName?.startsWith('refs/heads/') ? headName.slice('refs/heads/'.length) : null,
+        startedBy: 'external',
       };
     }
     const merge = await readTrim(mergeHead);
     if (merge) {
       const message = (await readTrim(mergeMsg)) ?? '';
       const named = /^Merge (?:remote-tracking )?branch '([^']+)'/.exec(message)?.[1];
-      return { kind: 'merge', onto: named ?? (await nameOf(top, merge.split(/\s+/)[0])), step: null, total: null, branch: null };
+      return { kind: 'merge', onto: named ?? (await nameOf(top, merge.split(/\s+/)[0])), step: null, total: null, branch: null, startedBy: 'external' };
     }
     const pick = await readTrim(pickHead);
-    if (pick) return { kind: 'cherry-pick', onto: short(pick), step: null, total: null, branch: null };
+    if (pick) return { kind: 'cherry-pick', onto: short(pick), step: null, total: null, branch: null, startedBy: 'external' };
     const revert = await readTrim(revertHead);
-    if (revert) return { kind: 'revert', onto: short(revert), step: null, total: null, branch: null };
+    if (revert) return { kind: 'revert', onto: short(revert), step: null, total: null, branch: null, startedBy: 'external' };
     return null;
   }
 }

@@ -10,7 +10,7 @@ import { packageVersion } from './paths.js';
 import { bold, cyan, dim } from './term.js';
 import { allFiles, FileError, listFolder, RawBody, readFileContent } from './files.js';
 import { commitFileDiff, DIFF_SIDES, diffSideText, fileDiff, gitBranches, gitCommit, gitLog, gitStatus, repoInfo, type DiffSide } from './git.js';
-import { APPLY_ACTIONS, applyPartial, cancelNetwork, commit, discardPaths, gitEvents, GitError, remoteAction, stagePaths, undoCommit, unstagePaths, type ApplyAction } from './gitwrite.js';
+import { APPLY_ACTIONS, applyPartial, cancelNetwork, commit, createBranch, deleteBranch, discardPaths, finishOperation, gitEvents, GitError, mergeBranch, preparedMergeMessage, rebaseBranch, rebaseSafety, remoteAction, stagePaths, switchBranch, undoCommit, unstagePaths, updateFromDefault, type ApplyAction } from './gitwrite.js';
 import { isInside } from './confine.js';
 import { EFFORT_LEVELS, IMAGE_TYPES, type EffortLevel, type ImageData, type PermissionDecision } from './types.js';
 
@@ -431,6 +431,59 @@ export const routes: Route[] = [
     result:
       '`{ current, default, remotes, local: [{ name, hash, upstream, ahead, behind, gone, current, date, subject }], remote: [{ name, remote, hash, date, subject }] }`',
     handler: (ctx) => gitBranches(fileRoot(ctx).root),
+  },
+  {
+    method: 'POST', path: '/api/agents/:id/git/branch',
+    summary: `Creates a branch from a branch or commit and optionally switches to it; or deletes a local branch with -d. Force deletion (-D) requires a separate explicit request after the unmerged refusal. ${GIT_WRITE}`,
+    query: GIT_WRITE_QUERY, body: '`{ name, from, switch: boolean }` or `{ name, delete: true, force?: boolean }`',
+    result: `${GIT_WRITE_RESULT}, plus stashConflict or deleted`,
+    handler: (ctx) => {
+      const b = ctx.body;
+      const name = str(b.name, 'name');
+      if (b.delete === true) {
+        if (b.force !== undefined && typeof b.force !== 'boolean') throw new HttpError(400, '"force" must be true or false');
+        return deleteBranch(writeRoot(ctx), name, b.force === true);
+      }
+      if (b.switch !== undefined && typeof b.switch !== 'boolean') throw new HttpError(400, '"switch" must be true or false');
+      return createBranch(writeRoot(ctx), name, str(b.from, 'from'), b.switch === true);
+    },
+  },
+  {
+    method: 'POST', path: '/api/agents/:id/git/switch',
+    summary: `Switches to a local or remote branch. If local changes prevent it, stashes them, switches and pops; a conflicting pop keeps the stash. ${GIT_WRITE}`,
+    query: GIT_WRITE_QUERY, body: '`{ branch: string }`', result: `${GIT_WRITE_RESULT}, plus stashConflict`,
+    handler: (ctx) => switchBranch(writeRoot(ctx), str(ctx.body.branch, 'branch')),
+  },
+  ...(['merge', 'rebase'] as const).map((action): Route => ({
+    method: 'POST', path: `/api/agents/:id/git/${action}`,
+    summary: `${action === 'merge' ? 'Merges a branch into the current branch' : 'Rebases the current branch onto another; refuses when its commits have been pushed because that would require a force push'}. Uses --autostash; conflicts leave an operation in progress. ${GIT_WRITE}`,
+    query: GIT_WRITE_QUERY, body: action === 'merge' ? '`{ branch: string }`' : '`{ onto: string }`',
+    result: `${GIT_WRITE_RESULT}, plus conflicted`,
+    handler: (ctx) => action === 'merge' ? mergeBranch(writeRoot(ctx), str(ctx.body.branch, 'branch')) : rebaseBranch(writeRoot(ctx), str(ctx.body.onto, 'onto')),
+  })),
+  {
+    method: 'GET', path: '/api/agents/:id/git/rebase-safety',
+    summary: 'Checks whether rebasing the current branch onto a named branch would rewrite commits reachable from a remote-tracking branch. The write route checks again under the queue.',
+    query: '`root=0` and `onto` (branch name)', result: '`{ blocked: boolean }`',
+    handler: (ctx) => rebaseSafety(writeRoot(ctx), str(ctx.url.searchParams.get('onto'), 'onto')),
+  },
+  {
+    method: 'POST', path: '/api/agents/:id/git/update-default',
+    summary: `Fetches origin, then merges its default branch into the current branch with --autostash. ${GIT_WRITE}`,
+    query: GIT_WRITE_QUERY, body: '`{}`', result: `${GIT_WRITE_RESULT}, plus conflicted`,
+    handler: (ctx) => updateFromDefault(writeRoot(ctx)),
+  },
+  ...(['abort', 'continue'] as const).map((action): Route => ({
+    method: 'POST', path: `/api/agents/:id/git/${action}`,
+    summary: `${action === 'abort' ? 'Aborts' : 'Continues'} the detected merge, rebase, cherry-pick, revert or am operation. Continue refuses unresolved conflicts. ${GIT_WRITE}`,
+    query: GIT_WRITE_QUERY, body: '`{}`', result: GIT_WRITE_RESULT,
+    handler: (ctx) => finishOperation(writeRoot(ctx), action),
+  })),
+  {
+    method: 'GET', path: '/api/agents/:id/git/merge-message',
+    summary: "Git's prepared message for a merge in progress, to open in the commit box before continuing.",
+    query: GIT_WRITE_QUERY, result: '`{ message: string }`',
+    handler: (ctx) => preparedMergeMessage(writeRoot(ctx)),
   },
   ...(['fetch', 'pull', 'push', 'sync', 'publish'] as const).map((action): Route => ({
     method: 'POST',

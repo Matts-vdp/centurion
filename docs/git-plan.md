@@ -165,7 +165,10 @@ All under the token check. Each takes `root` (only 0 for writes) and resolves th
 | POST | `/api/agents/:id/git/branch` | Create: `{ name, from, switch }`; delete: `{ name, delete: true, force? }` |
 | POST | `/api/agents/:id/git/switch` | `{ branch }` (with stash, switch, pop when needed) |
 | POST | `/api/agents/:id/git/merge`, `.../rebase` | `{ branch }` / `{ onto }`, with `--autostash` |
+| GET | `/api/agents/:id/git/rebase-safety?onto=` | Whether a rebase onto that branch would rewrite pushed commits |
 | POST | `/api/agents/:id/git/abort`, `.../continue` | The operation in progress |
+| POST | `/api/agents/:id/git/update-default` | Fetch origin, then merge its default branch into the current branch with autostash |
+| GET | `/api/agents/:id/git/merge-message` | Git's prepared message while a merge is in progress |
 | GET | `/api/agents/:id/git/log?scope=&skip=&filter=&range=` | `{ commits: { hash, parents, subject, author, date, refs, pushed }[] }` |
 | GET | `/api/agents/:id/git/commit/:hash` | Message, meta and changed files; `?path=` for one file's diff |
 | GET | `/api/agents/:id/git/conflict?path=` | `{ base, yours, incoming, labels, blocks }` |
@@ -207,6 +210,12 @@ As built in step 5 (`src/gitwrite.ts`, `ui/src/Changes.tsx`):
 - `gitPull` is a documented config field, default `merge`. Both modes pass `--autostash`. Push uses git's normal fast-forward safety. A rejected push maps to `The remote has new commits`.
 - The branch row shows Publish or Sync, ahead and behind counts and a fetch-age tooltip. Its menu offers Push, Pull and Fetch; Publish asks which remote when there is more than one. Changes fetches once on opening when the last fetch is older than five minutes. The commit split button now offers Commit and Push / Sync and `Ctrl+Shift+Enter` commits and pushes. Without an upstream, either combined action publishes; with several remotes it asks which one before committing. The remote result and its commands use the existing result line.
 
+As built in step 6 (`src/gitwrite.ts`, `ui/src/BranchPopover.tsx`, `ui/src/Changes.tsx`):
+- Branch create, delete, switch, merge, rebase, update-default, abort and continue use the existing per-repository queue, status refresh, error mapping and `git` SSE event. Create takes `{ name, from, switch }`; delete first runs `branch -d`, with `-D` only on the UI's second confirmation. Switch first tries normally; when local changes block it, it stashes untracked files too, switches and pops with `--index`. A conflicting pop retains the stash and reports it in the result line; Git has no resumable stash-pop operation for the banner. Merge, rebase and Update use `--autostash`. Rebase refuses a current-branch commit reachable from a remote-tracking branch, explaining the force push it would require. `GET .../git/rebase-safety?onto=` previews this per target for the disabled menu action; the write checks again under the queue.
+- Update fetches `origin`, then merges `origin/HEAD` (or `origin/main` / `origin/master`) into the current branch. The operation banner names branches and conflicts; Continue is disabled until conflicts are staged. On a merge it fills the commit box from Git's `MERGE_MSG`; the other operations continue directly. Existing operations started outside Centurion appear too. Git does not record whether an outside operation came from an agent or terminal, so the banner labels it "outside Centurion (agent or terminal)"; operations started here are labelled Centurion while the manager is running.
+- The branch menu has filter/create, alternate start points, Update, local and folded remote branches, and per-row switch, merge, rebase, compare and local delete. Until the Log segment exists, Compare shows both commit ranges in the popover using the existing log route. The Log segment can replace this view in step 7.
+- `scripts/test-branches.mjs` starts an isolated manager with its own config, port and state, removes inherited Claude/Anthropic environment variables, and checks scratch repositories against local bare origins. It covers clean and conflicting stash pops, clean and conflicting merges with Abort and Continue, allowed and refused rebases, Update, both delete confirmations and detached HEAD.
+
 Backend notes (`src/git.ts`, new; the read helpers move there from `src/files.ts`, and the confinement helpers they share to `src/confine.ts`):
 - Git runs as `git` itself, as today: no shell, `core.quotepath=off`, `GIT_OPTIONAL_LOCKS=0` for reads only (writes need the locks).
 - A per-repository promise queue for writes, keyed by `git rev-parse --show-toplevel`.
@@ -247,7 +256,7 @@ Each step is shippable on its own and gets its own commit. Test against a test m
 3. **Changes view:** groups, row actions, discard in place, commit box with draft, split button, result line and Details. CLAUDE.md's "Files are read-only" rule becomes "the panel edits no files; git actions may write".
 4. **Diff viewer:** sides, `Changes | Staged`, split view, word highlights, whitespace and context, next and previous change, hunk and line staging.
 5. **Remote:** branch row, fetch on open, Sync, Push, Pull, Publish, credentials handling, Cancel, `gitPull` in the config.
-6. **Branches:** the popover, create, switch with stash, Update from `master`, merge and rebase with autostash, compare, delete; the operation banner with Abort and Continue.
+6. **Branches (done):** the popover, create, switch with stash, Update from `master`, merge and rebase with autostash, compare, delete; the operation banner with Abort and Continue.
 7. **Log:** the segment, rows with refs and ↑↓ marks, the graph, commit details and diffs, row actions.
 8. **Conflicts, inline (8a):** the group, takes per file, simple ones, conflict blocks in the viewer, Mark resolved, Ask the agent.
 9. **Three-pane resolver (8b).**

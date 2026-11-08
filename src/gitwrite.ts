@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import { readFile, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { FileError, relParts, resolveInside, toPosix } from './confine.js';
-import { fileDiff, forgetGitCaches, git, gitStatus, needRepo, type GitEntry, type GitOptions, type GitResult, type GitStatus, type RepoInfo } from './git.js';
+import { fileDiff, forgetGitCaches, git, gitStatus, markOperationStarted, needRepo, type GitEntry, type GitOptions, type GitResult, type GitStatus, type RepoInfo } from './git.js';
 
 /**
  * Git writes for the Files panel (`docs/git-plan.md` §3, §4, §9): stage, unstage, discard, partial patches,
@@ -73,6 +73,10 @@ export function knownError(output: string): string | null {
   if (/could not read Username|Authentication failed|terminal prompts disabled|Permission denied \(publickey\)|could not read Password|fatal: Authentication/i.test(output)) return 'Git needs credentials for origin. Sign in once from a terminal (git fetch) and try again.';
   if (/non-fast-forward|fetch first|remote contains work that you do not have locally/i.test(output)) return 'The remote has new commits';
   if (/index\.lock/.test(output)) return BUSY;
+  if (/untracked working tree files would be overwritten by (?:merge|checkout|switch)/i.test(output)) {
+    const files = output.split(/\r?\n/).slice(1).map((line) => line.trim()).filter((line) => line && !/^(Please|Aborting|fatal:|error:)/i.test(line));
+    return `Untracked files would be overwritten: ${files.slice(0, 5).join(', ') || 'move them aside and try again'}`;
+  }
   if (/Please tell me who you are|Author identity unknown|unable to auto-detect email|empty ident name/i.test(output)) {
     return 'Git doesn\'t know who you are. Set your name and email once in a terminal: git config --global user.name "Your Name" and git config --global user.email you@example.com';
   }
@@ -197,7 +201,7 @@ export function remoteAction(root: string, action: RemoteAction, gitPull: 'merge
         const res = await network(run, ['pull', gitPull === 'rebase' ? '--rebase' : '--no-rebase', '--autostash'], true);
         if (res.code !== 0) {
           const after = await gitStatus(root, true);
-          if (after?.conflicts.length || after?.outside.conflicts.length) conflicted = true;
+          if (after?.conflicts.length || after?.outside.conflicts.length) { conflicted = true; markOperationStarted(run.top); }
           else throw new GitError(409, explain(outputOf(res)), outputOf(res));
         }
         status = await gitStatus(root, true);
@@ -588,4 +592,169 @@ export function undoCommit(root: string, hash?: string): Promise<WriteResult & {
     await run.must(['reset', '--soft', 'HEAD~1']);
     return { undone: status.head, message };
   });
+}
+
+// ---------- branches and operations ----------
+
+async function branchName(run: WriteRun, name: string): Promise<void> {
+  if (!name || name.startsWith('-') || /[\r\n]/.test(name)) throw new GitError(400, 'Enter a valid branch name');
+  const checked = await run.run(['check-ref-format', '--branch', name]);
+  if (checked.code !== 0) throw new GitError(400, 'Enter a valid branch name', outputOf(checked));
+}
+
+async function refExists(run: WriteRun, ref: string): Promise<boolean> {
+  return (await run.run(['rev-parse', '--verify', '--quiet', ref])).code === 0;
+}
+
+export function createBranch(root: string, name: string, from: string, switchTo: boolean): Promise<WriteResult & { stashConflict: boolean }> {
+  return write(root, async (run) => {
+    await branchName(run, name);
+    if (!from || from.startsWith('-') || /[\r\n]/.test(from) || !(await refExists(run, `${from}^{commit}`))) throw new GitError(400, 'Choose an existing branch or commit as the start point');
+    await run.must(['branch', name, from]);
+    if (!switchTo) return { stashConflict: false };
+    return switchWithin(run, root, name);
+  });
+}
+
+export function deleteBranch(root: string, name: string, force = false): Promise<WriteResult & { deleted: string }> {
+  return write(root, async (run) => {
+    await branchName(run, name);
+    if (!(await refExists(run, `refs/heads/${name}`))) throw new GitError(404, `Local branch ${name} does not exist`);
+    const status = await freshStatus(root);
+    if (status.branch === name) throw new GitError(409, 'Switch to another branch before deleting this one');
+    const res = await run.run(['branch', force ? '-D' : '-d', name]);
+    if (res.code !== 0) {
+      const output = outputOf(res);
+      if (!force && /not fully merged|not yet merged/i.test(output)) throw new GitError(409, `Branch ${name} is not merged. Confirm again to delete its commits`, output);
+      throw new GitError(409, explain(output), output);
+    }
+    return { deleted: name };
+  });
+}
+
+async function switchWithin(run: WriteRun, root: string, branch: string): Promise<{ stashConflict: boolean }> {
+  const local = await refExists(run, `refs/heads/${branch}`);
+  const remote = !local && await refExists(run, `refs/remotes/${branch}`);
+  if (!local && !remote) throw new GitError(404, `Branch ${branch} does not exist`);
+  const args = local ? ['switch', branch] : ['switch', '--track', '-c', branch.slice(branch.indexOf('/') + 1), branch];
+  const first = await run.run(args);
+  if (first.code === 0) return { stashConflict: false };
+  const refusal = outputOf(first);
+  if (!/would be overwritten by (?:checkout|switch)|Please commit your changes or stash them|Your local changes to the following files/i.test(refusal)) throw new GitError(409, explain(refusal), refusal);
+  const before = (await run.run(['rev-parse', '--verify', '--quiet', 'refs/stash'])).stdout.toString('utf8').trim();
+  await run.must(['stash', 'push', '-u', '-m', `Centurion switch to ${branch}`]);
+  const after = (await run.run(['rev-parse', '--verify', '--quiet', 'refs/stash'])).stdout.toString('utf8').trim();
+  if (!after || after === before) throw new GitError(409, 'Git could not put local changes aside', refusal);
+  const switched = await run.run(args);
+  if (switched.code !== 0) {
+    const restored = await run.run(['stash', 'pop', '--index']);
+    if (restored.code !== 0) throw new GitError(409, `Could not switch to ${branch}, and restoring local changes conflicted. The stash was kept`, outputOf(restored));
+    throw new GitError(409, explain(outputOf(switched)), outputOf(switched));
+  }
+  const popped = await run.run(['stash', 'pop', '--index']);
+  return { stashConflict: popped.code !== 0 };
+}
+
+export function switchBranch(root: string, branch: string): Promise<WriteResult & { stashConflict: boolean }> {
+  return write(root, async (run) => {
+    if (!branch || branch.startsWith('-') || /[\r\n]/.test(branch)) throw new GitError(400, 'Choose a branch');
+    return switchWithin(run, root, branch);
+  });
+}
+
+export function mergeBranch(root: string, branch: string): Promise<WriteResult & { conflicted: boolean }> {
+  return write(root, async (run) => {
+    if (!branch || branch.startsWith('-') || /[\r\n]/.test(branch) || !(await refExists(run, `${branch}^{commit}`))) throw new GitError(400, 'Choose an existing branch to merge');
+    const status = await freshStatus(root);
+    if (!status.branch) throw new GitError(409, 'Create or switch to a branch first');
+    if (status.operation) throw new GitError(409, `Finish or abort the ${status.operation.kind} first`);
+    const res = await run.run(['merge', '--autostash', '--no-edit', branch], { timeout: COMMIT_TIMEOUT, env: { GIT_EDITOR: 'true' } });
+    if (res.code !== 0) {
+      const after = await gitStatus(root, true);
+      if (after?.operation?.kind === 'merge') { markOperationStarted(run.top); return { conflicted: true }; }
+      throw new GitError(409, explain(outputOf(res)), outputOf(res));
+    }
+    return { conflicted: false };
+  });
+}
+
+export function rebaseBranch(root: string, onto: string): Promise<WriteResult & { conflicted: boolean }> {
+  return write(root, async (run) => {
+    if (!onto || onto.startsWith('-') || /[\r\n]/.test(onto) || !(await refExists(run, `${onto}^{commit}`))) throw new GitError(400, 'Choose an existing branch to rebase onto');
+    const status = await freshStatus(root);
+    if (!status.branch) throw new GitError(409, 'Create or switch to a branch first');
+    if (status.operation) throw new GitError(409, `Finish or abort the ${status.operation.kind} first`);
+    const commits = (await run.must(['rev-list', `${onto}..HEAD`])).stdout.toString('utf8').trim().split(/\s+/).filter(Boolean);
+    for (const hash of commits) {
+      if ((await run.must(['for-each-ref', '--contains', hash, '--count=1', '--format=%(refname)', 'refs/remotes'])).stdout.length) {
+        throw new GitError(409, 'Already pushed: rebasing these commits would need a force push, which Centurion never does');
+      }
+    }
+    const res = await run.run(['rebase', '--autostash', onto], { timeout: COMMIT_TIMEOUT, env: { GIT_EDITOR: 'true' } });
+    if (res.code !== 0) {
+      const after = await gitStatus(root, true);
+      if (after?.operation?.kind === 'rebase') { markOperationStarted(run.top); return { conflicted: true }; }
+      throw new GitError(409, explain(outputOf(res)), outputOf(res));
+    }
+    return { conflicted: false };
+  });
+}
+
+/** Read-only preview for the menu; rebaseBranch repeats the check under the write queue. */
+export async function rebaseSafety(root: string, onto: string): Promise<{ blocked: boolean }> {
+  if (!onto || onto.startsWith('-') || /[\r\n]/.test(onto)) throw new GitError(400, 'Choose a branch');
+  const repo = await needRepo(root);
+  const target = await git(repo.top, ['rev-parse', '--verify', '--quiet', `${onto}^{commit}`]);
+  if (target.code !== 0) throw new GitError(404, `Branch ${onto} does not exist`);
+  const commits = await git(repo.top, ['rev-list', `${onto}..HEAD`]);
+  if (commits.code !== 0) throw new GitError(409, 'Could not compare the branches', commits.stderr);
+  for (const hash of commits.stdout.toString('utf8').trim().split(/\s+/).filter(Boolean)) {
+    const found = await git(repo.top, ['for-each-ref', '--contains', hash, '--count=1', '--format=%(refname)', 'refs/remotes']);
+    if (found.code === 0 && found.stdout.length) return { blocked: true };
+  }
+  return { blocked: false };
+}
+
+export function updateFromDefault(root: string): Promise<WriteResult & { conflicted: boolean }> {
+  return write(root, async (run) => {
+    const status = await freshStatus(root);
+    if (!status.branch) throw new GitError(409, 'Create or switch to a branch first');
+    if (status.operation) throw new GitError(409, `Finish or abort the ${status.operation.kind} first`);
+    await network(run, ['fetch', 'origin']);
+    const head = (await run.run(['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'])).stdout.toString('utf8').trim();
+    const fallback = (await refExists(run, 'refs/remotes/origin/main')) ? 'origin/main' : (await refExists(run, 'refs/remotes/origin/master')) ? 'origin/master' : '';
+    const target = head || fallback;
+    if (!target) throw new GitError(409, 'Origin has no default branch');
+    if (status.branch === target.slice('origin/'.length)) throw new GitError(409, `Already on ${status.branch}`);
+    const res = await run.run(['merge', '--autostash', '--no-edit', target], { timeout: COMMIT_TIMEOUT, env: { GIT_EDITOR: 'true' } });
+    if (res.code !== 0) {
+      const after = await gitStatus(root, true);
+      if (after?.operation?.kind === 'merge') { markOperationStarted(run.top); return { conflicted: true }; }
+      throw new GitError(409, explain(outputOf(res)), outputOf(res));
+    }
+    return { conflicted: false };
+  });
+}
+
+export function finishOperation(root: string, action: 'abort' | 'continue'): Promise<WriteResult> {
+  return write(root, async (run) => {
+    const status = await freshStatus(root);
+    const kind = status.operation?.kind;
+    if (!kind) throw new GitError(409, 'No Git operation is in progress');
+    if (action === 'continue' && allGroups(status).conflicts.length) throw new GitError(409, 'Resolve the conflicts first');
+    const args = kind === 'merge' ? (action === 'abort' ? ['merge', '--abort'] : ['merge', '--continue']) : [kind, `--${action}`];
+    await run.must(args, { timeout: COMMIT_TIMEOUT, env: { GIT_EDITOR: 'true', GIT_SEQUENCE_EDITOR: 'true' } });
+    return {};
+  });
+}
+
+/** Git's prepared merge message, including its conflict list. */
+export async function preparedMergeMessage(root: string): Promise<{ message: string }> {
+  const repo = await needRepo(root);
+  const status = await gitStatus(root, true);
+  if (status?.operation?.kind !== 'merge') throw new GitError(409, 'No merge is in progress');
+  const location = await git(repo.top, ['rev-parse', '--git-path', 'MERGE_MSG']);
+  if (location.code !== 0) throw new GitError(500, 'Could not read the merge message', location.stderr);
+  const file = path.resolve(repo.top, location.stdout.toString('utf8').trim());
+  return { message: (await readFile(file, 'utf8')).trim() };
 }

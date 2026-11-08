@@ -17,6 +17,7 @@ import {
 } from './fileStore';
 import { Chevron, ChevronDownIcon, DiscardIcon, FileIcon, ForkIcon, MinusIcon, MoreIcon, PlusIcon } from './icons';
 import { continueList } from './listInput';
+import { BranchPopover } from './BranchPopover';
 
 /**
  * The Changes segment of the Files panel (`docs/git-plan.md` §3): the branch, the changes in git's groups
@@ -77,6 +78,8 @@ export function Changes({ agentId, rootPath, status, selected, result, onResult,
   const listRef = useRef<HTMLDivElement>(null);
   const [busy, setBusy] = useState<Set<string>>(new Set());
   const [remoteBusy, setRemoteBusy] = useState<string | null>(null);
+  const [operationBusy, setOperationBusy] = useState<'abort' | 'continue' | null>(null);
+  const [mergeMessage, setMergeMessage] = useState<{ text: string; at: number } | null>(null);
   const fetchedOnOpen = useRef<string | null>(null);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
   const [outsideOpen, setOutsideOpen] = useState(false);
@@ -103,6 +106,21 @@ export function Changes({ agentId, rootPath, status, selected, result, onResult,
     } finally {
       setRemoteBusy(null);
     }
+  };
+
+  const doOperation = async (action: 'abort' | 'continue') => {
+    setOperationBusy(action);
+    try {
+      if (action === 'continue' && status?.operation?.kind === 'merge') {
+        const r = await gitApi.mergeMessage(agentId);
+        setMergeMessage({ text: r.message, at: Date.now() });
+        return;
+      }
+      const r = await gitApi.operation(agentId, action);
+      onWritten(r.status);
+      onResult({ error: false, text: action === 'abort' ? 'Aborted the Git operation' : 'Continued the Git operation', details: '', commands: r.commands });
+    } catch (err) { onResult(remoteFailure(err)); }
+    finally { setOperationBusy(null); }
   };
 
   useEffect(() => {
@@ -337,7 +355,8 @@ export function Changes({ agentId, rootPath, status, selected, result, onResult,
 
   return (
     <div className="changes">
-      <BranchLine status={status} agentId={agentId} busy={remoteBusy} onAction={(action, remote) => void doRemote(action, remote)} onCancel={() => void gitApi.cancel(agentId)} />
+      <BranchLine status={status} agentId={agentId} busy={remoteBusy} onAction={(action, remote) => void doRemote(action, remote)} onCancel={() => void gitApi.cancel(agentId)} onWritten={onWritten} onResult={onResult} />
+      {status.operation && <OperationBanner status={status} busy={operationBusy} onAction={(action) => void doOperation(action)} />}
       <div className="changes-list" ref={listRef}>
         {total === 0 && <p className="files-note">No changes. Working tree clean.</p>}
         {inside.map((g) => renderGroup(g.group, g.items, 'in'))}
@@ -351,7 +370,7 @@ export function Changes({ agentId, rootPath, status, selected, result, onResult,
           </div>
         )}
       </div>
-      <CommitBox key={repoTop(rootPath, prefix)} agentId={agentId} top={repoTop(rootPath, prefix)} status={status} result={result} onResult={onResult} onWritten={onWritten} onSync={() => void doRemote('sync')} onRemoteBusy={setRemoteBusy} />
+      <CommitBox key={repoTop(rootPath, prefix)} agentId={agentId} top={repoTop(rootPath, prefix)} status={status} result={result} onResult={onResult} onWritten={onWritten} onSync={() => void doRemote('sync')} onRemoteBusy={setRemoteBusy} mergeMessage={mergeMessage} />
     </div>
   );
 }
@@ -410,12 +429,26 @@ function letterTitle(letter: GitLetter): string {
   return { M: 'Modified', A: 'Added', D: 'Deleted', R: 'Renamed', U: 'Untracked', C: 'Conflict' }[letter];
 }
 
-function BranchLine({ status, agentId, busy, onAction, onCancel }: { status: GitStatus; agentId: string; busy: string | null; onAction: (action: 'fetch' | 'pull' | 'push' | 'sync' | 'publish', remote?: string) => void; onCancel: () => void }) {
+function BranchLine({ status, agentId, busy, onAction, onCancel, onWritten, onResult }: { status: GitStatus; agentId: string; busy: string | null; onAction: (action: 'fetch' | 'pull' | 'push' | 'sync' | 'publish', remote?: string) => void; onCancel: () => void; onWritten: (status: GitStatus | null) => void; onResult: (result: ResultLine) => void }) {
   const [menu, setMenu] = useState(false);
+  const [branches, setBranches] = useState(false);
+  const [branchAt, setBranchAt] = useState({ left: 12, top: 70 });
   const [remotes, setRemotes] = useState<string[] | null>(null);
   const ref = useRef<HTMLSpanElement>(null);
+  const branchRef = useRef<HTMLSpanElement>(null);
   const close = useMemo(() => () => setMenu(false), []);
   useDismiss(menu, ref, close);
+  useDismiss(branches, branchRef, () => setBranches(false));
+  const positionBranches = () => {
+    const rect = branchRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setBranchAt(window.innerWidth <= 420 ? { left: 12, top: 70 } : { left: Math.max(12, Math.min(rect.left, window.innerWidth - 372)), top: rect.bottom + 4 });
+  };
+  useEffect(() => {
+    if (!branches) return;
+    window.addEventListener('resize', positionBranches);
+    return () => window.removeEventListener('resize', positionBranches);
+  }, [branches]);
   const name = status.branch ?? (status.head ? `detached at ${short(status.head)}` : 'detached HEAD');
   const fetched = status.fetchedAt === null ? 'Never fetched' : `Fetched ${Math.max(0, Math.floor((Date.now() - status.fetchedAt) / 60_000))} min ago`;
   const publish = () => {
@@ -428,7 +461,10 @@ function BranchLine({ status, agentId, busy, onAction, onCancel }: { status: Git
   return (
     <div className="git-branch mono" title={status.upstream ? `${name} · tracks ${status.upstream}` : name}>
       <ForkIcon size={13} />
-      <span className="git-branch-name">{name}</span>
+      <span className="git-branch-picker" ref={branchRef}>
+        <button className="git-branch-name" aria-haspopup="dialog" aria-expanded={branches} onClick={() => { positionBranches(); setBranches(!branches); }}>{name} <ChevronDownIcon size={12} /></button>
+        {branches && <BranchPopover at={branchAt} agentId={agentId} status={status} onWritten={onWritten} onResult={onResult} onClose={() => setBranches(false)} />}
+      </span>
       {status.behind > 0 && (
         <span className="git-ab" title={`${plural(status.behind, 'commit')} on ${status.upstream} you don't have · ${fetched}`}>
           ↓{status.behind}
@@ -452,6 +488,26 @@ function BranchLine({ status, agentId, busy, onAction, onCancel }: { status: Git
       </span>
     </div>
   );
+}
+
+function OperationBanner({ status, busy, onAction }: { status: GitStatus; busy: 'abort' | 'continue' | null; onAction: (action: 'abort' | 'continue') => void }) {
+  const op = status.operation!;
+  const count = status.conflicts.length + status.outside.conflicts.length;
+  const current = op.branch ?? status.branch ?? 'this branch';
+  const incoming = op.onto ?? 'the incoming commit';
+  const sentence = op.kind === 'merge' ? `Merging ${incoming} into ${current}` :
+    op.kind === 'rebase' ? `Rebasing ${current} onto ${incoming}${op.step && op.total ? ` · commit ${op.step} of ${op.total}` : ''}` :
+    op.kind === 'cherry-pick' ? `Cherry-picking ${incoming} into ${current}` :
+    op.kind === 'revert' ? `Reverting ${incoming} on ${current}` : `Applying patches on ${current}`;
+  return <div className="git-operation" role="status">
+    <span className="git-operation-text"><span className="git-operation-mark" aria-hidden="true">!</span> {sentence}{count ? ` · ${plural(count, 'conflict')}` : ''}</span>
+    <span className="git-operation-actions">
+      <button disabled={!!busy} onClick={() => onAction('abort')}>{busy === 'abort' ? 'Aborting…' : 'Abort'}</button>
+      <button disabled={!!busy || count > 0} title={count ? 'Resolve and stage all conflicts before continuing' : undefined} onClick={() => onAction('continue')}>{busy === 'continue' ? 'Continuing…' : 'Continue'}</button>
+    </span>
+    {op.kind === 'merge' && count > 0 && <span className="git-operation-hint">Your local changes come back when the merge ends.</span>}
+    <span className="git-operation-hint">{op.startedBy === 'Centurion' ? 'Started in Centurion.' : 'Started outside Centurion (agent or terminal).'}</span>
+  </div>;
 }
 
 // ---------- menus ----------
@@ -523,6 +579,7 @@ function CommitBox({
   onWritten,
   onSync,
   onRemoteBusy,
+  mergeMessage,
 }: {
   agentId: string;
   top: string;
@@ -532,6 +589,7 @@ function CommitBox({
   onWritten: (status: GitStatus | null) => void;
   onSync: () => void;
   onRemoteBusy: (action: string | null) => void;
+  mergeMessage: { text: string; at: number } | null;
 }) {
   const [message, setMessageState] = useState(() => commitDrafts.read(top));
   const [amend, setAmend] = useState(false);
@@ -552,6 +610,13 @@ function CommitBox({
     setMessageState(text);
     if (keep) commitDrafts.write(top, text);
   };
+
+  useEffect(() => {
+    if (!mergeMessage) return;
+    setAmend(false);
+    setMessage(mergeMessage.text, true);
+    field.current?.focus();
+  }, [mergeMessage?.at]);
 
   // The field grows with its text, from two lines to eight (the CSS caps it).
   useLayoutEffect(() => {
