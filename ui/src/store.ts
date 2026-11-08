@@ -9,6 +9,15 @@ export type LiveEvent =
 
 export type GitEvent = { repo: string; agentIds: string[] };
 
+/** A side chat's progress (the `btw` event). */
+export type SideChatEvent = { id: string; agentId: string } & (
+  | { type: 'delta'; text: string }
+  | { type: 'tool'; name: string; detail: string }
+  | { type: 'done'; costUsd: number; totalCostUsd: number }
+  | { type: 'error'; error: string }
+  | { type: 'closed' }
+);
+
 /** What a running agent is doing right now, from the live stream (not persisted). */
 export type Activity = {
   tool: { id: string; name: string; detail: string; since: number } | null;
@@ -50,6 +59,12 @@ class ManagerStore {
   onGit(fn: (e: GitEvent) => void): () => void {
     this.gitListeners.add(fn);
     return () => this.gitListeners.delete(fn);
+  }
+
+  private readonly btwListeners = new Set<(e: SideChatEvent) => void>();
+  onSideChat(fn: (e: SideChatEvent) => void): () => void {
+    this.btwListeners.add(fn);
+    return () => this.btwListeners.delete(fn);
   }
 
   onLive(fn: (e: LiveEvent) => void): () => void {
@@ -109,6 +124,10 @@ class ManagerStore {
     es.addEventListener('git', (e) => {
       const d = JSON.parse((e as MessageEvent).data) as GitEvent;
       for (const fn of this.gitListeners) fn(d);
+    });
+    es.addEventListener('btw', (e) => {
+      const d = JSON.parse((e as MessageEvent).data) as SideChatEvent;
+      for (const fn of this.btwListeners) fn(d);
     });
     es.addEventListener('message', (e) => {
       const d = JSON.parse((e as MessageEvent).data) as { agentId: string; message: LiveMessage };

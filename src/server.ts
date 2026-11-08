@@ -8,6 +8,7 @@ import type { Manager } from './manager.js';
 import { apiJson, apiMarkdown } from './docs.js';
 import { packageVersion } from './paths.js';
 import { bold, cyan, dim } from './term.js';
+import { SideChatError } from './sidechat.js';
 import { allFiles, FileError, listFolder, RawBody, readFileContent } from './files.js';
 import { commitFileDiff, DIFF_SIDES, diffSideText, fileDiff, gitBranches, gitCommit, gitLog, gitStatus, repoInfo, type DiffSide } from './git.js';
 import { conflictFile } from './gitconflict.js';
@@ -53,6 +54,7 @@ export function startServer(manager: Manager, config: Config): http.Server {
   manager.on('plan', (plan) => broadcast('plan', plan));
   manager.on('questions', (set) => broadcast('questions', set));
   manager.on('permission', (request) => broadcast('permission', request));
+  manager.on('btw', (e) => broadcast('btw', e));
   manager.on('message', (data) => {
     if (forward(data.message)) broadcast('message', data);
   });
@@ -110,7 +112,7 @@ export function startServer(manager: Manager, config: Config): http.Server {
       }
       res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(result));
     } catch (err) {
-      const status = err instanceof HttpError || err instanceof FileError ? err.status : 400;
+      const status = err instanceof HttpError || err instanceof FileError || err instanceof SideChatError ? err.status : 400;
       const message = err instanceof Error ? err.message : String(err);
       if (!res.headersSent) res.writeHead(status, { 'content-type': 'application/json' });
       const git = err instanceof GitError ? { details: err.details, commands: err.commands } : {};
@@ -630,6 +632,36 @@ export const routes: Route[] = [
   },
   {
     method: 'POST',
+    path: '/api/agents/:id/btw',
+    summary:
+      "Starts a side chat (/btw): a throw-away fork of the agent's session that answers a question without it entering the session. Only Read, Glob and Grep run. Also while the agent runs (the fork starts from the saved session). The agent's status, queue, cache and last activity don't change; the cost is added to its total. Answers stream as `btw` events",
+    body: '`{ text }`',
+    result: '`{ id }`: the side chat, open for follow-ups until closed (or 30 idle minutes)',
+    handler: ({ manager, params, body }) => manager.sideChats.start(manager.get(params.id).id, str(body.text, 'text')),
+  },
+  {
+    method: 'POST',
+    path: '/api/btw/:id/messages',
+    summary: 'Asks a follow-up in an open side chat; refused (409) while it is still answering',
+    body: '`{ text }`',
+    result: '`{}`',
+    handler: ({ manager, params, body }) => {
+      manager.sideChats.ask(params.id, str(body.text, 'text'));
+      return {};
+    },
+  },
+  {
+    method: 'POST',
+    path: '/api/btw/:id/close',
+    summary: "Closes a side chat and ends its process (a POST, so the UI can send it with sendBeacon and `?token=` when the page closes)",
+    result: '`{}`',
+    handler: ({ manager, params }) => {
+      manager.sideChats.close(params.id);
+      return {};
+    },
+  },
+  {
+    method: 'POST',
     path: '/api/agents/:id/rewind',
     summary: 'Drops that turn and everything after it; only when idle with nothing queued. Files are not touched',
     body: '`{ promptUuid }`',
@@ -767,6 +799,10 @@ export const SSE_EVENTS: { name: string; data: string }[] = [
   { name: 'plan', data: 'A track plan that was created or changed (all plans follow each snapshot)' },
   { name: 'questions', data: 'A question set that was created or changed (all sets follow each snapshot)' },
   { name: 'permission', data: 'A permission request that was opened or answered (all requests follow each snapshot)' },
+  {
+    name: 'btw',
+    data: "`{ id, agentId, type, ... }`: a side chat's progress: `delta` (`text`, streamed answer text), `tool` (`name`, `detail`: a read-only tool step), `done` (`costUsd` of this answer, `totalCostUsd` of the side chat), `error` (`error`) and `closed`",
+  },
   {
     name: 'git',
     data: "`{ repo, agentIds }`: a git write ran in the repository whose top folder is `repo` (also when it failed); `agentIds` are the agents with a folder in it, whose git views should refresh",

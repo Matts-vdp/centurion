@@ -7,6 +7,7 @@ import { agentState, deliverable, isHeld } from './status';
 import { composerFill, lastSeen, pendingFor, transcriptPin, useManager } from './store';
 import { parsePrompt } from './timeline';
 import { continueList, indentList } from './listInput';
+import { btwQuestion, sideChats } from './sideChatStore';
 import { baseName, dirName, filterPaths, filesApi, type Root } from './fileStore';
 import { promptHistory, type Recalled } from './promptHistory';
 
@@ -70,7 +71,7 @@ export function Composer({ agent, agents, focused, run, onInterrupt }: Props) {
   const [menuClosedAt, setMenuClosedAt] = useState<string | null>(null);
   const skills = useCommands(agent.id, slash !== null);
   const menuOpen = slash !== null && menuClosedAt !== text;
-  const matches = menuOpen && skills.list ? matchCommands(skills.list, slash[1]) : [];
+  const matches = menuOpen && skills.list ? matchCommands([BTW_COMMAND, ...skills.list.filter((c) => c.name !== BTW_COMMAND.name)], slash[1]) : [];
   const active = Math.min(menuIndex, Math.max(0, matches.length - 1));
   useEffect(() => setMenuIndex(0), [slash?.[1]]);
   const fillCommand = (c: CommandOption) => {
@@ -175,6 +176,13 @@ export function Composer({ agent, agents, focused, run, onInterrupt }: Props) {
     const value = text.trim();
     const attached = images.list;
     if ((!value && attached.length === 0) || sending || images.busy) return;
+    // `/btw <question>` asks on the side: the agent never sees it.
+    const side = attached.length === 0 ? btwQuestion(value) : null;
+    if (side !== null) {
+      sideChats.open(agent.id, { question: side });
+      setText('');
+      return;
+    }
     dictation.current?.stop();
     setSending(true);
     // Your own message should be in view when it lands, even if you had scrolled up.
@@ -535,6 +543,13 @@ function useCommands(agentId: string, active: boolean): { list: CommandOption[] 
   }, [agentId, active]);
   return state.id === agentId ? state : { list: commandCache.get(agentId)?.list ?? null, error: null };
 }
+
+/** Centurion's own command: a side question in a throw-away copy of the session (the side chat panel). */
+const BTW_COMMAND: CommandOption = {
+  name: 'btw',
+  description: "Ask on the side (Ctrl+;): answered from a copy of the session, never enters the conversation",
+  argumentHint: '<question>',
+};
 
 /** Names starting with the query first, then names containing it, then descriptions containing it. */
 function matchCommands(list: CommandOption[], query: string): CommandOption[] {

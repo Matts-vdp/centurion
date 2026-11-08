@@ -118,6 +118,11 @@ export const commands = {
   models: () => api<ModelOption[]>('/api/models'),
   commands: (id: string) => api<CommandOption[]>(`/api/agents/${id}/commands`),
   history: (id: string) => api<HistoryMessage[]>(`/api/agents/${id}/history`),
+  btwStart: (id: string, text: string) => api<{ id: string }>(`/api/agents/${id}/btw`, { method: 'POST', body: { text } }),
+  btwAsk: (chatId: string, text: string) => api<object>(`/api/btw/${chatId}/messages`, { method: 'POST', body: { text } }),
+  /** keepalive: it still goes out while the page closes. */
+  btwClose: (chatId: string) =>
+    fetch(`/api/btw/${chatId}/close`, { method: 'POST', keepalive: true, headers: { authorization: `Bearer ${token}` } }).then(() => undefined),
   subagent: (id: string, toolUseId: string) => api<HistoryMessage[]>(`/api/agents/${id}/subagents/${toolUseId}`),
   startPlan: (id: string, start: string[], skip: string[]) => api<Plan>(`/api/plans/${id}/start`, { method: 'POST', body: { start, skip } }),
   setPlanNotify: (id: string, mode: 'round' | 'each') => api<Plan>(`/api/plans/${id}/notify`, { method: 'POST', body: { mode } }),

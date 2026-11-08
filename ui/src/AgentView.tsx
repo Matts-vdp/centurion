@@ -4,6 +4,8 @@ import { Composer } from './Composer';
 import { FilesPanel } from './Files';
 import { fileLinks, panels, usePanel, type OpenRequest } from './fileStore';
 import { Header } from './Header';
+import { SideChat } from './SideChat';
+import { sideChats } from './sideChatStore';
 import { useWindowActive } from './hooks';
 import { CloseIcon } from './icons';
 import { lastSeen, store, type LiveEvent } from './store';
@@ -80,6 +82,20 @@ export function AgentView({ agent, agents, epoch, pane, focused, onSelect, onClo
     return () => window.removeEventListener('keydown', onKey);
   }, [focused, pane]);
 
+  // Side questions (/btw): Ctrl+; opens and closes the panel of the focused pane. The side chat ends when no pane shows the agent.
+  useEffect(() => sideChats.attach(agent.id), [agent.id]);
+  useEffect(() => {
+    if (!focused) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.code === 'Semicolon' || e.key === ';')) {
+        e.preventDefault();
+        sideChats.toggle(agent.id);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [focused, agent.id]);
+
   const interrupt = useCallback(() => run(() => commands.interrupt(agent.id)), [run, agent.id]);
 
   // Alt+← goes to the parent orchestrator.
@@ -130,6 +146,7 @@ export function AgentView({ agent, agents, epoch, pane, focused, onSelect, onClo
       />
       <Composer agent={agent} agents={agents} focused={focused} run={run} onInterrupt={interrupt} />
       </div>
+      <SideChat agent={agent} focused={focused} />
       {files.open && <FilesPanel key={agent.id} agent={agent} pane={pane} request={fileRequest} onRequestDone={doneRequest} />}
       </div>
     </div>

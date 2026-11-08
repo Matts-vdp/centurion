@@ -41,6 +41,7 @@ import { composerFill, pendingPermissions, permissionFor, store, transcriptPin, 
 import { displayName, shortPath, summarize } from './tools';
 import { fromSubagent, type Item, type PromptItem, type Sub, type ToolItem, type Transcript as T } from './timeline';
 import { continueList, indentList } from './listInput';
+import { AskAboutSelection } from './SideChat';
 
 type Props = {
   transcript: T;
@@ -177,6 +178,7 @@ export function Transcript({ transcript, loading, loadError, agent, agents, focu
         ))}
       </div>
     </div>
+      <AskAboutSelection agentId={agent.id} container={scroller} />
       {behind && (
         <button className="jump-latest" onClick={jump} title="Scroll to the newest activity and follow it">
           <ArrowDownIcon size={14} />

@@ -33,6 +33,7 @@ import {
   type ProposeInput,
 } from './decisions.js';
 import { KeepWarm, active as keepWarmActive } from './keepwarm.js';
+import { SideChats, type SideChatEvent } from './sidechat.js';
 import { isInside } from './files.js';
 import { StateStore, type State } from './state.js';
 import { createDisplayTools } from './display.js';
@@ -73,6 +74,8 @@ export type ManagerEvents = {
   plan: [Plan];
   questions: [QuestionSet];
   permission: [PermissionRequest];
+  /** A side chat's progress (/btw). */
+  btw: [SideChatEvent];
 };
 
 /** A pending request and how to answer the SDK's callback. */
@@ -109,6 +112,19 @@ export class Manager extends EventEmitter<ManagerEvents> {
     isBusy: (id) => this.runtimes.get(id)?.isBusy ?? false,
     options: (rec) => this.buildOptions(rec),
     changed: (rec) => this.changed(rec),
+  });
+
+  /** Side chats (/btw): throw-away forks that answer questions about a session without entering it. */
+  readonly sideChats = new SideChats({
+    get: (id) => this.get(id),
+    options: (rec) => this.buildOptions(rec),
+    addCost: (id, usd) => {
+      const rec = this.runtimes.get(id)?.rec;
+      if (!rec) return;
+      rec.costUsd += usd;
+      this.changed(rec);
+    },
+    emit: (e) => this.emit('btw', e),
   });
 
   /** Images of queued messages, one folder per agent, next to the state file. */
@@ -587,6 +603,7 @@ export class Manager extends EventEmitter<ManagerEvents> {
 
   shutdown(): void {
     this.warmer.dispose();
+    this.sideChats.dispose();
     for (const rt of this.runtimes.values()) rt.dispose();
     this.store.writeNow(this.state());
   }
