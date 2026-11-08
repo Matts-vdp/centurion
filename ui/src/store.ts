@@ -252,6 +252,9 @@ class Signal<V> {
 /** Text to put into an agent's composer (a rewound message goes back there to edit and resend). */
 export const composerFill = new Signal<{ agentId: string; text: string } | null>(null);
 
+/** Asks an agent's transcript to scroll to the bottom and follow it again (sending a message does). */
+export const transcriptPin = new Signal<{ agentId: string; at: number } | null>(null);
+
 /** The chat whose New expert form is open in the sidebar (the header menu opens it too). */
 export const newExpertFor = new Signal<string | null>(null);
 

@@ -3,7 +3,7 @@ import { commands, type AgentRecord, type CommandOption, type ImageData, type Qu
 import { useNow } from './hooks';
 import { AttachImageIcon, CloseIcon, SendIcon } from './icons';
 import { agentState, deliverable, isHeld } from './status';
-import { composerFill, lastSeen, pendingFor, useManager } from './store';
+import { composerFill, lastSeen, pendingFor, transcriptPin, useManager } from './store';
 import { parsePrompt } from './timeline';
 import { continueList } from './listInput';
 
@@ -97,6 +97,8 @@ export function Composer({ agent, agents, focused, run, onInterrupt }: Props) {
     const attached = images.list;
     if ((!value && attached.length === 0) || sending || images.busy) return;
     setSending(true);
+    // Your own message should be in view when it lands, even if you had scrolled up.
+    transcriptPin.set({ agentId: agent.id, at: Date.now() });
     await run(async () => {
       await commands.send(agent.id, value, attached.map(({ mediaType, data }) => ({ mediaType, data })));
       // Keep anything typed or attached while the request was in flight.

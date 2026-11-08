@@ -3,6 +3,7 @@ import { ChevronRight, type LucideProps } from 'lucide-react';
 
 export {
   Archive as ArchiveIcon,
+  ArrowDown as ArrowDownIcon,
   ArrowLeft as BackIcon,
   ArrowUp as SendIcon,
   ArrowUp as ArrowUpIcon,

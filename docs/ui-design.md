@@ -97,7 +97,11 @@ Primary buttons and the send button are the accent with `--on-accent` text. An e
 ### Icons and motion
 
 - One stroke icon set: Lucide, 16 px, 1.75 stroke (thin enough to stay quiet, thick enough to stay crisp at 14–16 px). `ui/src/icons.tsx` re-exports the icons the app uses under its own names.
-- Motion is functional: 120–160 ms ease-out for hover and expand, a rotating arc for running, a soft shimmer on the live status text. All of it off under `prefers-reduced-motion`.
+- Motion is functional: 120–160 ms ease-out for hover and expand, a rotating arc for running, a soft shimmer on the live status text, and meters (the context ring, plan and question segments) easing to their new value. All of it off under `prefers-reduced-motion`. No motion in the sidebar's ordering: rows that move between groups jump, since a monitoring sidebar that slides draws the eye all the time.
+- Selected text is the accent at about a third, stronger than `--accent-soft` (which marks selected diff lines). Prose wraps with `text-wrap: pretty`; headings, plan titles and questions with `balance`.
+- Scrollbars are a quiet grey in both themes; only inner scrollers (code, diffs, trees, tables) are thin, so the transcript's and panel's stay easy to grab.
+
+**The browser tab.** The title is `(n) <agent> · Centurion`, with `n` the Needs you count, and the favicon gets a ringed dot: amber when something needs you, blue while agents run (`ui/src/tabStatus.ts`). Both are static. An agent on screen only counts as seen while the window is in view (visible and focused), so a reply that lands while you are elsewhere stays unread.
 
 ## 4. Agents and status
 
@@ -126,7 +130,7 @@ Orchestrator rows add a roll-up of their experts on the second line when collaps
 
 ## 5. Transcript
 
-The transcript column is centred, 760 px max, with prose at 15 px. Item by item:
+The transcript column is centred, 760 px max, with prose at 15 px. It follows the bottom while you are there (within 80 px), also when content grows in place (streamed prose, diagrams, images, subagent steps). Scrolled up, it stays put; when new items arrive or the running turn grows below, a `--raised` pill with a float shadow, `↓ New activity`, sits centred above the composer and jumps back (instantly, then follows again). Sending a message always brings you back to the bottom. Item by item:
 
 - **Messages into the agent** (from you, the orchestrator, or the manager when it is a real prompt) sit in a `--fill` block with a 12 px radius and no border. A speaker line above it: mark, name and time (`You · 11:20`, `[TS] test2 asked · 11:18`). Long ones fold after 8 lines.
 - **Agent prose** has no container. Markdown with real typographic care: 1.65 line height, headings at 15/17 px 600, tables with hairline rows and no outer border, inline code on `--fill` in Plex Mono, code blocks on `--sunken` with a language label and a copy button.

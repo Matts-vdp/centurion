@@ -4,6 +4,7 @@ import { Composer } from './Composer';
 import { FilesPanel } from './Files';
 import { fileLinks, panels, usePanel, type OpenRequest } from './fileStore';
 import { Header } from './Header';
+import { useWindowActive } from './hooks';
 import { CloseIcon } from './icons';
 import { lastSeen, store, type LiveEvent } from './store';
 import { Transcript } from './Transcript';
@@ -35,10 +36,12 @@ export function AgentView({ agent, agents, epoch, pane, focused, onSelect, onClo
   const [error, setError] = useState('');
   const parent = agent.parentId ? agents.get(agent.parentId) : undefined;
 
-  // Opening an agent, or watching it finish a turn, counts as seen.
+  // Opening an agent, or watching it finish a turn, counts as seen, but only while the window is
+  // in view: a reply that lands while you are elsewhere stays unread (and counts in the tab title).
+  const active = useWindowActive();
   useEffect(() => {
-    lastSeen.set(agent.id, agent.lastActivityAt);
-  }, [agent.id, agent.lastActivityAt]);
+    if (active) lastSeen.set(agent.id, agent.lastActivityAt);
+  }, [agent.id, agent.lastActivityAt, active]);
 
   const run = useCallback(async (action: () => Promise<unknown>) => {
     setError('');

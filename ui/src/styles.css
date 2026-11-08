@@ -159,6 +159,29 @@ body,
   margin: 0;
 }
 
+/* Selected text in the accent, stronger than --accent-soft (which already marks selected diff lines). */
+::selection {
+  background: color-mix(in srgb, var(--accent) 32%, transparent);
+}
+
+/* Scrollbars in the theme's quiet grey; thin only on inner scrollers, so the main ones stay easy to grab. */
+* {
+  scrollbar-color: color-mix(in srgb, var(--text-3) 45%, transparent) transparent;
+}
+
+.code-block pre,
+.diff,
+.v-code-scroll,
+.table-wrap,
+.mermaid-diagram,
+.tree,
+.file-tree,
+.switcher-list,
+.event-preview,
+.permission-body .step-body {
+  scrollbar-width: thin;
+}
+
 body {
   background: var(--canvas);
   color: var(--text);
@@ -1193,6 +1216,7 @@ button.crumb:hover {
 .ring-value {
   stroke: var(--text-2);
   stroke-linecap: round;
+  transition: stroke-dasharray 160ms ease-out, stroke 160ms ease-out;
 }
 
 .context-ring.warn .ring-value {
@@ -1532,6 +1556,49 @@ button.crumb:hover {
 
 /* ---------- transcript: a document in a centred reading column ---------- */
 
+.transcript-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* Scrolled up while new activity arrived: a quiet floating button back to the bottom. */
+.jump-latest {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px 0 10px;
+  border: 0;
+  border-radius: 15px;
+  background: var(--raised);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12.5px;
+  box-shadow: var(--shadow-float);
+  cursor: pointer;
+  animation: jump-in 140ms ease-out;
+  transition: color 120ms ease-out, background 120ms ease-out;
+}
+
+.jump-latest:hover {
+  color: var(--accent-text);
+  background: var(--fill);
+}
+
+@keyframes jump-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 6px);
+  }
+}
+
 .transcript {
   flex: 1;
   overflow-y: auto;
@@ -1700,6 +1767,21 @@ button.crumb:hover {
   font-size: 15px;
   line-height: 1.65;
   overflow-wrap: anywhere;
+}
+
+/* No lonely last words in prose; headings and titles break into even lines. */
+.prose p,
+.prose li {
+  text-wrap: pretty;
+}
+
+.prose h1,
+.prose h2,
+.prose h3,
+.prose h4,
+.plan-title,
+.question-text {
+  text-wrap: balance;
 }
 
 .prose > :first-child {
@@ -3953,6 +4035,7 @@ button.crumb:hover {
   height: 3px;
   border-radius: 2px;
   background: var(--line);
+  transition: background 160ms ease-out;
 }
 
 .segment.done {

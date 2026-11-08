@@ -7,6 +7,7 @@ import { DRAG_TYPE, layout, useLayout, type DropZone } from './layout';
 import { AgentMark } from './Mark';
 import { Sidebar } from './Sidebar';
 import { store, useManager } from './store';
+import { useTabStatus } from './tabStatus';
 import { Switcher } from './Switcher';
 
 const NARROW = '(max-width: 899px)';
@@ -32,6 +33,7 @@ export function App() {
   const narrow = useMedia(NARROW);
   const [sidebarOpen, setSidebarOpen] = useState(() => !window.matchMedia(NARROW).matches || !layout.focused());
   const [switcher, setSwitcher] = useState(false);
+  useTabStatus(selected ? agents.get(selected) : undefined);
 
   useEffect(() => store.connect(), []);
   useEffect(() => {

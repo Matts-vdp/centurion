@@ -8,6 +8,7 @@ import { commands, type AgentRecord, type PermissionDecision, type PermissionReq
 import { toBlocks, workDuration, workSummary, type RenderBlock, type Step } from './blocks';
 import { useNow } from './hooks';
 import {
+  ArrowDownIcon,
   BellIcon,
   BotIcon,
   CheckIcon,
@@ -36,7 +37,7 @@ import { PlanView } from './Plan';
 import { QuestionSetView } from './Questions';
 import { VisualView } from './Visual';
 import { clock, duration, money } from './status';
-import { composerFill, pendingPermissions, permissionFor, store, useManager, viewPrefs } from './store';
+import { composerFill, pendingPermissions, permissionFor, store, transcriptPin, useManager, viewPrefs } from './store';
 import { displayName, shortPath, summarize } from './tools';
 import { fromSubagent, type Item, type PromptItem, type Sub, type ToolItem, type Transcript as T } from './timeline';
 import { continueList } from './listInput';
@@ -74,10 +75,56 @@ export function Transcript({ transcript, loading, loadError, agent, agents, focu
   }, [focused]);
 
   // Keep the view pinned to the bottom while new items arrive, unless the user scrolled up.
+  // Scrolled up, new blocks below show the jump-to-latest button.
+  const column = useRef<HTMLDivElement>(null);
+  const [behind, setBehind] = useState(false);
+  const seenCount = useRef(0);
+  const runningRef = useRef(running);
+  runningRef.current = running;
+  const { permissions } = useManager();
+  const asks = pendingPermissions(agent.id, { permissions });
+  const count = blocks.length + asks.length;
   useLayoutEffect(() => {
     const el = scroller.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;
-  }, [blocks, loading]);
+    else if (!loading && count > seenCount.current) setBehind(true);
+    seenCount.current = count;
+  }, [blocks, loading, count]);
+
+  // Content also grows in place (streamed prose, diagrams, images, subagent steps): follow it too.
+  useEffect(() => {
+    const el = column.current;
+    if (!el) return;
+    let height = el.offsetHeight;
+    const observer = new ResizeObserver(() => {
+      const grew = el.offsetHeight > height;
+      height = el.offsetHeight;
+      const s = scroller.current;
+      if (!s || !grew) return;
+      if (stick.current) s.scrollTop = s.scrollHeight;
+      else if (runningRef.current) setBehind(true);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  // Instant, not smooth: a smooth scroll would race the content still arriving.
+  const jump = () => {
+    const el = scroller.current;
+    stick.current = true;
+    setBehind(false);
+    if (el) el.scrollTop = el.scrollHeight;
+  };
+  // Sending a message brings the view back to the bottom.
+  useEffect(() => {
+    const off = transcriptPin.subscribe(() => {
+      const pin = transcriptPin.get();
+      if (pin?.agentId === agent.id) jump();
+    });
+    return () => {
+      off();
+    };
+  }, [agent.id]);
 
   // expertId → key of the latest delegation to it; only that one follows the expert live.
   const latest = useMemo(() => {
@@ -89,8 +136,6 @@ export function Transcript({ transcript, loading, loadError, agent, agents, focu
   const watching = [...latest.keys()].some((id) => agents.get(id)?.status === 'running');
   const now = useNow(running || watching);
 
-  const { permissions } = useManager();
-  const asks = pendingPermissions(agent.id, { permissions });
   const ctx: Ctx = { agent, agents, onSelect, now, verbose, latest, run, subs: transcript.subs, asks: asks.length };
   // message key → how many messages come after it (the turns a rewind there drops besides its own).
   const messagesAfter = useMemo(() => {
@@ -99,15 +144,17 @@ export function Transcript({ transcript, loading, loadError, agent, agents, focu
   }, [blocks]);
 
   return (
+    <div className="transcript-wrap">
     <div
       className="transcript"
       ref={scroller}
       onScroll={(e) => {
         const el = e.currentTarget;
         stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+        if (stick.current) setBehind(false);
       }}
     >
-      <div className="transcript-column">
+      <div className="transcript-column" ref={column}>
         {verbose && (
           <div className="verbose-note">
             Verbose: every step open.{' '}
@@ -129,6 +176,13 @@ export function Transcript({ transcript, loading, loadError, agent, agents, focu
           <PermissionView key={p.id} request={p} ctx={ctx} autoFocus={focused && i === 0} />
         ))}
       </div>
+    </div>
+      {behind && (
+        <button className="jump-latest" onClick={jump} title="Scroll to the newest activity and follow it">
+          <ArrowDownIcon size={14} />
+          New activity
+        </button>
+      )}
     </div>
   );
 }
