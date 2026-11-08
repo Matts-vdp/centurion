@@ -1,6 +1,6 @@
 # Git: changes, commits, sync, branches, log and conflicts
 
-**Status:** planned. Builds on the Files panel (`docs/files-plan.md`), which already shows git status and a unified diff against `HEAD`.
+**Status:** step 1 (backend reads) done; the rest planned. Builds on the Files panel (`docs/files-plan.md`), which already shows git status and a unified diff against `HEAD`.
 
 The goal: the git work you do around an agent's changes, without leaving the manager. You read the diff, stage what you want, type a message, then commit and push. You sync with the remote, switch or create a branch, and merge `master` in with your open changes put aside and restored on their own. When that conflicts, you resolve it in the same panel. Rider and VS Code are the model (research summary in §11); where they differ, this plan picks what fits a manager of agents.
 
@@ -150,7 +150,7 @@ The third segment of the panel.
 
 ## 10. API
 
-All under the token check. Each takes `root` (only 0 for writes) and resolves the repository from it. Writes return the new status. Paths are repo-relative for git routes.
+All under the token check. Each takes `root` (only 0 for writes) and resolves the repository from it. Writes return the new status. Paths are repo-relative for git routes, except the working-tree diff's `path`, which is relative to the root like the file routes (it only opens inside the folder); the status's `prefix` converts between the two.
 
 | Method | Path | What |
 |---|---|---|
@@ -171,7 +171,14 @@ All under the token check. Each takes `root` (only 0 for writes) and resolves th
 | GET | `/api/agents/:id/git/conflict?path=` | `{ base, yours, incoming, labels, blocks }` |
 | POST | `/api/agents/:id/git/resolve` | `{ path, content }` or `{ path, take: 'yours' \| 'incoming' \| 'delete' }`, then stages it |
 
-Backend notes (`src/git.ts`, new; the read helpers move there from `src/files.ts`):
+As built in step 1 (the route table in `src/server.ts` has the exact shapes; `centurion api` prints them):
+- Status adds `prefix` (the root's path in the repository, `''` or ending in `/`). `outside` is `{ conflicts, staged, unstaged }`, the same groups as the root's. Group entries are `{ path, status, added, removed, oldPath?, code? }`, `code` being a conflict's two letters (`UU`, `DU`, …) for the delete/modify choices. `operation` also has `branch` (the branch a rebase is rebasing, as HEAD is detached meanwhile) and a kind `am`. Untracked files outside the folder get no line counts (they aren't read).
+- Diff: `context` is a number of lines, `whitespace=ignore` gives `-w`. `hash` is the sha1 of the whole diff before truncation. A staged rename diffs against its old path.
+- Log: commits also have `email` and `incoming` (on the upstream, not in HEAD), the result has `more`. `scope=branch` logs HEAD and its upstream, so incoming commits show; `pushed` means reachable from any remote-tracking branch. `filter` searches the newest 50 000 commits.
+- Commit details: `files` entries have `inside`; `?path=` is refused (403) for a file outside the agent's folder, like the working-tree diffs.
+- Branches add `remotes` (the remote names, for Publish). The `main` / `master` fallback for `default` counts a branch that exists locally or on origin, else `default` is null. `local` lists the current branch first; each has `upstream`, `ahead`, `behind` and `gone`.
+
+Backend notes (`src/git.ts`, new; the read helpers move there from `src/files.ts`, and the confinement helpers they share to `src/confine.ts`):
 - Git runs as `git` itself, as today: no shell, `core.quotepath=off`, `GIT_OPTIONAL_LOCKS=0` for reads only (writes need the locks).
 - A per-repository promise queue for writes, keyed by `git rev-parse --show-toplevel`.
 - Timeouts: 10 s for local commands, 5 min for network commands and for commit (hooks).

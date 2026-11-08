@@ -8,7 +8,8 @@ import type { Manager } from './manager.js';
 import { apiJson, apiMarkdown } from './docs.js';
 import { packageVersion } from './paths.js';
 import { bold, cyan, dim } from './term.js';
-import { allFiles, FileError, fileDiff, gitStatus, listFolder, RawBody, readFileContent, repoInfo } from './files.js';
+import { allFiles, FileError, listFolder, RawBody, readFileContent } from './files.js';
+import { commitFileDiff, DIFF_SIDES, fileDiff, gitBranches, gitCommit, gitLog, gitStatus, repoInfo, type DiffSide } from './git.js';
 import { EFFORT_LEVELS, IMAGE_TYPES, type EffortLevel, type ImageData, type PermissionDecision } from './types.js';
 
 const MAX_BODY = 1024 * 1024;
@@ -339,22 +340,72 @@ export const routes: Route[] = [
   {
     method: 'GET',
     path: '/api/agents/:id/git/status',
-    summary: 'Git status of a root',
+    summary:
+      "Git status of the repository holding a root: branch, upstream, a merge or rebase in progress, and the changes as staged (HEAD ↔ index), unstaged (index ↔ working tree, untracked included) and conflicts. Group paths are relative to the repository; changes outside the root's folder are under `outside`",
     query: '`root`',
-    result: '`{ status: { branch, ahead, behind, files: [{ path, status, added, removed }] } }`, or `{ status: null }` outside git',
+    result:
+      "`{ status: { branch, detached, head, upstream, ahead, behind, fetchedAt, operation, prefix, conflicts, staged, unstaged, outside: { conflicts, staged, unstaged }, files } }`, or `{ status: null }` outside git. Group entries: `{ path, status, added, removed, oldPath?, code? }` (`code`: a conflict's two letters, `UU`, `DU`, …). `operation`: null or `{ kind: 'merge' | 'rebase' | 'cherry-pick' | 'revert' | 'am', onto, step, total, branch }`. `prefix`: the root's path in the repository. `files`: the root's changed files against HEAD, paths relative to the root (`{ path, status, added, removed, oldPath? }`, for the tree marks)",
     handler: async (ctx) => ({ status: await gitStatus(fileRoot(ctx).root, true) }),
   },
   {
     method: 'GET',
     path: '/api/agents/:id/git/diff',
-    summary: "A file's hunks against `HEAD` (untracked: all added); 400 outside git",
-    query: '`root`, `path`',
-    result: '`{ diff, status, binary, truncated }`',
+    summary:
+      "A file's hunks (`path` relative to the root, like the file routes): `side=head` HEAD ↔ working tree (the default), `staged` HEAD ↔ index, `worktree` index ↔ working tree. Untracked: all added. 400 outside git",
+    query: '`root`, `path`, `side?`, `context?` (lines around each change), `whitespace?` (`ignore` for `-w`)',
+    result: '`{ diff, status, binary, truncated, hash }`; `hash` is the sha1 of the whole diff',
     handler: (ctx) => {
       const { root, rel } = fileRoot(ctx);
       if (!rel) throw new HttpError(400, '"path" is required');
-      return fileDiff(root, rel);
+      const q = ctx.url.searchParams;
+      const side = (q.get('side') ?? 'head') as DiffSide;
+      if (!DIFF_SIDES.includes(side)) throw new HttpError(400, `"side" must be one of ${DIFF_SIDES.join(', ')}`);
+      const context = q.get('context');
+      if (context !== null && !/^\d{1,7}$/.test(context)) throw new HttpError(400, '"context" must be a number of lines');
+      const whitespace = q.get('whitespace');
+      if (whitespace !== null && whitespace !== 'ignore' && whitespace !== 'show') throw new HttpError(400, '"whitespace" must be "ignore" or "show"');
+      return fileDiff(root, rel, { side, context: context === null ? undefined : Number(context), ignoreWhitespace: whitespace === 'ignore' });
     },
+  },
+  {
+    method: 'GET',
+    path: '/api/agents/:id/git/log',
+    summary:
+      "Commits of the root's repository, newest first (topological order), 200 per page. `scope=branch` (default): HEAD and its upstream; `all`: every branch, remote branch and tag; `range` (`main..HEAD`) replaces the scope. `filter` matches subject, author and hash prefix (in the newest 50000 commits)",
+    query: '`root`, `scope?`, `skip?`, `filter?`, `range?`',
+    result:
+      "`{ commits: [{ hash, parents, subject, author, email, date, refs: [{ name, kind: 'branch' | 'remote' | 'tag' | 'head', head? }], pushed, incoming }], more }`. `pushed`: on a remote-tracking branch; `incoming`: on the upstream, not in HEAD",
+    handler: (ctx) => {
+      const q = ctx.url.searchParams;
+      const scope = q.get('scope') ?? 'branch';
+      if (scope !== 'branch' && scope !== 'all') throw new HttpError(400, '"scope" must be "branch" or "all"');
+      const skip = Number(q.get('skip') ?? '0');
+      if (!Number.isInteger(skip) || skip < 0) throw new HttpError(400, '"skip" must be a number');
+      return gitLog(fileRoot(ctx).root, { scope, skip, filter: q.get('filter') ?? '', range: q.get('range') ?? '' });
+    },
+  },
+  {
+    method: 'GET',
+    path: '/api/agents/:id/git/commit/:hash',
+    summary:
+      "One commit: message, author, committer, refs and the files changed against its first parent (paths relative to the repository). With `path` (relative to the repository, inside the root's folder): that file's diff in the commit",
+    query: '`root`, `path?`',
+    result:
+      '`{ hash, parents, subject, body, author: { name, email, date }, committer, refs, files: [{ path, status, added, removed, oldPath?, inside }] }`; with `path`: `{ diff, status, binary, truncated, hash }`',
+    handler: (ctx) => {
+      const { root, rel } = fileRoot(ctx);
+      return rel ? commitFileDiff(root, ctx.params.hash, rel) : gitCommit(root, ctx.params.hash);
+    },
+  },
+  {
+    method: 'GET',
+    path: '/api/agents/:id/git/branches',
+    summary:
+      "The repository's branches. `default`: origin's HEAD, else `main`, else `master` (when one exists locally or on origin); `local` lists the current branch first",
+    query: '`root`',
+    result:
+      '`{ current, default, remotes, local: [{ name, hash, upstream, ahead, behind, gone, current, date, subject }], remote: [{ name, remote, hash, date, subject }] }`',
+    handler: (ctx) => gitBranches(fileRoot(ctx).root),
   },
   {
     method: 'POST',
