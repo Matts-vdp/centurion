@@ -70,6 +70,7 @@ export class KeepWarm {
 
   /** When the next ping is due, until when this episode pings, or why it stopped. */
   private plan(rec: AgentRecord, now: number): Plan {
+    if (rec.replies.at(-1)?.scheduled) return { nextAt: null, until: null };
     const settings = rec.keepWarm;
     const cache = rec.cache;
     if (!settings || !active(rec) || !cache || !rec.sessionId || rec.archived) return { nextAt: null, until: null };

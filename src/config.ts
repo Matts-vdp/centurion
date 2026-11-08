@@ -63,6 +63,11 @@ export const configSchema = z.strictObject({
     .default(10)
     .describe("Close an agent's process after this many idle minutes (`0` = never). The next message resumes the session."),
   gitPull: z.enum(['merge', 'rebase']).default('merge').describe('How Pull and Sync integrate remote commits: merge (default) or rebase. Both autostash local changes.'),
+  schedules: z.boolean().default(true).describe('Run active scheduled tasks automatically. Run now still works when false.'),
+  scheduleMissedRuns: z.enum(['run', 'ask', 'skip']).default('ask').describe('Default policy for runs missed while Centurion was off.'),
+  scheduleCatchUpDays: z.number().int().min(0).default(7).describe('Maximum age in days for a catch-up run.'),
+  scheduleStartupDelaySeconds: z.number().int().min(0).default(60).describe('Delay before checking missed runs at startup.'),
+  scheduleMaxRunning: z.number().int().min(1).default(2).describe('Maximum scheduled runs running at once.'),
 });
 
 type FileConfig = z.output<typeof configSchema>;

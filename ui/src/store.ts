@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { eventsUrl, type AgentRecord, type ImageData, type LiveMessage, type PermissionRequest, type Plan, type QuestionSet, type QueuedMessage } from './api';
+import { eventsUrl, type AgentRecord, type ImageData, type LiveMessage, type PermissionRequest, type Plan, type QuestionSet, type QueuedMessage, type ScheduledTask } from './api';
 import { toolDetail } from './tools';
 
 export type LiveEvent =
@@ -30,6 +30,8 @@ type State = {
   /** Track plans and question sets by id (sent after the snapshot, then on every change). */
   plans: Map<string, Plan>;
   questionSets: Map<string, QuestionSet>;
+  schedules: Map<string, ScheduledTask>;
+  schedulesPaused: boolean;
   /** Permission requests by id: pending ones and recently answered ones (for the outcome line). */
   permissions: Map<string, PermissionRequest>;
   connected: boolean;
@@ -41,7 +43,7 @@ type State = {
 
 /** The agent registry fed by the manager's SSE stream, plus a channel for transcript events. */
 class ManagerStore {
-  private state: State = { agents: new Map(), activity: new Map(), plans: new Map(), questionSets: new Map(), permissions: new Map(), connected: false, epoch: 0, authError: false };
+  private state: State = { agents: new Map(), activity: new Map(), plans: new Map(), questionSets: new Map(), schedules: new Map(), schedulesPaused: false, permissions: new Map(), connected: false, epoch: 0, authError: false };
   private readonly listeners = new Set<() => void>();
   private readonly liveListeners = new Set<(e: LiveEvent) => void>();
   private source: EventSource | null = null;
@@ -85,6 +87,12 @@ class ManagerStore {
     this.set({ plans });
   }
 
+  upsertSchedule(task: ScheduledTask): void {
+    const schedules = new Map(this.state.schedules);
+    schedules.set(task.id, task);
+    this.set({ schedules });
+  }
+
   upsertQuestions(set: QuestionSet): void {
     const questionSets = new Map(this.state.questionSets);
     questionSets.set(set.id, set);
@@ -107,6 +115,7 @@ class ManagerStore {
         agents: new Map(list.map((a) => [a.id, a])),
         plans: new Map(),
         questionSets: new Map(),
+        schedules: new Map(),
         permissions: new Map(),
         connected: true,
         authError: false,
@@ -120,6 +129,16 @@ class ManagerStore {
     });
     es.addEventListener('plan', (e) => this.upsertPlan(JSON.parse((e as MessageEvent).data) as Plan));
     es.addEventListener('questions', (e) => this.upsertQuestions(JSON.parse((e as MessageEvent).data) as QuestionSet));
+    es.addEventListener('schedules', (e) => {
+      const data = JSON.parse((e as MessageEvent).data) as { tasks: ScheduledTask[]; paused: boolean };
+      this.set({ schedules: new Map(data.tasks.map((task) => [task.id, task])), schedulesPaused: data.paused });
+    });
+    es.addEventListener('schedule', (e) => {
+      const data = JSON.parse((e as MessageEvent).data) as ScheduledTask | { deleted: true; id: string } | { paused: boolean };
+      if ('deleted' in data) { const schedules = new Map(this.state.schedules); schedules.delete(data.id); this.set({ schedules }); }
+      else if ('paused' in data) this.set({ schedulesPaused: data.paused });
+      else this.upsertSchedule(data);
+    });
     es.addEventListener('permission', (e) => this.upsertPermission(JSON.parse((e as MessageEvent).data) as PermissionRequest));
     es.addEventListener('git', (e) => {
       const d = JSON.parse((e as MessageEvent).data) as GitEvent;
@@ -272,7 +291,7 @@ class Signal<V> {
 export const composerFill = new Signal<{ agentId: string; text: string } | null>(null);
 
 /** Asks an agent's transcript to scroll to the bottom and follow it again (sending a message does). */
-export const transcriptPin = new Signal<{ agentId: string; at: number } | null>(null);
+export const transcriptPin = new Signal<{ agentId: string; at: number; promptUuid?: string } | null>(null);
 
 /** The chat whose New expert form is open in the sidebar (the header menu opens it too). */
 export const newExpertFor = new Signal<string | null>(null);

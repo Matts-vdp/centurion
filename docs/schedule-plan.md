@@ -1,6 +1,6 @@
 # Scheduled tasks: research and plan
 
-Status: design decided (2026-11-08), not implemented yet. There are no open questions.
+Status: implemented (2026-11-08). There are no open questions.
 
 **Decisions** (the user's and the orchestrator's, 2026-11-08):
 - **Default target**: a new chat each run, grouped under the task in the sidebar; run chats beyond the last 5 are archived (`keepRuns` 5).

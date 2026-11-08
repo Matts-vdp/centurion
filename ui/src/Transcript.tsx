@@ -120,12 +120,18 @@ export function Transcript({ transcript, loading, loadError, agent, agents, focu
   useEffect(() => {
     const off = transcriptPin.subscribe(() => {
       const pin = transcriptPin.get();
-      if (pin?.agentId === agent.id) jump();
+      if (pin?.agentId === agent.id && !pin.promptUuid) jump();
     });
     return () => {
       off();
     };
   }, [agent.id]);
+  useEffect(() => {
+    const pin = transcriptPin.get();
+    if (pin?.agentId !== agent.id || !pin.promptUuid) return;
+    const node = [...(scroller.current?.querySelectorAll<HTMLElement>('[data-prompt-uuid]') ?? [])].find((el) => el.dataset.promptUuid === pin.promptUuid);
+    if (node) { node.scrollIntoView({ block: 'start' }); transcriptPin.set(null); }
+  }, [agent.id, blocks]);
 
   // expertId → key of the latest delegation to it; only that one follows the expert live.
   const latest = useMemo(() => {
@@ -232,6 +238,8 @@ function BlockView({ block, ctx, after }: { block: RenderBlock; ctx: Ctx; after?
       );
     case 'questions':
       return <QuestionSetView setId={block.setId} orchestrator={ctx.agent} agents={ctx.agents} now={ctx.now} onSelect={ctx.onSelect} run={ctx.run} />;
+    case 'schedule':
+      return <ScheduleProposal id={block.taskId} ctx={ctx} />;
     case 'subagent':
       return <SubagentView block={block} ctx={ctx} />;
     case 'visual':
@@ -247,6 +255,15 @@ function BlockView({ block, ctx, after }: { block: RenderBlock; ctx: Ctx; after?
         />
       );
   }
+}
+
+function ScheduleProposal({ id, ctx }: { id: string; ctx: Ctx }) {
+  const task = useManager().schedules.get(id);
+  const [times, setTimes] = useState<string[]>([]);
+  useEffect(() => { if (task) void commands.schedulePreview(task.schedule).then((r) => setTimes(r.times)).catch(() => setTimes([])); }, [id, task?.schedule]);
+  if (!task) return null;
+  if (task.status !== 'proposed') return <div className="schedule-proposal"><button className="link-button" onClick={() => ctx.onSelect(`schedule:${id}`)}>Scheduled task · {task.name}</button></div>;
+  return <div className="schedule-proposal"><div className="schedule-eyebrow">Scheduled task proposal</div><h3>{task.name}</h3><p>{task.schedule.kind === 'cron' ? task.schedule.label ?? task.schedule.cron : task.schedule.kind === 'once' ? new Date(task.schedule.at).toLocaleString() : 'Manual only'}</p>{times.length > 0 && <p className="mono">Next: {times.map((time) => new Date(time).toLocaleString()).join(' · ')}</p>}<p>{task.target.kind === 'newChat' ? `New chat in ${task.target.cwd}` : `Agent: ${ctx.agents.get(task.target.agentId)?.name ?? task.target.agentId}`}</p><div className="schedule-prompt">{task.prompt}</div><div className="schedule-actions"><button className="primary" onClick={() => void ctx.run(async () => { store.upsertSchedule(await commands.activateSchedule(id)); })}>Activate</button><button onClick={() => ctx.onSelect(`schedule:edit:${id}`)}>Edit</button></div></div>;
 }
 
 // ---------- messages into the agent ----------
@@ -319,11 +336,13 @@ function Message({ item, ctx, after }: { item: PromptItem; ctx: Ctx; after: numb
     );
   } else if (source.kind === 'manager') {
     speaker = 'Manager';
+  } else if (source.kind === 'schedule') {
+    speaker = <>◷ Scheduled · {source.name} · {source.detail}</>;
   }
 
   const canAct = item.uuid !== undefined && !ownTurnRunning;
   return (
-    <div className={`message${confirming ? ' confirming' : ''}`}>
+    <div className={`message${confirming ? ' confirming' : ''}`} data-prompt-uuid={item.uuid}>
       <div className="speaker">
         {speaker}
         {item.at !== undefined && <span className="speaker-time">· {clock(item.at)}</span>}

@@ -10,6 +10,7 @@ import { Sidebar } from './Sidebar';
 import { store, useManager } from './store';
 import { useTabStatus } from './tabStatus';
 import { Switcher } from './Switcher';
+import { ScheduleView } from './ScheduleView';
 
 const NARROW = '(max-width: 899px)';
 
@@ -57,7 +58,7 @@ if (initial) layout.open(initial);
 
 export function App() {
   const manager = useManager();
-  const { agents, connected, authError, epoch } = manager;
+  const { agents, schedules, connected, authError, epoch } = manager;
   const { panes, focus, ratio } = useLayout();
   const selected = panes[focus] ?? null;
   const narrow = useMedia(NARROW);
@@ -113,6 +114,7 @@ export function App() {
   useDesktopAlerts(manager, select);
 
   const agent = selected ? agents.get(selected) : undefined;
+  const schedulePane = selected?.startsWith('schedule:') === true;
 
   // Wide: the sidebar comes back. Narrow: it becomes a drawer, closed while an agent is open.
   // `selected` rather than `agent`: the agent list may not have arrived yet on first load.
@@ -121,7 +123,7 @@ export function App() {
     setSidebarOpen(!narrow || !hasAgent);
     // Only when the width class changes, not on every selection.
   }, [narrow]);
-  const showSidebar = sidebarOpen || (narrow && !agent);
+  const showSidebar = sidebarOpen || (narrow && !agent && !schedulePane);
   const openDrawer = narrow ? () => setSidebarOpen(true) : undefined;
   // Narrow widths show only the focused pane, with a switch between the two.
   const split = panes.length === 2 && !narrow;
@@ -130,7 +132,7 @@ export function App() {
     <div className={`app${narrow ? ' narrow' : ''}`}>
       {showSidebar && (
         <>
-          {narrow && agent && <div className="scrim" onClick={() => setSidebarOpen(false)} />}
+          {narrow && (agent || schedulePane) && <div className="scrim" onClick={() => setSidebarOpen(false)} />}
           <aside className="sidebar" aria-label="Agents" style={narrow ? undefined : { width: sidebarWidth }}>
             <Sidebar agents={agents} selected={selected} open={panes} onSelect={select} onOpenInSplit={openInSplit} onSearch={() => setSwitcher(true)} />
             {!narrow && <SidebarResizer width={sidebarWidth} onResize={setSidebarWidth} />}
@@ -140,8 +142,8 @@ export function App() {
       <Main split={split}>
         {!connected && epoch > 0 && <div className="banner">Connection lost. Reconnecting…</div>}
         {authError && <div className="banner error">The manager refused the token. Open the URL the manager printed (it ends in ?token=…).</div>}
-        {narrow && panes.length === 2 && <PaneSwitch panes={panes} focus={focus} agents={agents} />}
-        {panes.length === 0 || (narrow && !agent) ? (
+        {narrow && panes.length === 2 && <PaneSwitch panes={panes} focus={focus} agents={agents} schedules={schedules} />}
+        {panes.length === 0 || (narrow && !agent && !schedulePane) ? (
           <Welcome narrow={narrow} showSidebar={showSidebar} onOpenDrawer={() => setSidebarOpen(true)} state={epoch === 0 && !authError ? 'connecting' : selected ? 'gone' : 'empty'} />
         ) : (
           <div className={`panes${split ? ' split' : ''}`}>
@@ -150,7 +152,7 @@ export function App() {
               const a = agents.get(id);
               return (
                 <Pane key={`${i}:${id}`} index={i} focused={i === focus} split={split} width={split ? (i === 0 ? ratio : 1 - ratio) : 1}>
-                  {a ? (
+                  {id.startsWith('schedule:') ? <ScheduleView paneId={id} agents={agents} onSelect={select} onClose={split ? () => layout.close(i) : undefined} onOpenDrawer={showSidebar ? undefined : openDrawer} /> : a ? (
                     <AgentView
                       key={a.id}
                       agent={a}
@@ -347,7 +349,7 @@ function SidebarResizer({ width, onResize }: { width: number; onResize: (w: numb
 }
 
 /** Narrow widths: one pane at a time, with a switch between the two. */
-function PaneSwitch({ panes, focus, agents }: { panes: string[]; focus: number; agents: Map<string, AgentRecord> }) {
+function PaneSwitch({ panes, focus, agents, schedules }: { panes: string[]; focus: number; agents: Map<string, AgentRecord>; schedules: Map<string, import('./api').ScheduledTask> }) {
   return (
     <div className="pane-switch" role="tablist" aria-label="Open agents">
       {panes.map((id, i) => {
@@ -355,7 +357,7 @@ function PaneSwitch({ panes, focus, agents }: { panes: string[]; focus: number; 
         return (
           <button key={`${i}:${id}`} role="tab" aria-selected={i === focus} className={i === focus ? 'active' : ''} onClick={() => layout.setFocus(i)}>
             {a && <AgentMark agent={a} size={18} />}
-            <span>{a?.name ?? 'Gone'}</span>
+            <span>{a?.name ?? (id.startsWith('schedule:new') ? 'New scheduled task' : schedules.get(id.split(':').at(-1) ?? '')?.name ?? 'Gone')}</span>
           </button>
         );
       })}
@@ -379,6 +381,9 @@ function Welcome({
   state: 'connecting' | 'gone' | 'empty';
   onClose?: () => void;
 }) {
+  const scheduleList = [...useManager().schedules.values()];
+  const nextRuns = scheduleList.filter((task) => task.status === 'active' && task.nextAt).sort((a, b) => a.nextAt!.localeCompare(b.nextAt!)).slice(0, 5);
+  const runsToday = scheduleList.flatMap((task) => task.runs.map((run) => ({ task, run }))).filter(({ run }) => new Date(run.dueAt).toDateString() === new Date().toDateString()).sort((a, b) => b.run.dueAt.localeCompare(a.run.dueAt)).slice(0, 5);
   return (
     <div className="welcome">
       {narrow && !showSidebar && (
@@ -404,6 +409,8 @@ function Welcome({
         <>
           <h1>Centurion</h1>
           <p>Pick an agent in the sidebar, or start a new chat with the + button. Drag a second one onto this area to see them side by side.</p>
+          {nextRuns.length > 0 && <div className="welcome-schedules"><h2>Next runs</h2>{nextRuns.map((task) => <button key={task.id} onClick={() => layout.open(`schedule:${task.id}`)}><span>{task.name}</span><time>{new Date(task.nextAt!).toLocaleString()}</time></button>)}</div>}
+          {runsToday.length > 0 && <div className="welcome-schedules"><h2>Scheduled runs today</h2>{runsToday.map(({ task, run }) => <button key={run.id} onClick={() => layout.open(`schedule:${task.id}`)}><span>{task.name} · {run.status}</span><time>{new Date(run.dueAt).toLocaleTimeString()}</time></button>)}</div>}
         </>
       )}
     </div>

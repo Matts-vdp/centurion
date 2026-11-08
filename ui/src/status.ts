@@ -1,4 +1,10 @@
-import type { AgentRecord, QueuedMessage } from './api';
+import type { AgentRecord, QueuedMessage, ScheduledTask } from './api';
+
+export function scheduleNeedsYou(task: ScheduledTask, seen: Record<string, string>): boolean {
+  const latest = task.runs.at(-1);
+  const at = latest?.endedAt ?? latest?.dueAt ?? task.createdAt;
+  return (task.status === 'proposed' || latest?.status === 'pending' || latest?.status === 'failed') && at > (seen[task.id] ?? '');
+}
 import { isUnread, pendingFor, pendingPermissions, type Activity } from './store';
 import { displayName, toolDetail } from './tools';
 

@@ -57,6 +57,8 @@ Centurion itself never creates, reads or names task files: where prompts and fin
 
 `centurion tools` prints every tool with its full description and arguments. The tools are fixed by Centurion; prompts and skills decide how they are used.
 
+Scheduled tasks save a prompt for a new chat or an existing agent. `schedule_task` proposes one for the user to activate in the UI; `list_scheduled_tasks` and `pause_scheduled_task` inspect and pause existing tasks. A proposed task does not run until the user activates it.
+
 ## Permissions
 
 `permissionMode` applies to every agent. With `auto`, what the classifier can't decide is asked in the UI and waits for the user. In a dev container, `bypassPermissions` avoids prompts (Claude Code refuses it as root). Experts ask the user directly, not through their chat.

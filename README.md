@@ -47,6 +47,8 @@ centurion
 
 Open the URL it prints (it includes the token). Start a chat with **+** in the sidebar (it runs in the managing repo unless you pick another folder), then run your skill in it (`/orchestrate …`) or just talk to it. Experts, plans and questions show up in the chat; you can also message any expert directly.
 
+Create scheduled tasks from the **Scheduled** group in the sidebar, or ask a chat to propose one. Each task can start a new chat or message an existing agent. The task page shows upcoming runs and history, with Run now and pause controls.
+
 | Command | What it does |
 |---|---|
 | `centurion` | Starts Centurion for the managing repo (found from the current folder or a parent). |

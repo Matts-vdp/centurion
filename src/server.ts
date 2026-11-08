@@ -15,6 +15,7 @@ import { conflictFile } from './gitconflict.js';
 import { APPLY_ACTIONS, applyPartial, cancelNetwork, commit, createBranch, deleteBranch, discardPaths, finishOperation, gitEvents, GitError, mergeBranch, preparedMergeMessage, rebaseBranch, rebaseSafety, remoteAction, resolveConflict, resolveSimpleConflicts, stagePaths, switchBranch, undoCommit, unstagePaths, updateFromDefault, type ApplyAction } from './gitwrite.js';
 import { isInside } from './confine.js';
 import { EFFORT_LEVELS, IMAGE_TYPES, type EffortLevel, type ImageData, type PermissionDecision } from './types.js';
+import { preview } from './cron.js';
 
 const MAX_BODY = 1024 * 1024;
 /** Messages can carry images: up to MAX_IMAGES of at most 5 MB of base64 each (the API's limit). */
@@ -53,6 +54,7 @@ export function startServer(manager: Manager, config: Config): http.Server {
   manager.on('delivered', (data) => broadcast('delivered', data));
   manager.on('plan', (plan) => broadcast('plan', plan));
   manager.on('questions', (set) => broadcast('questions', set));
+  manager.on('schedule', (task) => broadcast('schedule', task));
   manager.on('permission', (request) => broadcast('permission', request));
   manager.on('btw', (e) => broadcast('btw', e));
   manager.on('message', (data) => {
@@ -78,6 +80,7 @@ export function startServer(manager: Manager, config: Config): http.Server {
     for (const plan of manager.listPlans()) res.write(`event: plan\ndata: ${JSON.stringify(plan)}\n\n`);
     for (const set of manager.listQuestionSets()) res.write(`event: questions\ndata: ${JSON.stringify(set)}\n\n`);
     for (const request of manager.listPermissions()) res.write(`event: permission\ndata: ${JSON.stringify(request)}\n\n`);
+    res.write(`event: schedules\ndata: ${JSON.stringify({ tasks: manager.listSchedules(), paused: manager.schedulesArePaused() })}\n\n`);
     clients.add(res);
     const ping = setInterval(() => res.write(': ping\n\n'), 25_000);
     req.on('close', () => {
@@ -174,6 +177,27 @@ const GIT_WRITE_RESULT =
 
 /** Every API route. The server dispatches from this table, and `describeRoutes()` documents it. */
 export const routes: Route[] = [
+  { method: 'GET', path: '/api/schedules', summary: 'All scheduled tasks and the global pause state', result: '`{ tasks: ScheduledTask[], paused: boolean }`',
+    handler: ({ manager }) => ({ tasks: manager.listSchedules(), paused: manager.schedulesArePaused() }) },
+  { method: 'GET', path: '/api/schedules/preview', summary: 'Next three times for a cron or one-time schedule', query: '`cron=…` or `once=…`', result: '`{ times: string[] }`',
+    handler: ({ url }) => ({ times: preview(url.searchParams.has('cron') ? { kind: 'cron', cron: url.searchParams.get('cron')! } :
+      url.searchParams.has('once') ? { kind: 'once', at: url.searchParams.get('once')! } : { kind: 'manual' }) }) },
+  { method: 'POST', path: '/api/schedules', summary: 'Creates a scheduled task, active or paused', body: '`{ name, prompt, target, schedule, missedRuns?, unattended?, keepRuns?, paused? }`', result: 'ScheduledTask',
+    handler: ({ manager, body }) => manager.createSchedule(body as any) },
+  { method: 'POST', path: '/api/schedules/pause-all', summary: 'Pauses or resumes automatic scheduled runs', body: '`{ paused: boolean }`', result: '`{ paused: boolean }`',
+    handler: ({ manager, body }) => { manager.pauseAllSchedules(body.paused === true); return { paused: manager.schedulesArePaused() }; } },
+  { method: 'POST', path: '/api/schedules/:id', summary: 'Edits a scheduled task', body: '`{ name?, prompt?, target?, schedule?, missedRuns?, unattended?, keepRuns? }`', result: 'ScheduledTask',
+    handler: ({ manager, params, body }) => manager.updateSchedule(params.id, body as any) },
+  { method: 'POST', path: '/api/schedules/:id/pause', summary: 'Pauses or resumes a task', body: '`{ paused: boolean }`', result: 'ScheduledTask',
+    handler: ({ manager, params, body }) => manager.setSchedulePaused(params.id, body.paused === true) },
+  { method: 'POST', path: '/api/schedules/:id/activate', summary: 'Activates a proposed task', result: 'ScheduledTask',
+    handler: ({ manager, params }) => manager.activateSchedule(params.id) },
+  { method: 'POST', path: '/api/schedules/:id/run', summary: 'Runs now or starts a pending missed run', result: 'ScheduledRun',
+    handler: ({ manager, params }) => manager.runScheduleNow(params.id) },
+  { method: 'POST', path: '/api/schedules/:id/skip', summary: 'Skips a pending missed run', result: 'ScheduledRun',
+    handler: ({ manager, params }) => manager.skipScheduleMiss(params.id) },
+  { method: 'DELETE', path: '/api/schedules/:id', summary: 'Deletes a task, leaving its run chats as normal chats', result: '`{ deleted: true }`',
+    handler: ({ manager, params }) => { manager.deleteSchedule(params.id); return { deleted: true }; } },
   {
     method: 'GET',
     path: '/api/events',
@@ -189,13 +213,14 @@ export const routes: Route[] = [
     method: 'GET',
     path: '/api/info',
     summary: 'Server settings the UI needs, and the version',
-    result: '`{ version, permissionMode, orchestratorFolder, platform, defaultModel }`',
+    result: '`{ version, permissionMode, orchestratorFolder, platform, defaultModel, scheduleMissedRuns }`',
     handler: ({ config }) => ({
       version: packageVersion,
       permissionMode: config.permissionMode,
       orchestratorFolder: config.orchestratorFolder,
       platform: process.platform,
       defaultModel: config.model,
+      scheduleMissedRuns: config.scheduleMissedRuns,
     }),
   },
   {
@@ -789,6 +814,8 @@ export const routes: Route[] = [
 
 /** The server-sent events on `GET /api/events`, each with what its `data` holds. */
 export const SSE_EVENTS: { name: string; data: string }[] = [
+  { name: 'schedules', data: '`{ tasks, paused }`: all scheduled tasks and global pause state after each connection' },
+  { name: 'schedule', data: 'One scheduled task changed, or `{ deleted: true, id }`' },
   { name: 'snapshot', data: 'Every agent record (AgentRecord[]); sent first on each connection' },
   { name: 'agent', data: 'One agent record that changed' },
   { name: 'delivered', data: '`{ agentId, message, images? }`: a queued message was delivered (images only once, for open transcripts)' },

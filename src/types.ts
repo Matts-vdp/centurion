@@ -26,7 +26,24 @@ export type ModelOption = {
 /** A skill or custom command an agent's folder offers, from the SDK's `supportedCommands()`. */
 export type CommandOption = { name: string; description: string; argumentHint: string };
 
-export type MessageSource = 'user' | 'orchestrator' | 'manager';
+export type MessageSource = 'user' | 'orchestrator' | 'manager' | 'schedule';
+
+export type ScheduleSpec = { kind: 'cron'; cron: string; label?: string } | { kind: 'once'; at: string } | { kind: 'manual' };
+export type ScheduleTarget = { kind: 'newChat'; cwd: string; model: string | null; effort: EffortLevel | null } | { kind: 'agent'; agentId: string };
+export type ScheduledRun = {
+  id: string; dueAt: string; trigger: 'schedule' | 'catchUp' | 'manual';
+  status: 'pending' | 'waiting' | 'queued' | 'running' | 'done' | 'failed' | 'interrupted' | 'cancelled' | 'skipped';
+  reason?: string; missed?: number; agentId?: string; messageId?: string; promptUuid?: string;
+  /** Run now was pressed; it may start even while automatic schedules are paused. */
+  requested?: true;
+  startedAt?: string; endedAt?: string; durationMs?: number; costUsd?: number; denied?: number; preview?: string;
+};
+export type ScheduledTask = {
+  id: string; name: string; prompt: string; target: ScheduleTarget; schedule: ScheduleSpec;
+  status: 'proposed' | 'active' | 'paused' | 'done'; missedRuns: 'run' | 'ask' | 'skip';
+  unattended: 'deny' | 'ask'; keepRuns: number; nextAt: string | null; runs: ScheduledRun[];
+  proposedBy?: { agentId: string; toolUseId?: string }; createdAt: string; updatedAt: string;
+};
 
 export type QueuedMessage = {
   id: string;
@@ -39,6 +56,7 @@ export type QueuedMessage = {
   track?: { planId: string; trackId: string };
   /** The routed question this message asks (message_expert with question_id). */
   question?: { setId: string; questionId: string };
+  schedule?: { taskId: string; runId: string };
   /** The uuid the session stores the prompt under, set on delivery. Fork and rewind cut at it. */
   uuid?: string;
   /** Images sent with the text: files in the uploads folder while queued, deleted on delivery. */
@@ -65,6 +83,7 @@ export type Reply = {
   durationMs?: number;
   /** What this turn cost. */
   costUsd?: number;
+  scheduled?: true;
 };
 
 /** Context window use after the last turn. */
@@ -137,6 +156,7 @@ export type AgentRecord = {
   kind: AgentKind;
   /** Orchestrator that owns this expert; null for orchestrators. */
   parentId: string | null;
+  scheduleId?: string;
   cwd: string;
   /**
    * Experts only: the folder of the expert's task, inside its orchestrator's folder. When set, it is the only
@@ -326,8 +346,10 @@ export type QuestionSet = {
 };
 
 export type StateFile = {
-  version: 1;
+  version: 2;
   agents: AgentRecord[];
   plans?: Plan[];
   questionSets?: QuestionSet[];
+  schedules: ScheduledTask[];
+  schedulesPaused?: boolean;
 };

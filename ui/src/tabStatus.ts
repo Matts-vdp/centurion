@@ -2,7 +2,7 @@
 // dot on the favicon (amber: something needs you, blue: agents are running). Static, no animation.
 import { useEffect } from 'react';
 import type { AgentRecord } from './api';
-import { agentState, needsYou } from './status';
+import { agentState, needsYou, scheduleNeedsYou } from './status';
 import { lastSeen, useManager } from './store';
 
 const BASE = '/favicon.svg';
@@ -37,7 +37,7 @@ function setIcon(href: string): void {
 /** Keeps the tab title and favicon in step with what needs you; `current` is the agent on screen. */
 export function useTabStatus(current: AgentRecord | undefined): void {
   // The whole store re-renders this on any change, permissions, plans and questions included.
-  const { agents } = useManager();
+  const { agents, schedules } = useManager();
   const seen = lastSeen.use();
   const now = Date.now();
   let needs = 0;
@@ -47,6 +47,7 @@ export function useTabStatus(current: AgentRecord | undefined): void {
     if (a.status === 'running') running++;
     if (needsYou(a, agentState(a, agents, seen, undefined, now))) needs++;
   }
+  for (const task of schedules.values()) if (scheduleNeedsYou(task, seen)) needs++;
   const title = `${needs > 0 ? `(${needs}) ` : ''}${current ? `${current.name} · ` : ''}Centurion`;
   const icon = needs > 0 ? NEEDS_ICON : running > 0 ? RUNNING_ICON : BASE;
   useEffect(() => {

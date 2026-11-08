@@ -105,6 +105,7 @@ export function Header({ agent, parent, agents, run, onSelect, onClose, onOpenDr
             </button>
             {menu && (
               <div className="menu" role="menu">
+                <button role="menuitem" onClick={() => { setMenu(false); onSelect(`schedule:new:${agent.id}`); }}>Schedule a message…</button>
                 {agent.kind === 'orchestrator' && !agent.archived && (
                   <button
                     role="menuitem"

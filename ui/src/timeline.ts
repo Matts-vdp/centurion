@@ -5,6 +5,7 @@ export type Source =
   | { kind: 'user' }
   | { kind: 'orchestrator'; name: string }
   | { kind: 'manager' }
+  | { kind: 'schedule'; name: string; detail: string }
   /** Claude Code itself: a background subagent ended (`<task-notification>`) or handed back its report. */
   | { kind: 'task'; toolUseId: string; taskId: string; status: string; summary: string }
   | { kind: 'handback'; agentId: string; report: string };
@@ -78,6 +79,7 @@ export const emptyTranscript = (): Transcript => ({ items: [], seen: new Set(), 
 const emptySub = (): Sub => ({ items: [], tools: new Map() });
 
 const ORCH_PREFIX = /^\[Message from orchestrator "([^"]*)"\]\n?/;
+const SCHEDULE_PREFIX = /^\[Scheduled task "([^"]*)" · ([^\]]*)\]\n?/;
 const MANAGER_TAG = '[Manager notification]';
 const NOTIFICATION = /^Expert "([^"]*)" \(id: ([^)]+)\) ([\s\S]*)$/;
 
@@ -109,6 +111,8 @@ export function parsePrompt(raw: string): { source: Source; text: string; notifi
   }
   const orch = ORCH_PREFIX.exec(raw);
   if (orch) return { source: { kind: 'orchestrator', name: orch[1] }, text: raw.slice(orch[0].length) };
+  const schedule = SCHEDULE_PREFIX.exec(raw);
+  if (schedule) return { source: { kind: 'schedule', name: schedule[1], detail: schedule[2] }, text: raw.slice(schedule[0].length) };
   if (raw.startsWith(MANAGER_TAG)) {
     const chunks = raw
       .split(MANAGER_TAG)
@@ -311,7 +315,8 @@ export function applyLive(
   // Turn results are not shown from here: the turn footer comes from the agent record's replies.
   if (m.type === 'system' && m.subtype === 'permission_denied') {
     const index = next.tools.get(String(m.tool_use_id));
-    const reason = String(m.decision_reason ?? m.message ?? 'denied');
+    const rawReason = String(m.decision_reason ?? m.message ?? 'denied');
+    const reason = rawReason.includes('This is a scheduled run') ? 'scheduled run' : rawReason;
     if (index !== undefined) next.items[index] = { ...(next.items[index] as ToolItem), denied: reason, isError: true, endedAt: Date.now() };
     else next.items.push({ kind: 'note', key: nextKey('note'), text: `Permission denied: ${String(m.tool_name)} · ${reason}`, level: 'error' });
   } else if (m.type === 'system' && m.subtype === 'api_retry') {

@@ -33,6 +33,8 @@ import {
   type ProposeInput,
 } from './decisions.js';
 import { KeepWarm, active as keepWarmActive } from './keepwarm.js';
+import { Scheduler } from './schedule.js';
+import { nextAfter, preview, validateSchedule } from './cron.js';
 import { SideChats, type SideChatEvent } from './sidechat.js';
 import { isInside } from './files.js';
 import { StateStore, type State } from './state.js';
@@ -58,6 +60,10 @@ import {
   type QueuedImage,
   type QueuedMessage,
   type Reply,
+  type ScheduledTask,
+  type ScheduledRun,
+  type ScheduleSpec,
+  type ScheduleTarget,
 } from './types.js';
 
 const PREVIEW_CHARS = 300;
@@ -73,6 +79,7 @@ export type ManagerEvents = {
   delivered: [{ agentId: string; message: QueuedMessage; images?: ImageData[] }];
   plan: [Plan];
   questions: [QuestionSet];
+  schedule: [ScheduledTask | { deleted: true; id: string } | { paused: boolean }];
   permission: [PermissionRequest];
   /** A side chat's progress (/btw). */
   btw: [SideChatEvent];
@@ -85,7 +92,7 @@ type PendingPermission = { request: PermissionRequest; suggestions: PermissionUp
 const ANSWERED_KEEP = 200;
 
 /** Extra links a message can carry: the plan track or the routed question it belongs to. */
-type MessageLinks = Pick<QueuedMessage, 'track' | 'question'>;
+type MessageLinks = Pick<QueuedMessage, 'track' | 'question' | 'schedule'>;
 
 /** A model/effort change: a missing field stays as it is, null goes back to the default. */
 export type ModelChange = { model?: string | null; effort?: EffortLevel | null };
@@ -95,6 +102,9 @@ export class Manager extends EventEmitter<ManagerEvents> {
   private readonly store: StateStore;
   private plans: Plan[];
   private questionSets: QuestionSet[];
+  private schedules: ScheduledTask[];
+  private schedulesPaused = false;
+  private readonly scheduler: Scheduler;
   /** The supported models, learned from the first process that starts (or a probe). */
   private modelList: ModelOption[] | null = null;
   private modelProbe: Promise<ModelOption[]> | null = null;
@@ -137,7 +147,12 @@ export class Manager extends EventEmitter<ManagerEvents> {
     const state = this.store.load();
     this.plans = state.plans;
     this.questionSets = state.questionSets;
+    this.schedules = state.schedules;
+    this.schedulesPaused = state.schedulesPaused;
     const interrupted = state.agents.filter((rec) => this.recover(rec));
+    for (const task of this.schedules) for (const run of task.runs) {
+      if (run.status === 'running') { run.status = 'interrupted'; run.reason = 'manager restarted'; run.endedAt = new Date().toISOString(); }
+    }
     this.removeStrayUploads();
     // Parents are all loaded now, so their notifications have somewhere to go.
     for (const rec of interrupted) {
@@ -145,6 +160,10 @@ export class Manager extends EventEmitter<ManagerEvents> {
     }
     for (const rt of this.runtimes.values()) rt.pump();
     for (const rt of this.runtimes.values()) this.warmer.check(rt.rec);
+    this.scheduler = new Scheduler({ tasks: () => this.schedules, paused: () => this.schedulesPaused,
+      changed: (task) => this.scheduleChanged(task), startRun: (task, run) => this.startScheduleRun(task, run) },
+      { enabled: config.schedules, catchUpDays: config.scheduleCatchUpDays,
+        startupDelaySeconds: config.scheduleStartupDelaySeconds, maxRunning: config.scheduleMaxRunning });
   }
 
   // ---------- queries ----------
@@ -167,6 +186,181 @@ export class Manager extends EventEmitter<ManagerEvents> {
 
   listQuestionSets(): QuestionSet[] {
     return this.questionSets;
+  }
+
+  listSchedules(): ScheduledTask[] { return this.schedules; }
+  schedulesArePaused(): boolean { return this.schedulesPaused; }
+
+  previewSchedule(spec: ScheduleSpec): string[] { return preview(spec); }
+
+  createSchedule(input: { name: string; prompt: string; target: ScheduleTarget; schedule: ScheduleSpec;
+    paused?: boolean; proposedBy?: ScheduledTask['proposedBy']; missedRuns?: ScheduledTask['missedRuns'];
+    unattended?: ScheduledTask['unattended']; keepRuns?: number }): ScheduledTask {
+    if (!input.name?.trim() || !input.prompt?.trim()) throw new Error('Name and prompt are required');
+    validateSchedule(input.schedule);
+    if (input.schedule.kind === 'once' && Date.parse(input.schedule.at) <= Date.now()) throw new Error('The one-time run must be in the future');
+    this.validateScheduleTarget(input.target);
+    if (input.missedRuns !== undefined && !['run', 'ask', 'skip'].includes(input.missedRuns)) throw new Error('Invalid missed runs policy');
+    if (input.unattended !== undefined && !['deny', 'ask'].includes(input.unattended)) throw new Error('Invalid permission policy');
+    const now = new Date();
+    const task: ScheduledTask = {
+      id: newId('schedule'), name: input.name.trim(), prompt: input.prompt.trim(), target: input.target,
+      schedule: input.schedule, status: input.proposedBy ? 'proposed' : input.paused ? 'paused' : 'active',
+      missedRuns: input.missedRuns ?? this.config.scheduleMissedRuns, unattended: input.unattended ?? 'deny',
+      keepRuns: this.keepRuns(input.keepRuns ?? 5), nextAt: nextAfter(input.schedule, now)?.toISOString() ?? null,
+      runs: [], ...(input.proposedBy ? { proposedBy: input.proposedBy } : {}),
+      createdAt: now.toISOString(), updatedAt: now.toISOString(),
+    };
+    this.schedules.push(task);
+    this.scheduleChanged(task);
+    return task;
+  }
+
+  updateSchedule(id: string, patch: Partial<Pick<ScheduledTask, 'name' | 'prompt' | 'target' | 'schedule' | 'missedRuns' | 'unattended' | 'keepRuns'>>): ScheduledTask {
+    const task = this.findSchedule(id);
+    const spec = patch.schedule === undefined ? task.schedule : patch.schedule;
+    validateSchedule(spec);
+    if (patch.schedule?.kind === 'once' && Date.parse(patch.schedule.at) <= Date.now()) throw new Error('The one-time run must be in the future');
+    if (patch.target !== undefined) this.validateScheduleTarget(patch.target);
+    if (patch.name !== undefined && !patch.name.trim()) throw new Error('Name is required');
+    if (patch.prompt !== undefined && !patch.prompt.trim()) throw new Error('Prompt is required');
+    if (patch.missedRuns !== undefined && !['run', 'ask', 'skip'].includes(patch.missedRuns)) throw new Error('Invalid missed runs policy');
+    if (patch.unattended !== undefined && !['deny', 'ask'].includes(patch.unattended)) throw new Error('Invalid permission policy');
+    if (patch.name !== undefined) task.name = patch.name.trim();
+    if (patch.prompt !== undefined) task.prompt = patch.prompt.trim();
+    if (patch.target !== undefined) task.target = patch.target;
+    if (patch.schedule !== undefined) task.schedule = patch.schedule;
+    if (patch.missedRuns !== undefined) task.missedRuns = patch.missedRuns;
+    if (patch.unattended !== undefined) task.unattended = patch.unattended;
+    if (patch.keepRuns !== undefined) task.keepRuns = this.keepRuns(patch.keepRuns);
+    if (patch.schedule) {
+      task.nextAt = nextAfter(spec, new Date())?.toISOString() ?? null;
+      if (task.status === 'done' && (task.nextAt || spec.kind === 'manual')) task.status = 'active';
+    }
+    task.updatedAt = new Date().toISOString();
+    this.scheduleChanged(task);
+    return task;
+  }
+
+  setSchedulePaused(id: string, paused: boolean): ScheduledTask {
+    const task = this.findSchedule(id);
+    if (task.status === 'proposed') throw new Error('Activate this proposal first');
+    task.status = paused ? 'paused' : task.nextAt || task.schedule.kind === 'manual' ? 'active' : 'done';
+    task.updatedAt = new Date().toISOString(); this.scheduleChanged(task);
+    if (!paused) this.scheduler.tick();
+    return task;
+  }
+
+  activateSchedule(id: string): ScheduledTask {
+    const task = this.findSchedule(id);
+    if (task.status !== 'proposed') throw new Error('This task is not proposed');
+    task.nextAt = nextAfter(task.schedule, new Date())?.toISOString() ?? null;
+    task.status = task.nextAt || task.schedule.kind === 'manual' ? 'active' : 'done';
+    task.updatedAt = new Date().toISOString(); this.scheduleChanged(task);
+    return task;
+  }
+
+  deleteSchedule(id: string): void {
+    const index = this.schedules.findIndex((s) => s.id === id);
+    if (index < 0) throw new Error('Unknown scheduled task');
+    this.schedules.splice(index, 1);
+    for (const rec of this.list()) if (rec.scheduleId === id) { delete rec.scheduleId; this.changed(rec); }
+    this.emit('schedule', { deleted: true, id }); this.store.save(() => this.state());
+  }
+
+  pauseAllSchedules(paused: boolean): void { this.schedulesPaused = paused; this.store.save(() => this.state());
+    this.emit('schedule', { paused });
+    if (!paused) this.scheduler.tick();
+  }
+
+  runScheduleNow(id: string): ScheduledRun {
+    const task = this.findSchedule(id);
+    if (task.status === 'proposed') throw new Error('Activate this proposal first');
+    const pending = task.runs.find((r) => r.status === 'pending');
+    const run: ScheduledRun = pending ?? { id: newId('run'), dueAt: new Date().toISOString(), trigger: 'manual', status: 'waiting' };
+    if (pending) pending.status = 'waiting'; else task.runs.push(run);
+    run.requested = true;
+    task.runs = task.runs.slice(-50);
+    this.scheduleChanged(task); this.scheduler.drain();
+    return run;
+  }
+
+  skipScheduleMiss(id: string): ScheduledRun {
+    const task = this.findSchedule(id);
+    const run = task.runs.find((r) => r.status === 'pending');
+    if (!run) throw new Error('No missed run is pending');
+    run.status = 'skipped'; run.reason = 'skipped by user'; run.endedAt = new Date().toISOString();
+    this.scheduleChanged(task); return run;
+  }
+
+  private findSchedule(id: string): ScheduledTask {
+    const task = this.schedules.find((s) => s.id === id);
+    if (!task) throw new Error('Unknown scheduled task');
+    return task;
+  }
+  private validateScheduleTarget(target: ScheduleTarget): void {
+    if (!target || typeof target !== 'object') throw new Error('Choose a target');
+    if (target.kind === 'newChat') {
+      if (typeof target.cwd !== 'string') throw new Error('Choose a folder');
+      validateDir(target.cwd);
+      if (target.model != null && typeof target.model !== 'string') throw new Error('Invalid model');
+      if (target.effort != null && !EFFORT_LEVELS.includes(target.effort)) throw new Error('Invalid effort');
+    } else if (target.kind === 'agent') this.get(target.agentId);
+    else throw new Error('Unknown target kind');
+  }
+  private keepRuns(n: number): number {
+    if (!Number.isInteger(n) || n < 0 || n > 50) throw new Error('Keep runs must be between 0 and 50');
+    return n;
+  }
+  private scheduleChanged(task: ScheduledTask): void { task.updatedAt = new Date().toISOString(); this.store.save(() => this.state()); this.emit('schedule', task); }
+
+  private linkedRun(link: QueuedMessage['schedule']): { task: ScheduledTask; run: ScheduledRun } | null {
+    if (!link) return null;
+    const task = this.schedules.find((s) => s.id === link.taskId);
+    const run = task?.runs.find((r) => r.id === link.runId);
+    return task && run ? { task, run } : null;
+  }
+
+  private startScheduleRun(task: ScheduledTask, run: ScheduledRun): void {
+    const previous = task.runs.find((r) => r.id !== run.id && (r.status === 'queued' || r.status === 'running'));
+    const skip = (reason: string) => { run.status = 'skipped'; run.reason = reason; run.endedAt = new Date().toISOString(); this.scheduleChanged(task); };
+    if (task.target.kind === 'agent') {
+      const rec = this.runtimes.get(task.target.agentId)?.rec;
+      if (!rec) return skip('chat was deleted');
+      if (rec.archived) return skip('chat archived');
+      if (previous?.status === 'queued') return skip('previous run still queued');
+    } else if (previous) return skip('previous run still running');
+    try {
+      let agent: AgentRecord;
+      if (task.target.kind === 'newChat') {
+        const stamp = new Date(run.dueAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        agent = this.createAgent('orchestrator', `${task.name} · ${stamp}`, task.target.cwd, null,
+          { model: task.target.model, effort: task.target.effort });
+        agent.scheduleId = task.id;
+        this.changed(agent);
+      } else agent = this.get(task.target.agentId);
+      const due = new Date(run.dueAt).toLocaleString();
+      const started = new Date().toLocaleString();
+      const label = run.trigger === 'catchUp' ? `catch-up: due ${due}, started ${started}` : `due ${due} · started ${started}`;
+      run.status = 'queued'; run.agentId = agent.id;
+      const message = this.sendMessage(agent.id, `[Scheduled task "${task.name}" · ${label}]\n${task.prompt}`, 'schedule', false,
+        { schedule: { taskId: task.id, runId: run.id } });
+      run.messageId = message.id;
+      this.scheduleChanged(task);
+    } catch (error) {
+      run.status = 'failed'; run.reason = (error as Error).message; run.endedAt = new Date().toISOString();
+      this.scheduleChanged(task);
+    }
+  }
+
+  private archiveScheduleRuns(task: ScheduledTask): void {
+    const ids = task.runs.filter((r) => r.agentId && ['done', 'failed', 'interrupted', 'cancelled'].includes(r.status))
+      .map((r) => r.agentId!);
+    for (const id of ids.slice(0, Math.max(0, ids.length - task.keepRuns))) {
+      const rec = this.runtimes.get(id)?.rec;
+      if (!rec || rec.archived || rec.current || rec.queue.length) continue;
+      try { this.setArchived(id, true); } catch { /* a child may still be running */ }
+    }
   }
 
   listPermissions(): PermissionRequest[] {
@@ -370,9 +564,10 @@ export class Manager extends EventEmitter<ManagerEvents> {
       queuedAt: new Date().toISOString(),
       ...(links.track ? { track: links.track } : {}),
       ...(links.question ? { question: links.question } : {}),
+      ...(links.schedule ? { schedule: links.schedule } : {}),
     };
     if (images.length) message.images = this.saveImages(rt.rec.id, message.id, images);
-    this.unarchive(rt.rec);
+    if (source !== 'schedule') this.unarchive(rt.rec);
     rt.enqueue(message);
     return message;
   }
@@ -403,6 +598,12 @@ export class Manager extends EventEmitter<ManagerEvents> {
   }
 
   private onDeliver(rec: AgentRecord, message: QueuedMessage, content: MessageContent): void {
+    const scheduled = this.linkedRun(message.schedule);
+    if (scheduled) {
+      scheduled.run.status = 'running'; scheduled.run.startedAt = rec.turnStartedAt ?? new Date().toISOString();
+      scheduled.run.promptUuid = message.uuid;
+      this.scheduleChanged(scheduled.task);
+    }
     const images: ImageData[] = [];
     if (Array.isArray(content)) {
       for (const b of content) {
@@ -456,6 +657,8 @@ export class Manager extends EventEmitter<ManagerEvents> {
     const message = rt.rec.queue.find((m) => m.id === messageId);
     if (!message || !rt.removeQueued(messageId)) throw new Error('That message is no longer queued');
     this.discardImages([message]);
+    const scheduled = this.linkedRun(message.schedule);
+    if (scheduled) { scheduled.run.status = 'cancelled'; scheduled.run.endedAt = new Date().toISOString(); this.scheduleChanged(scheduled.task); this.scheduler.drain(); }
   }
 
   /** Switch an agent's model and/or effort. A running turn finishes as it is; the next turn uses the new values. */
@@ -596,12 +799,20 @@ export class Manager extends EventEmitter<ManagerEvents> {
     const dropped = [...rt.rec.queue];
     const handled = await rt.stop();
     this.discardImages(dropped);
+    for (const message of dropped) {
+      const scheduled = this.linkedRun(message.schedule);
+      if (scheduled) { scheduled.run.status = 'cancelled'; scheduled.run.endedAt = new Date().toISOString(); this.scheduleChanged(scheduled.task); }
+    }
+    const scheduled = this.linkedRun(handled?.schedule);
+    if (scheduled) { scheduled.run.status = 'cancelled'; scheduled.run.endedAt = new Date().toISOString(); this.scheduleChanged(scheduled.task); }
+    this.scheduler.drain();
     if (handled?.notify && by !== 'orchestrator') {
       this.notifyParent(rt.rec, `was stopped by the ${by} before finishing its turn.`);
     }
   }
 
   shutdown(): void {
+    this.scheduler.dispose();
     this.warmer.dispose();
     this.sideChats.dispose();
     for (const rt of this.runtimes.values()) rt.dispose();
@@ -625,6 +836,12 @@ export class Manager extends EventEmitter<ManagerEvents> {
       return Promise.resolve({ behavior: 'deny', message: `AskUserQuestion is not available in this manager. ${how}` });
     }
     if (toolName === 'ExitPlanMode') return Promise.resolve({ behavior: 'allow', updatedInput: input });
+    const scheduled = this.linkedRun(this.runtimes.get(agentId)?.rec.current?.schedule);
+    if (scheduled?.task.unattended === 'deny') {
+      scheduled.run.denied = (scheduled.run.denied ?? 0) + 1;
+      this.scheduleChanged(scheduled.task);
+      return Promise.resolve({ behavior: 'deny', message: 'This is a scheduled run and nobody is watching. Skip this step, and say in your reply what you needed permission for.' });
+    }
     const suggestions = opts.suggestions ?? [];
     const request: PermissionRequest = {
       id: newId('perm'),
@@ -921,7 +1138,7 @@ export class Manager extends EventEmitter<ManagerEvents> {
   }
 
   private state(): State {
-    return { agents: this.list(), plans: this.plans, questionSets: this.questionSets };
+    return { agents: this.list(), plans: this.plans, questionSets: this.questionSets, schedules: this.schedules, schedulesPaused: this.schedulesPaused };
   }
 
   // ---------- model and effort ----------
@@ -1072,6 +1289,18 @@ export class Manager extends EventEmitter<ManagerEvents> {
   }
 
   private onTurnEnd(rec: AgentRecord, handled: QueuedMessage, reply: Reply): void {
+    const scheduled = this.linkedRun(handled.schedule);
+    if (scheduled) {
+      reply.scheduled = true;
+      const { task, run } = scheduled;
+      if (run.status !== 'cancelled') run.status = reply.interrupted ? 'interrupted' : reply.isError ? 'failed' : 'done';
+      run.endedAt = reply.at; run.durationMs = reply.durationMs; run.costUsd = reply.costUsd;
+      run.preview = reply.text.slice(0, PREVIEW_CHARS);
+      if (reply.isError) run.reason = reply.text;
+      this.scheduleChanged(task);
+      if (task.target.kind === 'newChat') queueMicrotask(() => this.archiveScheduleRuns(task));
+      queueMicrotask(() => this.scheduler.drain());
+    }
     this.cancelPermissions(rec.id, false);
     // A new keep-warm episode starts with this turn's cache.
     if (rec.warm) rec.warm = { nextAt: null, until: null, pings: 0, costUsd: 0, ...(rec.warm.last ? { last: rec.warm.last } : {}) };

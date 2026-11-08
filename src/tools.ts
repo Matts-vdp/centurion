@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { packageVersion } from './paths.js';
 import type { Manager } from './manager.js';
 import { EFFORT_LEVELS, type AgentRecord, type EffortLevel } from './types.js';
+import { preset } from './cron.js';
 
 type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean };
 
@@ -235,6 +236,37 @@ export function managerTools(manager: Manager, orchestratorId: string) {
     {},
     guard(() => ok(manager.childrenOf(orchestratorId).map(summary))),
   ),
+  tool(
+    'schedule_task',
+    'Propose a scheduled task to the user. This does not activate or run it; only the user can activate the proposal in the UI.',
+    {
+      name: z.string(), prompt: z.string(),
+      preset: z.enum(['hourly', 'daily', 'weekdays', 'weekly']).optional(),
+      time: z.string().optional().describe('Local time HH:MM for a preset'),
+      days: z.array(z.number().int().min(0).max(6)).optional().describe('For weekly: 0 is Sunday'),
+      every_hours: z.number().int().min(1).max(24).optional().describe('For hourly: 1, 2, 3, 4, 6, 8, 12 or 24 hours'),
+      cron: z.string().optional().describe('Five-field cron, local time'),
+      once_at: z.string().optional().describe('ISO date and time for a one-time run'),
+      manual: z.boolean().optional().describe('Only run when the user presses Run now'),
+      target: z.enum(['new_chat', 'this_chat', 'expert']).optional(),
+      expert_id: z.string().optional(), folder: z.string().optional(), model: z.string().optional(),
+      effort: z.enum(EFFORT_LEVELS as [EffortLevel, ...EffortLevel[]]).optional(),
+    },
+    guard((args) => {
+      const schedule = args.cron ? { kind: 'cron' as const, cron: args.cron } : args.once_at ?
+        { kind: 'once' as const, at: args.once_at } : args.manual ? { kind: 'manual' as const } :
+        preset(args.preset ?? 'daily', args.time, args.days, args.every_hours);
+      const target = args.target === 'this_chat' ? { kind: 'agent' as const, agentId: orchestratorId } :
+        args.target === 'expert' ? { kind: 'agent' as const, agentId: ownExpert(args.expert_id ?? '').id } :
+          { kind: 'newChat' as const, cwd: args.folder ?? manager.get(orchestratorId).cwd, model: args.model ?? null, effort: args.effort ?? null };
+      const task = manager.createSchedule({ name: args.name, prompt: args.prompt, schedule, target, proposedBy: { agentId: orchestratorId } });
+      return ok({ id: task.id, status: task.status, next: manager.previewSchedule(schedule), note: 'The user must activate this proposal in the UI.' });
+    }),
+  ),
+  tool('list_scheduled_tasks', 'List scheduled tasks and their next run times.', {}, guard(() => ok(manager.listSchedules().map((task) =>
+    ({ id: task.id, name: task.name, status: task.status, nextAt: task.nextAt, target: task.target }))))),
+  tool('pause_scheduled_task', 'Pause or resume a scheduled task. This cannot activate a proposed task.',
+    { task_id: z.string(), paused: z.boolean() }, guard((args) => ok(manager.setSchedulePaused(args.task_id, args.paused)))),
   tool(
     'stop_expert',
     'Stop an expert: cancels its current turn and clears its queue. Sending it a new message later resumes the same session.',

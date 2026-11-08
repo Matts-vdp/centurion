@@ -8,12 +8,16 @@ import type {
   PermissionRequest,
   Plan,
   QuestionSet,
+  ScheduledTask,
+  ScheduledRun,
+  ScheduleSpec,
+  ScheduleTarget,
   QueuedMessage,
   Track,
   UserQuestion,
 } from '../../src/types';
 
-export type { AgentRecord, CommandOption, EffortLevel, ImageData, ModelOption, PermissionDecision, PermissionRequest, Plan, QuestionSet, QueuedMessage, Track, UserQuestion };
+export type { AgentRecord, CommandOption, EffortLevel, ImageData, ModelOption, PermissionDecision, PermissionRequest, Plan, QuestionSet, ScheduledTask, ScheduledRun, ScheduleSpec, ScheduleTarget, QueuedMessage, Track, UserQuestion };
 
 export const EFFORT_LEVELS: readonly EffortLevel[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 
@@ -85,7 +89,7 @@ export type LiveMessage = {
   [key: string]: unknown;
 };
 
-export type ServerInfo = { orchestratorFolder: string; permissionMode: string; platform: string; defaultModel: string | null };
+export type ServerInfo = { orchestratorFolder: string; permissionMode: string; platform: string; defaultModel: string | null; scheduleMissedRuns: ScheduledTask['missedRuns'] };
 
 /** `/api/info` doesn't change while the server runs, so it is fetched once (again after a failure). */
 let infoCache: Promise<ServerInfo> | null = null;
@@ -96,6 +100,17 @@ const fetchInfo = () =>
   });
 
 export const commands = {
+  schedulePreview: (spec: ScheduleSpec) => spec.kind === 'manual' ? Promise.resolve({ times: [] as string[] }) :
+    api<{ times: string[] }>(`/api/schedules/preview?${spec.kind === 'cron' ? `cron=${encodeURIComponent(spec.cron)}` : `once=${encodeURIComponent(spec.at)}`}`),
+  createSchedule: (input: { name: string; prompt: string; target: ScheduleTarget; schedule: ScheduleSpec; missedRuns: ScheduledTask['missedRuns']; unattended: ScheduledTask['unattended']; keepRuns: number; paused?: boolean }) =>
+    api<ScheduledTask>('/api/schedules', { method: 'POST', body: input }),
+  updateSchedule: (id: string, input: Partial<ScheduledTask>) => api<ScheduledTask>(`/api/schedules/${id}`, { method: 'POST', body: input }),
+  pauseSchedule: (id: string, paused: boolean) => api<ScheduledTask>(`/api/schedules/${id}/pause`, { method: 'POST', body: { paused } }),
+  activateSchedule: (id: string) => api<ScheduledTask>(`/api/schedules/${id}/activate`, { method: 'POST' }),
+  runSchedule: (id: string) => api<ScheduledRun>(`/api/schedules/${id}/run`, { method: 'POST' }),
+  skipSchedule: (id: string) => api<ScheduledRun>(`/api/schedules/${id}/skip`, { method: 'POST' }),
+  deleteSchedule: (id: string) => api<{ deleted: true }>(`/api/schedules/${id}`, { method: 'DELETE' }),
+  pauseAllSchedules: (paused: boolean) => api<{ paused: boolean }>('/api/schedules/pause-all', { method: 'POST', body: { paused } }),
   createChat: (name: string, cwd?: string) => api<AgentRecord>('/api/agents', { method: 'POST', body: { name, cwd } }),
   createExpert: (chatId: string, input: { name: string; cwd?: string; message?: string }) =>
     api<AgentRecord>(`/api/agents/${chatId}/experts`, { method: 'POST', body: input }),

@@ -5,7 +5,7 @@ import { sameFolder, useNow, useServerInfo } from './hooks';
 import { ArchiveIcon, Chevron, PlusIcon, SearchIcon } from './icons';
 import { DRAG_TYPE } from './layout';
 import { AgentMark } from './Mark';
-import { agentState, archiveBlocker, clock, folderName, money, needsYou, rollup, type AgentState } from './status';
+import { agentState, archiveBlocker, clock, folderName, money, needsYou, rollup, scheduleNeedsYou, type AgentState } from './status';
 import { lastSeen, newExpertFor, openNewExpert, recentChatFolders, recentFolders, store, treeState, useManager } from './store';
 import { continueList, indentList } from './listInput';
 
@@ -25,16 +25,21 @@ type RowMenu = { id: string; x: number; y: number };
 const byCreated = (a: AgentRecord, b: AgentRecord) => a.createdAt.localeCompare(b.createdAt);
 
 export function Sidebar({ agents, selected, open: openIds, onSelect, onOpenInSplit, onSearch }: Props) {
-  const { activity } = useManager();
+  const { activity, schedules, schedulesPaused } = useManager();
   const seen = lastSeen.use();
   const tree = treeState.use();
   const [creating, setCreating] = useState(false);
+  const [newMenu, setNewMenu] = useState(false);
+  const newMenuRef = useRef<HTMLDivElement>(null);
   const [menu, setMenu] = useState<RowMenu | null>(null);
   const [error, setError] = useState('');
   const expertFor = newExpertFor.use();
   const list = [...agents.values()].sort(byCreated);
   const anyRunning = list.some((a) => a.status === 'running');
   const now = useNow(true, anyRunning ? 1000 : 30_000);
+  useEffect(() => { if (!newMenu) return; const close = (e: MouseEvent | globalThis.KeyboardEvent) => {
+    if (e instanceof globalThis.KeyboardEvent ? e.key === 'Escape' : !newMenuRef.current?.contains(e.target as Node)) setNewMenu(false);
+  }; window.addEventListener('mousedown', close); window.addEventListener('keydown', close); return () => { window.removeEventListener('mousedown', close); window.removeEventListener('keydown', close); }; }, [newMenu]);
 
   // Opening an agent (from a link, the breadcrumb or archiving it) reveals it in the tree once.
   const open = selected ? agents.get(selected) : undefined;
@@ -64,11 +69,12 @@ export function Sidebar({ agents, selected, open: openIds, onSelect, onOpenInSpl
   const states = new Map<string, AgentState>(list.map((a) => [a.id, agentState(a, agents, seen, activity.get(a.id), now)]));
   const state = (a: AgentRecord) => states.get(a.id)!;
   const chats = list.filter((a) => !a.parentId);
-  const orchestrators = chats.filter((a) => !a.archived);
-  const archivedChats = chats.filter((a) => a.archived).sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt));
+  const orchestrators = chats.filter((a) => !a.archived && !a.scheduleId);
+  const archivedChats = chats.filter((a) => a.archived && !a.scheduleId).sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt));
   const archivedChatsOpen = tree['archived:chats'] === true;
   const childrenOf = (id: string) => list.filter((a) => a.parentId === id);
   const needs = list.filter((a) => needsYou(a, state(a))).sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt));
+  const scheduleNeeds = [...schedules.values()].filter((task) => scheduleNeedsYou(task, seen));
   const running = list.filter((a) => a.status === 'running').length;
   const spend = list.reduce((sum, a) => sum + a.costUsd, 0);
 
@@ -143,9 +149,7 @@ export function Sidebar({ agents, selected, open: openIds, onSelect, onOpenInSpl
         <LogoIcon />
         <span className="app-name">Centurion</span>
         <AlertsMenu />
-        <button className="icon-button" title="New chat" aria-label="New chat" onClick={() => setCreating(true)}>
-          <PlusIcon size={16} />
-        </button>
+        <div className="menu-anchor" ref={newMenuRef}><button className="icon-button" title="New" aria-label="New" aria-expanded={newMenu} onClick={() => setNewMenu(!newMenu)}><PlusIcon size={16} /></button>{newMenu && <div className="menu" role="menu"><button role="menuitem" onClick={() => { setNewMenu(false); setCreating(true); }}>New chat</button><button role="menuitem" onClick={() => { setNewMenu(false); onSelect('schedule:new'); }}>New scheduled task</button></div>}</div>
       </div>
       <button className="search-field" onClick={onSearch}>
         <SearchIcon size={15} />
@@ -167,12 +171,13 @@ export function Sidebar({ agents, selected, open: openIds, onSelect, onOpenInSpl
         </button>
       )}
       <div className="tree" role="tree" aria-label="Agents" onKeyDown={treeKeys}>
-        {needs.length > 0 && (
+        {(needs.length > 0 || scheduleNeeds.length > 0) && (
           <>
             <div className="group-label">Needs you</div>
             {needs.map((a) => (
               <Row key={`needs-${a.id}`} {...rowProps(a)} meta={clock(a.lastActivityAt)} />
             ))}
+            {scheduleNeeds.map((task) => <button key={`needs-${task.id}`} className="schedule-row" onClick={() => onSelect(`schedule:${task.id}`)}><span className="schedule-mark">◷</span><span><strong>{task.name}</strong><small>{task.status === 'proposed' ? 'Proposed · activate' : task.runs.at(-1)?.status === 'pending' ? 'Missed run' : 'Last run failed'}</small></span></button>)}
           </>
         )}
         <div className="group-label">Chats</div>
@@ -185,6 +190,14 @@ export function Sidebar({ agents, selected, open: openIds, onSelect, onOpenInSpl
           </div>
         )}
         {orchestrators.map((o) => chatGroup(o, false))}
+        <div className="schedule-group-head"><span>Scheduled{schedulesPaused ? ' · Paused' : ''}</span><button className="icon-button" title="New scheduled task" onClick={() => onSelect('schedule:new')}><PlusIcon size={14} /></button><button className="link-button" onClick={() => void commands.pauseAllSchedules(!schedulesPaused).catch((e) => setError(e.message))}>{schedulesPaused ? 'Resume all' : 'Pause all'}</button></div>
+        {[...schedules.values()].map((task) => {
+          const last = task.runs.at(-1);
+          const pending = task.runs.some((run) => run.status === 'pending');
+          const archivedTarget = task.target.kind === 'agent' && agents.get(task.target.agentId)?.archived;
+          const runs = list.filter((a) => a.scheduleId === task.id && !a.archived).slice(-task.keepRuns).reverse();
+          return <div key={task.id} className="schedule-tree-group"><button className={`schedule-row${selected === `schedule:${task.id}` ? ' selected' : ''}`} onClick={() => onSelect(`schedule:${task.id}`)} onContextMenu={(e) => { e.preventDefault(); onSelect(`schedule:${task.id}`); }}><span className="schedule-mark">◷</span><span><strong>{task.name}</strong><small className={last?.status === 'failed' ? 'schedule-error' : ''}>{pending ? 'Missed run · needs you' : last?.status === 'failed' ? 'Last run failed' : task.status === 'proposed' ? 'Proposed · activate' : archivedTarget ? 'Paused · its chat is archived' : task.status === 'paused' ? 'Paused' : task.nextAt ? `Next ${clock(task.nextAt)}` : 'Manual only'}</small></span></button>{runs.length > 0 && <div className="tree-children">{runs.map((a) => <Row key={a.id} {...rowProps(a)} parentId={task.id} />)}</div>}</div>;
+        })}
         {archivedChats.length > 0 && (
           <div className="archived-chats">
             <GroupToggle
@@ -247,6 +260,7 @@ export function Sidebar({ agents, selected, open: openIds, onSelect, onOpenInSpl
               <span className="menu-hint">Starts an expert under this chat without telling it</span>
             </button>
           )}
+          <button role="menuitem" onClick={() => { setMenu(null); onSelect(`schedule:new:${menuAgent.id}`); }}>Schedule a message…</button>
           <button
             role="menuitem"
             disabled={menuBlocker !== null}
