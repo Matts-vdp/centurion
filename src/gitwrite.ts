@@ -38,6 +38,7 @@ export const gitEvents = new EventEmitter();
 const LOCAL_TIMEOUT = 10_000;
 /** Commits run hooks, which may take a while. */
 const COMMIT_TIMEOUT = 5 * 60_000;
+const NETWORK_TIMEOUT = 5 * 60_000;
 const LOCK_RETRY_MS = 500;
 const MAX_OUTPUT = 20_000;
 const MAX_PATHS = 10_000;
@@ -45,10 +46,12 @@ const MAX_PATHS = 10_000;
 // ---------- the queue ----------
 
 const queues = new Map<string, Promise<unknown>>();
+const networkCommands = new Map<string, AbortController>();
+const repoKey = (top: string) => process.platform === 'win32' ? top.toLowerCase() : top;
 
 /** Runs `fn` after every earlier write on the same repository has finished. */
 function serialised<T>(top: string, fn: () => Promise<T>): Promise<T> {
-  const key = process.platform === 'win32' ? top.toLowerCase() : top;
+  const key = repoKey(top);
   const next = (queues.get(key) ?? Promise.resolve()).then(fn, fn);
   const tail = next.then(
     () => undefined,
@@ -67,6 +70,8 @@ const BUSY = 'Git is busy in this repository: another git command is running';
 
 /** git's output as one sentence a person can act on, for the failures we know; null for others. */
 export function knownError(output: string): string | null {
+  if (/could not read Username|Authentication failed|terminal prompts disabled|Permission denied \(publickey\)|could not read Password|fatal: Authentication/i.test(output)) return 'Git needs credentials for origin. Sign in once from a terminal (git fetch) and try again.';
+  if (/non-fast-forward|fetch first|remote contains work that you do not have locally/i.test(output)) return 'The remote has new commits';
   if (/index\.lock/.test(output)) return BUSY;
   if (/Please tell me who you are|Author identity unknown|unable to auto-detect email|empty ident name/i.test(output)) {
     return 'Git doesn\'t know who you are. Set your name and email once in a terminal: git config --global user.name "Your Name" and git config --global user.email you@example.com';
@@ -135,6 +140,75 @@ class WriteRun {
     this.commands.push({ command, code: res.code, output: outputOf(res).slice(0, MAX_OUTPUT) });
     return res;
   }
+}
+
+/** Stops only the network command currently running for this repository; queued writes remain queued. */
+export async function cancelNetwork(root: string): Promise<{ cancelled: boolean }> {
+  const repo = await needRepo(root);
+  const controller = networkCommands.get(repoKey(repo.top));
+  if (controller) controller.abort();
+  return { cancelled: !!controller };
+}
+
+type RemoteAction = 'fetch' | 'pull' | 'push' | 'sync' | 'publish';
+
+/** Network git command with a per-repository cancellation handle. */
+async function network(run: WriteRun, args: string[], allowFailure = false): Promise<GitResult> {
+  const key = repoKey(run.top);
+  const controller = new AbortController();
+  networkCommands.set(key, controller);
+  try {
+    const res = await run.run(args, { timeout: NETWORK_TIMEOUT, signal: controller.signal });
+    if (controller.signal.aborted) throw new GitError(409, 'Git command cancelled', outputOf(res));
+    if (res.code !== 0 && !allowFailure) throw new GitError(409, explain(outputOf(res)), outputOf(res));
+    return res;
+  } finally {
+    if (networkCommands.get(key) === controller) networkCommands.delete(key);
+  }
+}
+
+/** Fetch, pull, push, sync or publish a branch, using the same write queue as local actions. */
+export function remoteAction(root: string, action: RemoteAction, gitPull: 'merge' | 'rebase', remote?: string): Promise<WriteResult & { pulled: number; pushed: number; conflicted: boolean }> {
+  return write(root, async (run) => {
+    let status = await gitStatus(root, true);
+    if (!status) throw new GitError(400, 'This folder is not a Git repository');
+    if (action !== 'fetch' && (!status?.branch || !status.head)) throw new GitError(409, 'Create a branch and commit before using the remote');
+    let pulled = 0;
+    let pushed = 0;
+    let conflicted = false;
+    const upstream = status.upstream;
+    const remoteName = upstream?.split('/')[0] ?? 'origin';
+    if (action === 'publish') {
+      if (upstream) throw new GitError(409, `This branch already tracks ${upstream}`);
+      const names = (await run.must(['remote'])).stdout.toString('utf8').split(/\r?\n/).filter(Boolean);
+      if (!names.length) throw new GitError(409, 'Add a remote before publishing this branch');
+      if (remote && !names.includes(remote)) throw new GitError(400, `Remote ${remote} does not exist`);
+      if (names.length > 1 && !remote) throw new GitError(400, 'Choose a remote to publish this branch');
+      await network(run, ['push', '-u', remote ?? names[0], status.branch!]);
+      pushed = 1;
+    } else {
+      if (!upstream && action !== 'fetch') throw new GitError(409, 'Publish this branch before syncing');
+      if (action === 'fetch' || action === 'sync') {
+        await network(run, ['fetch', upstream ? remoteName : '--all']);
+        status = await gitStatus(root, true);
+      }
+      if ((action === 'pull' || action === 'sync') && (action === 'pull' || (status?.behind ?? 0) > 0)) {
+        pulled = status?.behind ?? 0;
+        const res = await network(run, ['pull', gitPull === 'rebase' ? '--rebase' : '--no-rebase', '--autostash'], true);
+        if (res.code !== 0) {
+          const after = await gitStatus(root, true);
+          if (after?.conflicts.length || after?.outside.conflicts.length) conflicted = true;
+          else throw new GitError(409, explain(outputOf(res)), outputOf(res));
+        }
+        status = await gitStatus(root, true);
+      }
+      if (!conflicted && (action === 'push' || action === 'sync') && (action === 'push' || (status?.ahead ?? 0) > 0)) {
+        pushed = status?.ahead ?? 0;
+        await network(run, ['push']);
+      }
+    }
+    return { pulled, pushed, conflicted };
+  });
 }
 
 function outputOf(res: GitResult): string {

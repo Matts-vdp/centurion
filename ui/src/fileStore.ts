@@ -39,6 +39,7 @@ export type DiffSide = 'head' | 'staged' | 'worktree';
 /** A git command a write ran, with its output, for Details. */
 export type GitCommand = { command: string; code: number; output: string };
 export type GitWrite = { status: GitStatus | null; commands: GitCommand[] };
+export type GitRemoteWrite = GitWrite & { pulled: number; pushed: number; conflicted: boolean };
 export type FileContent =
   | { kind: 'text'; text: string; size: number; truncated: boolean; lines: number }
   | { kind: 'image'; size: number; mediaType: string }
@@ -78,6 +79,10 @@ export const filesApi = {
 
 /** Git writes on the repository of the agent's own folder (root 0). Paths are relative to the repository. */
 export const gitApi = {
+  remote: (id: string, action: 'fetch' | 'pull' | 'push' | 'sync' | 'publish', remote?: string) =>
+    api<GitRemoteWrite>(`/api/agents/${id}/git/${action}`, { method: 'POST', body: remote ? { remote } : {} }),
+  cancel: (id: string) => api<{ cancelled: boolean }>(`/api/agents/${id}/git/cancel`, { method: 'POST' }),
+  branches: (id: string) => api<{ remotes: string[] }>(`/api/agents/${id}/git/branches?root=0`),
   stage: (id: string, paths: string[]) => api<GitWrite>(`/api/agents/${id}/git/stage`, { method: 'POST', body: { paths } }),
   unstage: (id: string, paths: string[]) => api<GitWrite>(`/api/agents/${id}/git/unstage`, { method: 'POST', body: { paths } }),
   discard: (id: string, paths: string[]) => api<GitWrite & { deleted: string[] }>(`/api/agents/${id}/git/discard`, { method: 'POST', body: { paths } }),

@@ -12,6 +12,7 @@ import {
   type GitEntry,
   type GitLetter,
   type GitStatus,
+  type GitRemoteWrite,
   type GitWrite,
 } from './fileStore';
 import { Chevron, ChevronDownIcon, DiscardIcon, FileIcon, ForkIcon, MinusIcon, MoreIcon, PlusIcon } from './icons';
@@ -24,7 +25,22 @@ import { continueList } from './listInput';
  */
 
 /** What the last git action did, shown under the commit box until the next one. `undo`: the commit Undo takes back. */
-export type ResultLine = { error: boolean; text: string; details: string; commands: GitCommand[]; undo?: string };
+export type ResultLine = { error: boolean; text: string; details: string; commands: GitCommand[]; undo?: string; sync?: boolean };
+
+function remoteResult(action: string, r: GitRemoteWrite): ResultLine {
+  const text = r.conflicted ? 'Pull has conflicts. Resolve them before syncing again' :
+    action === 'publish' ? 'Published branch and set its upstream' :
+    r.pulled && r.pushed ? `Pulled ${plural(r.pulled, 'commit')} from ${r.status?.upstream ?? 'upstream'}, pushed ${r.pushed}` :
+    r.pulled ? `Pulled ${plural(r.pulled, 'commit')} from ${r.status?.upstream ?? 'upstream'}` :
+    r.pushed ? `Pushed ${plural(r.pushed, 'commit')}` :
+    action === 'fetch' ? 'Fetched remote changes' : 'Already up to date';
+  return { error: false, text, details: '', commands: r.commands };
+}
+
+function remoteFailure(err: unknown): ResultLine {
+  const f = gitFailure(err);
+  return { error: true, text: f.error, details: f.details, commands: f.commands, sync: f.error === 'The remote has new commits' };
+}
 
 type Group = 'conflicts' | 'staged' | 'unstaged';
 type Item = { group: Group; entry: GitEntry; inside: boolean; /** Relative to the root inside the folder, else the repo path. */ rel: string };
@@ -60,6 +76,8 @@ export function changeCount(status: GitStatus | null): number {
 export function Changes({ agentId, rootPath, status, selected, result, onResult, onWritten, onOpen }: Props) {
   const listRef = useRef<HTMLDivElement>(null);
   const [busy, setBusy] = useState<Set<string>>(new Set());
+  const [remoteBusy, setRemoteBusy] = useState<string | null>(null);
+  const fetchedOnOpen = useRef<string | null>(null);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
   const [outsideOpen, setOutsideOpen] = useState(false);
   /** After Space moves a row to another group, the focus stays at the same place in the group it left. */
@@ -73,6 +91,27 @@ export function Changes({ agentId, rootPath, status, selected, result, onResult,
     const target = rows[Math.min(at.index, rows.length - 1)] ?? listRef.current.querySelector<HTMLButtonElement>('.change-main');
     target?.focus();
   }, [status]);
+
+  const doRemote = async (action: 'fetch' | 'pull' | 'push' | 'sync' | 'publish', remote?: string, quiet = false) => {
+    setRemoteBusy(action);
+    try {
+      const r = await gitApi.remote(agentId, action, remote);
+      onWritten(r.status);
+      if (!quiet) onResult(remoteResult(action, r));
+    } catch (err) {
+      onResult(remoteFailure(err));
+    } finally {
+      setRemoteBusy(null);
+    }
+  };
+
+  useEffect(() => {
+    if (!status || remoteBusy || (status.fetchedAt !== null && Date.now() - status.fetchedAt < 5 * 60_000)) return;
+    const key = `${agentId}:${status.branch}:${status.fetchedAt}`;
+    if (fetchedOnOpen.current === key) return;
+    fetchedOnOpen.current = key;
+    void doRemote('fetch', undefined, true);
+  }, [agentId, status?.branch, status?.fetchedAt]);
 
   if (!status) return <p className="files-note">Loading…</p>;
 
@@ -298,7 +337,7 @@ export function Changes({ agentId, rootPath, status, selected, result, onResult,
 
   return (
     <div className="changes">
-      <BranchLine status={status} />
+      <BranchLine status={status} agentId={agentId} busy={remoteBusy} onAction={(action, remote) => void doRemote(action, remote)} onCancel={() => void gitApi.cancel(agentId)} />
       <div className="changes-list" ref={listRef}>
         {total === 0 && <p className="files-note">No changes. Working tree clean.</p>}
         {inside.map((g) => renderGroup(g.group, g.items, 'in'))}
@@ -312,7 +351,7 @@ export function Changes({ agentId, rootPath, status, selected, result, onResult,
           </div>
         )}
       </div>
-      <CommitBox key={repoTop(rootPath, prefix)} agentId={agentId} top={repoTop(rootPath, prefix)} status={status} result={result} onResult={onResult} onWritten={onWritten} />
+      <CommitBox key={repoTop(rootPath, prefix)} agentId={agentId} top={repoTop(rootPath, prefix)} status={status} result={result} onResult={onResult} onWritten={onWritten} onSync={() => void doRemote('sync')} onRemoteBusy={setRemoteBusy} />
     </div>
   );
 }
@@ -371,22 +410,46 @@ function letterTitle(letter: GitLetter): string {
   return { M: 'Modified', A: 'Added', D: 'Deleted', R: 'Renamed', U: 'Untracked', C: 'Conflict' }[letter];
 }
 
-function BranchLine({ status }: { status: GitStatus }) {
+function BranchLine({ status, agentId, busy, onAction, onCancel }: { status: GitStatus; agentId: string; busy: string | null; onAction: (action: 'fetch' | 'pull' | 'push' | 'sync' | 'publish', remote?: string) => void; onCancel: () => void }) {
+  const [menu, setMenu] = useState(false);
+  const [remotes, setRemotes] = useState<string[] | null>(null);
+  const ref = useRef<HTMLSpanElement>(null);
+  const close = useMemo(() => () => setMenu(false), []);
+  useDismiss(menu, ref, close);
   const name = status.branch ?? (status.head ? `detached at ${short(status.head)}` : 'detached HEAD');
+  const fetched = status.fetchedAt === null ? 'Never fetched' : `Fetched ${Math.max(0, Math.floor((Date.now() - status.fetchedAt) / 60_000))} min ago`;
+  const publish = () => {
+    void gitApi.branches(agentId).then(({ remotes: names }) => {
+      if (names.length === 1) onAction('publish', names[0]);
+      else if (names.length > 1) { setRemotes(names); setMenu(true); }
+      else onAction('publish');
+    }).catch(() => onAction('publish'));
+  };
   return (
     <div className="git-branch mono" title={status.upstream ? `${name} · tracks ${status.upstream}` : name}>
       <ForkIcon size={13} />
       <span className="git-branch-name">{name}</span>
       {status.behind > 0 && (
-        <span className="git-ab" title={`${plural(status.behind, 'commit')} on ${status.upstream} you don't have`}>
+        <span className="git-ab" title={`${plural(status.behind, 'commit')} on ${status.upstream} you don't have · ${fetched}`}>
           ↓{status.behind}
         </span>
       )}
       {status.ahead > 0 && (
-        <span className="git-ab" title={`${plural(status.ahead, 'commit')} not pushed to ${status.upstream}`}>
+        <span className="git-ab" title={`${plural(status.ahead, 'commit')} not pushed to ${status.upstream} · ${fetched}`}>
           ↑{status.ahead}
         </span>
       )}
+      <span className="git-branch-actions" ref={ref}>
+        {busy ? <><button className="button secondary small" disabled>{({ fetch: 'Fetching…', pull: 'Pulling…', push: 'Pushing…', sync: 'Syncing…', publish: 'Publishing…' } as Record<string, string>)[busy]}</button><button className="git-result-link" onClick={onCancel}>Cancel</button></> : <>
+          <button className="button secondary small" disabled={!status.branch || !status.head} onClick={() => status.upstream ? onAction('sync') : publish()}>{status.upstream ? 'Sync' : 'Publish'}</button>
+          {status.upstream && <button className="icon-button small" aria-label="More sync actions" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)}><ChevronDownIcon size={14} /></button>}
+        </>}
+        {menu && <Menu items={remotes && !status.upstream ? remotes.map((r) => ({ label: `Publish to ${r}`, run: () => onAction('publish', r) })) : [
+          { label: 'Push', run: () => onAction('push') },
+          { label: 'Pull', run: () => onAction('pull') },
+          { label: 'Fetch', run: () => onAction('fetch') },
+        ]} onClose={close} />}
+      </span>
     </div>
   );
 }
@@ -458,6 +521,8 @@ function CommitBox({
   result,
   onResult,
   onWritten,
+  onSync,
+  onRemoteBusy,
 }: {
   agentId: string;
   top: string;
@@ -465,11 +530,16 @@ function CommitBox({
   result: ResultLine | null;
   onResult: (r: ResultLine | null) => void;
   onWritten: (status: GitStatus | null) => void;
+  onSync: () => void;
+  onRemoteBusy: (action: string | null) => void;
 }) {
   const [message, setMessageState] = useState(() => commitDrafts.read(top));
   const [amend, setAmend] = useState(false);
   const [askAll, setAskAll] = useState(false);
-  const [busy, setBusy] = useState<'commit' | 'undo' | 'amend' | null>(null);
+  const [afterCommit, setAfterCommit] = useState<'push' | 'sync' | null>(null);
+  const [afterRemote, setAfterRemote] = useState<string | undefined>();
+  const [remoteChoices, setRemoteChoices] = useState<string[] | null>(null);
+  const [busy, setBusy] = useState<'commit' | 'undo' | 'amend' | 'push' | 'sync' | null>(null);
   const [menu, setMenu] = useState(false);
   const field = useRef<HTMLTextAreaElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -554,21 +624,38 @@ function CommitBox({
     }
   };
 
-  const commit = async (withAll: boolean) => {
+  const commit = async (withAll: boolean, after: 'push' | 'sync' | null = afterCommit, chosenRemote = afterRemote) => {
     setAskAll(false);
     setBusy('commit');
     const count = changes;
     try {
       const r = await gitApi.commit(agentId, { message, amend, all: withAll });
       onWritten(r.status);
-      onResult(
-        amend
-          ? { error: false, text: `Amended the last commit · now ${short(r.hash)}`, details: '', commands: r.commands }
-          : { error: false, text: `Committed ${short(r.hash)}${withAll ? ` · all ${plural(count, 'change')}` : ''}`, details: '', commands: r.commands, undo: r.hash },
-      );
       saved.current = '';
       setAmend(false);
       setMessage('', true);
+      let commands = r.commands;
+      let remoteText = '';
+      if (after) {
+        setBusy(after);
+        onRemoteBusy(after);
+        try {
+          const action = !r.status?.upstream ? 'publish' : after;
+          const remote = await gitApi.remote(agentId, action, chosenRemote);
+          onWritten(remote.status);
+          commands = [...commands, ...remote.commands];
+          remoteText = ` · ${remoteResult(action, remote).text.toLowerCase()}`;
+        } catch (err) {
+          const f = gitFailure(err);
+          onResult({ error: true, text: `Committed ${short(r.hash)} · ${f.error}`, details: f.details, commands: [...commands, ...f.commands], sync: f.error === 'The remote has new commits' });
+          return;
+        } finally {
+          onRemoteBusy(null);
+        }
+      }
+      onResult(amend
+        ? { error: false, text: `Amended the last commit · now ${short(r.hash)}${remoteText}`, details: '', commands }
+        : { error: false, text: `Committed ${short(r.hash)}${withAll ? ` · all ${plural(count, 'change')}` : ''}${remoteText}`, details: '', commands, undo: after ? undefined : r.hash });
     } catch (err) {
       const f = gitFailure(err);
       onResult({ error: true, text: f.error, details: f.details, commands: f.commands });
@@ -577,10 +664,21 @@ function CommitBox({
     }
   };
 
-  const start = () => {
+  const start = (after: 'push' | 'sync' | null = null, chosenRemote?: string) => {
     if (blocker || busy) return;
+    if (after && !status.upstream && !chosenRemote) {
+      void gitApi.branches(agentId).then(({ remotes }) => {
+        if (remotes.length > 1) { setAfterCommit(after); setRemoteChoices(remotes); setMenu(true); }
+        else if (remotes.length === 1) start(after, remotes[0]);
+        else onResult({ error: true, text: 'Add a remote before publishing this branch', details: '', commands: [] });
+      }).catch((err) => onResult(remoteFailure(err)));
+      return;
+    }
+    setAfterCommit(after);
+    setAfterRemote(chosenRemote);
+    setRemoteChoices(null);
     if (all && !commitAllAlways.get()) setAskAll(true);
-    else void commit(all);
+    else void commit(all, after, chosenRemote);
   };
 
   const undo = async (hash: string) => {
@@ -617,7 +715,7 @@ function CommitBox({
           onKeyDown={(e) => {
             if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
               e.preventDefault();
-              start();
+              start(e.shiftKey ? 'push' : null);
             } else continueList(e);
           }}
         />
@@ -654,8 +752,8 @@ function CommitBox({
           Amend
         </label>
         <div className="split-button menu-anchor" ref={menuRef}>
-          <button className="button primary small split-main" disabled={blocker !== null || busy !== null} title={blocker ?? `${amend ? 'Amend the last commit' : 'Commit'} (Ctrl+Enter)`} onClick={start}>
-            {busy === 'commit' ? (amend ? 'Amending…' : 'Committing…') : amend ? 'Amend' : all && changes > 0 ? 'Commit all' : 'Commit'}
+          <button className="button primary small split-main" disabled={blocker !== null || busy !== null} title={blocker ?? `${amend ? 'Amend the last commit' : 'Commit'} (Ctrl+Enter)`} onClick={() => start()}>
+            {busy === 'commit' ? (amend ? 'Amending…' : 'Committing…') : busy === 'push' ? 'Pushing…' : busy === 'sync' ? 'Syncing…' : amend ? 'Amend' : all && changes > 0 ? 'Commit all' : 'Commit'}
           </button>
           <button className="button primary small split-more" aria-label="More commit actions" aria-haspopup="menu" aria-expanded={menu} disabled={busy !== null} onClick={() => setMenu(!menu)}>
             <ChevronDownIcon size={14} />
@@ -664,20 +762,20 @@ function CommitBox({
             <Menu
               up
               onClose={closeMenu}
-              items={[
-                { label: 'Commit and Push', hint: 'Comes with sync', disabled: true },
-                { label: 'Commit and Sync', hint: 'Comes with sync', disabled: true },
+              items={remoteChoices ? remoteChoices.map((r) => ({ label: `Commit and ${afterCommit === 'sync' ? 'Sync' : 'Push'} to ${r}`, run: () => start(afterCommit, r) })) : [
+                { label: 'Commit and Push', disabled: blocker !== null, title: blocker ?? undefined, run: () => start('push') },
+                { label: 'Commit and Sync', disabled: blocker !== null, title: blocker ?? undefined, run: () => start('sync') },
               ]}
             />
           )}
         </div>
       </div>
-      {result && <ResultView result={result} undoing={busy === 'undo'} onUndo={(h) => void undo(h)} onDismiss={() => onResult(null)} />}
+      {result && <ResultView result={result} undoing={busy === 'undo'} onUndo={(h) => void undo(h)} onDismiss={() => onResult(null)} onSync={onSync} />}
     </div>
   );
 }
 
-export function ResultView({ result, undoing, onUndo, onDismiss }: { result: ResultLine; undoing: boolean; onUndo: (hash: string) => void; onDismiss: () => void }) {
+export function ResultView({ result, undoing, onUndo, onDismiss, onSync }: { result: ResultLine; undoing: boolean; onUndo: (hash: string) => void; onDismiss: () => void; onSync?: () => void }) {
   const [open, setOpen] = useState(false);
   // A new result starts folded.
   useEffect(() => setOpen(false), [result]);
@@ -686,6 +784,7 @@ export function ResultView({ result, undoing, onUndo, onDismiss }: { result: Res
     <div className={`git-result${result.error ? ' error' : ''}`} role={result.error ? 'alert' : 'status'}>
       <div className="git-result-line">
         <span className="git-result-text">{result.text}</span>
+        {result.sync && onSync && <button className="git-result-link" onClick={onSync}>Sync</button>}
         {result.undo && (
           <span className="git-result-action">
             <span className="git-result-sep">·</span>

@@ -10,7 +10,7 @@ import { packageVersion } from './paths.js';
 import { bold, cyan, dim } from './term.js';
 import { allFiles, FileError, listFolder, RawBody, readFileContent } from './files.js';
 import { commitFileDiff, DIFF_SIDES, diffSideText, fileDiff, gitBranches, gitCommit, gitLog, gitStatus, repoInfo, type DiffSide } from './git.js';
-import { APPLY_ACTIONS, applyPartial, commit, discardPaths, gitEvents, GitError, stagePaths, undoCommit, unstagePaths, type ApplyAction } from './gitwrite.js';
+import { APPLY_ACTIONS, applyPartial, cancelNetwork, commit, discardPaths, gitEvents, GitError, remoteAction, stagePaths, undoCommit, unstagePaths, type ApplyAction } from './gitwrite.js';
 import { isInside } from './confine.js';
 import { EFFORT_LEVELS, IMAGE_TYPES, type EffortLevel, type ImageData, type PermissionDecision } from './types.js';
 
@@ -431,6 +431,28 @@ export const routes: Route[] = [
     result:
       '`{ current, default, remotes, local: [{ name, hash, upstream, ahead, behind, gone, current, date, subject }], remote: [{ name, remote, hash, date, subject }] }`',
     handler: (ctx) => gitBranches(fileRoot(ctx).root),
+  },
+  ...(['fetch', 'pull', 'push', 'sync', 'publish'] as const).map((action): Route => ({
+    method: 'POST',
+    path: `/api/agents/:id/git/${action}`,
+    summary: `${action === 'sync' ? 'Fetches, then pulls if behind and pushes if ahead; stops after a conflicting pull' : action === 'publish' ? 'Pushes the current branch and sets its upstream' : `Runs git ${action} for the current branch`}. Network commands have a five minute limit and can be cancelled. ${GIT_WRITE}`,
+    query: GIT_WRITE_QUERY,
+    body: action === 'publish' ? '`{ remote?: string }`; required when the repository has several remotes' : '`{}`',
+    result: `${GIT_WRITE_RESULT}, plus pulled, pushed (commit counts) and conflicted`,
+    handler: (ctx) => {
+      const remote = ctx.body.remote;
+      if (remote !== undefined && (typeof remote !== 'string' || !remote.trim())) throw new HttpError(400, '"remote" must be a remote name');
+      return remoteAction(writeRoot(ctx), action, ctx.config.gitPull, remote);
+    },
+  })),
+  {
+    method: 'POST',
+    path: '/api/agents/:id/git/cancel',
+    summary: 'Cancels the network git command currently running in this repository; queued writes still run.',
+    query: GIT_WRITE_QUERY,
+    body: '`{}`',
+    result: '`{ cancelled: boolean }`',
+    handler: (ctx) => cancelNetwork(writeRoot(ctx)),
   },
   {
     method: 'POST',

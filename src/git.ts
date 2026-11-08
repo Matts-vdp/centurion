@@ -72,6 +72,7 @@ export type GitOptions = {
   /** Writes take git's locks; reads skip the optional ones. */
   write?: boolean;
   env?: Record<string, string>;
+  signal?: AbortSignal;
 };
 
 /** Run git in `cwd`. Rejects only when git can't be started (not installed) or times out. */
@@ -87,18 +88,30 @@ export function git(cwd: string, args: string[], opts: GitOptions = {}): Promise
     }
     const out: Buffer[] = [];
     let err = '';
+    const stop = () => {
+      if (process.platform === 'win32' && child.pid) {
+        const killer = spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true });
+        killer.on('error', () => child.kill());
+        killer.on('close', (code) => { if (code !== 0) child.kill(); });
+      } else child.kill();
+    };
     const timer = setTimeout(() => {
-      child.kill();
+      stop();
       reject(new Error('git timed out'));
     }, opts.timeout ?? GIT_TIMEOUT);
+    const abort = () => stop();
+    if (opts.signal?.aborted) abort();
+    opts.signal?.addEventListener('abort', abort, { once: true });
     child.stdout.on('data', (d: Buffer) => out.push(d));
     child.stderr.on('data', (d: Buffer) => (err += d.toString()));
     child.on('error', (e) => {
       clearTimeout(timer);
+      opts.signal?.removeEventListener('abort', abort);
       reject(e);
     });
     child.on('close', (code) => {
       clearTimeout(timer);
+      opts.signal?.removeEventListener('abort', abort);
       resolve({ code: code ?? 1, stdout: Buffer.concat(out), stderr: err });
     });
     if (opts.input !== undefined) child.stdin.end(opts.input);

@@ -1,6 +1,6 @@
 # Git: changes, commits, sync, branches, log and conflicts
 
-**Status:** steps 1 to 4 (backend reads and writes, the Changes view, the diff viewer) done; the rest planned. Builds on the Files panel (`docs/files-plan.md`), which already shows git status and a unified diff against `HEAD`.
+**Status:** steps 1 to 5 (backend reads and writes, the Changes view, the diff viewer, remote and sync) done; the rest planned. Builds on the Files panel (`docs/files-plan.md`), which already shows git status and a unified diff against `HEAD`.
 
 The goal: the git work you do around an agent's changes, without leaving the manager. You read the diff, stage what you want, type a message, then commit and push. You sync with the remote, switch or create a branch, and merge `master` in with your open changes put aside and restored on their own. When that conflicts, you resolve it in the same panel. Rider and VS Code are the model (research summary in §11); where they differ, this plan picks what fits a manager of agents.
 
@@ -201,6 +201,11 @@ As built in step 4 (`ui/src/DiffView.tsx`, `ui/src/diffModel.ts`, wired in the v
 - Word highlights pair the n-th removed line of a run with its n-th added line and compare their tokens (words, spaces, symbols) with a longest common subsequence; pairs that share under 40 % stay a plain change. Split view wraps long lines.
 - Hunk and line discards write the panel's result line (`Discarded a change in app.ts`). Errors, the stale-hash 409 among them, show on a line above the diff, and a 409 also refreshes it. Esc clears a line selection before it closes the file.
 - The diff route's binary result has `sizes: { old, new }` (bytes, null for a missing side).
+
+As built in step 5 (`src/gitwrite.ts`, `ui/src/Changes.tsx`):
+- The five remote routes return `{ status, commands, pulled, pushed, conflicted }`; Cancel returns `{ cancelled }` and stops the current network command for the repository without removing queued writes. Fetch uses the tracking remote, or all remotes if the branch has no upstream. Explicit Pull runs even when already up to date; Sync skips Pull and Push when their counts are zero. A conflicting Pull returns its status and leaves Push for another Sync.
+- `gitPull` is a documented config field, default `merge`. Both modes pass `--autostash`. Push uses git's normal fast-forward safety. A rejected push maps to `The remote has new commits`.
+- The branch row shows Publish or Sync, ahead and behind counts and a fetch-age tooltip. Its menu offers Push, Pull and Fetch; Publish asks which remote when there is more than one. Changes fetches once on opening when the last fetch is older than five minutes. The commit split button now offers Commit and Push / Sync and `Ctrl+Shift+Enter` commits and pushes. Without an upstream, either combined action publishes; with several remotes it asks which one before committing. The remote result and its commands use the existing result line.
 
 Backend notes (`src/git.ts`, new; the read helpers move there from `src/files.ts`, and the confinement helpers they share to `src/confine.ts`):
 - Git runs as `git` itself, as today: no shell, `core.quotepath=off`, `GIT_OPTIONAL_LOCKS=0` for reads only (writes need the locks).

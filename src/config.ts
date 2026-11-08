@@ -62,6 +62,7 @@ export const configSchema = z.strictObject({
     .min(0)
     .default(10)
     .describe("Close an agent's process after this many idle minutes (`0` = never). The next message resumes the session."),
+  gitPull: z.enum(['merge', 'rebase']).default('merge').describe('How Pull and Sync integrate remote commits: merge (default) or rebase. Both autostash local changes.'),
 });
 
 type FileConfig = z.output<typeof configSchema>;

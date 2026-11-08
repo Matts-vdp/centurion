@@ -5421,6 +5421,21 @@ body.resizing .pane {
   color: var(--text-2);
 }
 
+.git-branch-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+  position: relative;
+  font-family: var(--font);
+}
+
+.git-branch-actions .git-menu {
+  top: 100%;
+  right: 0;
+}
+
 /* ---------- the Changes segment (docs/git-plan.md §3) ---------- */
 
 .changes {
