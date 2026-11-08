@@ -652,7 +652,7 @@ const MAX_OUTPUT = 20_000;
 function StepRow({ step, ctx, running }: { step: Step; ctx: Ctx; running: boolean }) {
   const error = step.kind === 'tool' && (step.isError === true || step.denied !== undefined);
   const [open, setOpen] = useState<boolean | null>(null);
-  const isOpen = open ?? (ctx.verbose || error);
+  const isOpen = open ?? ctx.verbose;
   const view = stepView(step, ctx.agents);
   const ms =
     step.kind === 'tool'
