@@ -5,7 +5,7 @@ import path from 'node:path';
 import { countLines, FileError, isBinary, MAX_TEXT, relParts, resolveInside, toPosix } from './confine.js';
 
 /**
- * Git for the Files panel: status, diffs, the log, commit details and branches (reads only, for now).
+ * Git for the Files panel: status, diffs, the log, commit details and branches (the reads; writes are in `gitwrite.ts`).
  * Git runs as `git` itself, without a shell. A folder that isn't in a repository, or a machine without git,
  * just has no git state: `gitStatus` gives null and the other reads refuse with 400.
  *
@@ -64,13 +64,19 @@ const MAX_COUNTED = 200;
 // ---------- running git ----------
 
 export type GitResult = { code: number; stdout: Buffer; stderr: string };
-export type GitOptions = { input?: string; timeout?: number; /** Writes take git's locks; reads skip the optional ones. */ write?: boolean };
+export type GitOptions = {
+  input?: string;
+  timeout?: number;
+  /** Writes take git's locks; reads skip the optional ones. */
+  write?: boolean;
+  env?: Record<string, string>;
+};
 
 /** Run git in `cwd`. Rejects only when git can't be started (not installed) or times out. */
 export function git(cwd: string, args: string[], opts: GitOptions = {}): Promise<GitResult> {
   return new Promise((resolve, reject) => {
     let child;
-    const env = opts.write ? { ...process.env } : { ...process.env, GIT_OPTIONAL_LOCKS: '0' };
+    const env = { ...process.env, ...(opts.write ? {} : { GIT_OPTIONAL_LOCKS: '0' }), ...opts.env };
     try {
       child = spawn('git', ['-c', 'core.quotepath=off', ...args], { cwd, windowsHide: true, env });
     } catch (err) {
@@ -135,7 +141,13 @@ export async function repoInfo(root: string): Promise<RepoInfo | null> {
   return info;
 }
 
-async function needRepo(root: string): Promise<RepoInfo> {
+/** Forget the cached repository info and statuses (after a write: the first commit gives a repository its HEAD). */
+export function forgetGitCaches(): void {
+  repoCache.clear();
+  statusCache.clear();
+}
+
+export async function needRepo(root: string): Promise<RepoInfo> {
   const repo = await repoInfo(root);
   if (!repo) throw new FileError(400, 'Not a git repository');
   return repo;

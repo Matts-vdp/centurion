@@ -1,6 +1,6 @@
 # Git: changes, commits, sync, branches, log and conflicts
 
-**Status:** step 1 (backend reads) done; the rest planned. Builds on the Files panel (`docs/files-plan.md`), which already shows git status and a unified diff against `HEAD`.
+**Status:** steps 1 and 2 (backend reads and writes) done; the rest planned. Builds on the Files panel (`docs/files-plan.md`), which already shows git status and a unified diff against `HEAD`.
 
 The goal: the git work you do around an agent's changes, without leaving the manager. You read the diff, stage what you want, type a message, then commit and push. You sync with the remote, switch or create a branch, and merge `master` in with your open changes put aside and restored on their own. When that conflicts, you resolve it in the same panel. Rider and VS Code are the model (research summary in §11); where they differ, this plan picks what fits a manager of agents.
 
@@ -177,6 +177,14 @@ As built in step 1 (the route table in `src/server.ts` has the exact shapes; `ce
 - Log: commits also have `email` and `incoming` (on the upstream, not in HEAD), the result has `more`. `scope=branch` logs HEAD and its upstream, so incoming commits show; `pushed` means reachable from any remote-tracking branch. `filter` searches the newest 50 000 commits.
 - Commit details: `files` entries have `inside`; `?path=` is refused (403) for a file outside the agent's folder, like the working-tree diffs.
 - Branches add `remotes` (the remote names, for Publish). The `main` / `master` fallback for `default` counts a branch that exists locally or on origin, else `default` is null. `local` lists the current branch first; each has `upstream`, `ahead`, `behind` and `gone`.
+
+As built in step 2 (`src/gitwrite.ts`):
+- Write routes take `?root=` (only `0`, the default). They return `{ status, commands }` plus their own fields (`deleted`, `whole`, `hash`, `undone` and `message`); `commands` are `[{ command, code, output }]` for Details. Errors are `{ error, details, commands }`: the sentence, git's output, the commands that ran. Git refusals are 409, bad requests 400.
+- Stage is `add -A` on the paths (so deletions too); a conflicted path may be staged (marked resolved) once it has no conflict markers. Unstage is `reset -q -- paths` (works without commits) and takes a staged rename's old path along; conflicts are refused. Discard needs unstaged changes on every path and refuses conflicts. Paths go to git through `--pathspec-from-file` with `--literal-pathspecs`.
+- Apply: `path` is relative to the root (like the diff route, so the hash matches), `lines` are indexes into `diff.split('
+')`, `hunks` hunk indexes, and `context` must match the diff that was shown (`-U0` applies with `--unidiff-zero`). Stage and discard take `side: 'worktree'`, unstage `side: 'staged'`. When unstaging or discarding the patch applies with `-R`, so the `add -p` rules swap (an unselected `+` becomes context, an unselected `-` is dropped). Selecting every change does the whole-file action. Renamed, binary and truncated files, and deletions when unstaging or discarding, are whole-file only. Part of an untracked file is staged as a new file with only those lines.
+- Commit refuses with conflicts or nothing staged (a merge in progress may commit without changes). A failing hook is named when one of `pre-commit`, `prepare-commit-msg`, `commit-msg` exists. Undo also refuses the first commit and while a merge or rebase is in progress, and takes an optional `hash` that must still be HEAD.
+- The `git` SSE event is `{ repo, agentIds }`: the repository's top and the agents with a root in it. It follows every write that ran a git command, also a failed one (a failed commit may have staged everything first).
 
 Backend notes (`src/git.ts`, new; the read helpers move there from `src/files.ts`, and the confinement helpers they share to `src/confine.ts`):
 - Git runs as `git` itself, as today: no shell, `core.quotepath=off`, `GIT_OPTIONAL_LOCKS=0` for reads only (writes need the locks).

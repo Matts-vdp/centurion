@@ -10,6 +10,8 @@ import { packageVersion } from './paths.js';
 import { bold, cyan, dim } from './term.js';
 import { allFiles, FileError, listFolder, RawBody, readFileContent } from './files.js';
 import { commitFileDiff, DIFF_SIDES, fileDiff, gitBranches, gitCommit, gitLog, gitStatus, repoInfo, type DiffSide } from './git.js';
+import { APPLY_ACTIONS, applyPartial, commit, discardPaths, gitEvents, GitError, stagePaths, undoCommit, unstagePaths, type ApplyAction } from './gitwrite.js';
+import { isInside } from './confine.js';
 import { EFFORT_LEVELS, IMAGE_TYPES, type EffortLevel, type ImageData, type PermissionDecision } from './types.js';
 
 const MAX_BODY = 1024 * 1024;
@@ -53,6 +55,7 @@ export function startServer(manager: Manager, config: Config): http.Server {
   manager.on('message', (data) => {
     if (forward(data.message)) broadcast('message', data);
   });
+  gitEvents.on('write', ({ top }: { top: string }) => broadcast('git', { repo: top, agentIds: agentsInRepo(manager, top) }));
 
   const authorized = (req: http.IncomingMessage, url: URL): boolean => {
     if (!config.token) return true;
@@ -109,7 +112,8 @@ export function startServer(manager: Manager, config: Config): http.Server {
       const status = err instanceof HttpError || err instanceof FileError ? err.status : 400;
       const message = err instanceof Error ? err.message : String(err);
       if (!res.headersSent) res.writeHead(status, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ error: message }));
+      const git = err instanceof GitError ? { details: err.details, commands: err.commands } : {};
+      res.end(JSON.stringify({ error: message, ...git }));
     }
   });
 
@@ -158,6 +162,12 @@ export type Route = RouteDoc & {
 const STREAMED = Symbol('streamed');
 
 const AGENT = 'The agent record';
+
+const GIT_WRITE =
+  "Writes act on the repository holding the agent's own folder (root 0 only) and run one at a time per repository; when git's index.lock is held they retry once after 500 ms. A `git` event follows. Errors are `{ error, details, commands }`: a plain sentence, git's output, and the commands that ran";
+const GIT_WRITE_QUERY = '`root?` (only `0`)';
+const GIT_WRITE_RESULT =
+  '`{ status, commands }`: the new git status (as `GET .../git/status`) and the commands that ran, `[{ command, code, output }]`';
 
 /** Every API route. The server dispatches from this table, and `describeRoutes()` documents it. */
 export const routes: Route[] = [
@@ -409,6 +419,84 @@ export const routes: Route[] = [
   },
   {
     method: 'POST',
+    path: '/api/agents/:id/git/stage',
+    summary: `Stages files (\`git add\`: changes, new files, deletions). A conflicted file is marked resolved, refused while it still has conflict markers. ${GIT_WRITE}`,
+    query: GIT_WRITE_QUERY,
+    body: '`{ paths: string[] }`, relative to the repository',
+    result: GIT_WRITE_RESULT,
+    handler: (ctx) => stagePaths(writeRoot(ctx), strings(ctx.body.paths, 'paths')),
+  },
+  {
+    method: 'POST',
+    path: '/api/agents/:id/git/unstage',
+    summary: `Unstages files: the index gets HEAD's version back, the working tree is untouched; a staged rename takes its old path along. Refused for conflicts. ${GIT_WRITE}`,
+    query: GIT_WRITE_QUERY,
+    body: '`{ paths: string[] }`, relative to the repository',
+    result: GIT_WRITE_RESULT,
+    handler: (ctx) => unstagePaths(writeRoot(ctx), strings(ctx.body.paths, 'paths')),
+  },
+  {
+    method: 'POST',
+    path: '/api/agents/:id/git/discard',
+    summary: `Throws away unstaged changes, which can't be undone: a tracked file gets its index version back (\`restore --worktree\`, staged work stays), an untracked file is deleted. Every path must have unstaged changes; conflicts are refused. ${GIT_WRITE}`,
+    query: GIT_WRITE_QUERY,
+    body: '`{ paths: string[] }`, relative to the repository',
+    result: `${GIT_WRITE_RESULT}, plus \`deleted\` (the untracked files removed)`,
+    handler: (ctx) => discardPaths(writeRoot(ctx), strings(ctx.body.paths, 'paths')),
+  },
+  {
+    method: 'POST',
+    path: '/api/agents/:id/git/apply',
+    summary: `Stages, unstages or discards part of one file's diff, by hunks and lines (\`git add -p\`'s rules: an unselected \`+\` is dropped, an unselected \`-\` becomes context). The diff is rebuilt with the same \`side\` and \`context\` and must still have \`hash\` (409 when the file changed since). Selecting every change acts on the whole file; renamed, binary and truncated files, and deletions when unstaging or discarding, only as a whole. ${GIT_WRITE}`,
+    query: GIT_WRITE_QUERY,
+    body:
+      "`{ path, side: 'worktree' | 'staged', hunks: number[], lines: number[], hash, action: 'stage' | 'unstage' | 'discard', context? }`. `path` is relative to the root, like the diff route; stage and discard take `side: 'worktree'`, unstage `side: 'staged'`. `hunks`: hunk indexes (from 0); `lines`: indexes into the diff's lines (`diff.split('\\n')`)",
+    result: `${GIT_WRITE_RESULT}, plus \`whole\` (the whole file was acted on)`,
+    handler: (ctx) => {
+      const b = ctx.body;
+      if (!APPLY_ACTIONS.includes(b.action)) throw new HttpError(400, `"action" must be one of ${APPLY_ACTIONS.join(', ')}`);
+      if (b.side !== 'worktree' && b.side !== 'staged') throw new HttpError(400, '"side" must be "worktree" or "staged"');
+      if (b.context !== undefined && (!Number.isInteger(b.context) || b.context < 0)) throw new HttpError(400, '"context" must be a number of lines');
+      return applyPartial(writeRoot(ctx), {
+        path: str(b.path, 'path'),
+        side: b.side,
+        hunks: indexes(b.hunks ?? [], 'hunks'),
+        lines: indexes(b.lines ?? [], 'lines'),
+        hash: str(b.hash, 'hash'),
+        action: b.action as ApplyAction,
+        context: b.context,
+      });
+    },
+  },
+  {
+    method: 'POST',
+    path: '/api/agents/:id/git/commit',
+    summary: `Commits what is staged; \`all\` first stages every change in the repository (\`git add -A\`). Hooks run (no \`--no-verify\`), with a 5 minute limit. \`amend\` is refused when HEAD is already pushed. Refused with conflicts or nothing to commit. ${GIT_WRITE}`,
+    query: GIT_WRITE_QUERY,
+    body: '`{ message, amend?: boolean, all?: boolean }`',
+    result: `${GIT_WRITE_RESULT}, plus \`hash\` (the new commit)`,
+    handler: (ctx) => {
+      const b = ctx.body;
+      if (b.amend !== undefined && typeof b.amend !== 'boolean') throw new HttpError(400, '"amend" must be true or false');
+      if (b.all !== undefined && typeof b.all !== 'boolean') throw new HttpError(400, '"all" must be true or false');
+      return commit(writeRoot(ctx), { message: str(b.message, 'message'), amend: b.amend === true, all: b.all === true });
+    },
+  },
+  {
+    method: 'POST',
+    path: '/api/agents/:id/git/undo-commit',
+    summary: `Undoes the last commit (\`reset --soft HEAD~1\`): its changes stay staged. Only when it isn't pushed, isn't a merge or the first commit, and no merge or rebase is in progress. ${GIT_WRITE}`,
+    query: GIT_WRITE_QUERY,
+    body: '`{ hash? }`: when given, HEAD must still be that commit (409 otherwise)',
+    result: `${GIT_WRITE_RESULT}, plus \`undone\` (its hash) and \`message\` (its message, to put back in the commit box)`,
+    handler: (ctx) => {
+      const hash = ctx.body.hash;
+      if (hash !== undefined && (typeof hash !== 'string' || !/^[0-9a-fA-F]{4,64}$/.test(hash))) throw new HttpError(400, '"hash" must be a commit hash');
+      return undoCommit(writeRoot(ctx), hash);
+    },
+  },
+  {
+    method: 'POST',
     path: '/api/agents/:id/experts',
     summary: "Starts an expert under a chat for the user; the chat isn't notified",
     body: '`{ name, cwd?, message? }`',
@@ -565,6 +653,10 @@ export const SSE_EVENTS: { name: string; data: string }[] = [
   { name: 'plan', data: 'A track plan that was created or changed (all plans follow each snapshot)' },
   { name: 'questions', data: 'A question set that was created or changed (all sets follow each snapshot)' },
   { name: 'permission', data: 'A permission request that was opened or answered (all requests follow each snapshot)' },
+  {
+    name: 'git',
+    data: "`{ repo, agentIds }`: a git write ran in the repository whose top folder is `repo` (also when it failed); `agentIds` are the agents with a folder in it, whose git views should refresh",
+  },
 ];
 
 /** The API's docs: every route without its handler. */
@@ -624,6 +716,27 @@ function fileRoot({ manager, params, url }: RouteContext): { root: string; rel: 
   const root = Number.isInteger(index) ? roots[index] : undefined;
   if (!root) throw new HttpError(400, `"root" must be the index of one of the agent's folders`);
   return { root: root.path, rel: url.searchParams.get('path') ?? '' };
+}
+
+/** The root a git write acts on: only the agent's own folder (`?root=0`, the default). */
+function writeRoot(ctx: RouteContext): string {
+  const root = ctx.url.searchParams.get('root') ?? '0';
+  if (root !== '0') throw new HttpError(400, "Git writes work only on the agent's own folder (root 0)");
+  return rootsOf(ctx.manager, ctx.params.id)[0].path;
+}
+
+/** The agents with a root inside the repository at `top`. */
+function agentsInRepo(manager: Manager, top: string): string[] {
+  const repo = path.resolve(top);
+  return manager
+    .list()
+    .filter((rec) => rootsOf(manager, rec.id).some((r) => isInside(repo, path.resolve(r.path))))
+    .map((rec) => rec.id);
+}
+
+function indexes(value: unknown, field: string): number[] {
+  if (!Array.isArray(value) || !value.every((v) => Number.isInteger(v) && v >= 0)) throw new HttpError(400, `"${field}" must be a list of indexes`);
+  return value;
 }
 
 function optionalText(value: unknown): string | undefined {
