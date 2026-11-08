@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { gitApi, gitFailure, type Conflict, type GitStatus } from './fileStore';
 
-type Props = { agentId: string; path: string; version: number; onClose: () => void; onWritten: (status: GitStatus | null) => void; onError: (message: string) => void };
+type Props = { agentId: string; path: string; version: number; onClose: () => void; onResolver: () => void; resolverAvailable: boolean; onWritten: (status: GitStatus | null) => void; onError: (message: string) => void };
 
 /** Inline conflict result: untouched spans come from Git's working merge, choices from index stages. */
-export function ConflictViewer({ agentId, path, version, onClose, onWritten, onError }: Props) {
+export function ConflictViewer({ agentId, path, version, onClose, onResolver, resolverAvailable, onWritten, onError }: Props) {
   const [data, setData] = useState<Conflict | null>(null);
   const [choices, setChoices] = useState<(string | null)[]>([]);
   const [editing, setEditing] = useState<number | null>(null);
@@ -52,6 +52,7 @@ export function ConflictViewer({ agentId, path, version, onClose, onWritten, onE
   return <div className="viewer conflict-viewer">
     <div className="viewer-head"><button className="icon-button" aria-label="Back to the files" title="Back (Esc)" onClick={onClose}>←</button><span className="viewer-path mono">{path}</span></div>
     <div className="viewer-bar conflict-bar"><span>{data ? data.binary ? 'Binary conflict' : deleted ? 'File deleted on one side' : `${remaining} of ${data.blocks.length} left` : 'Conflict'}</span>
+      {data && !data.binary && !deleted && resolverAvailable && <button className="button secondary small" onClick={onResolver}>Open in resolver</button>}
       {data && !data.binary && !deleted && <button className="button secondary small" disabled={busy || remaining > 0 || !data.blocks.length} title={remaining ? 'Choose a result for every block' : undefined} onClick={() => void mark()}>Mark resolved</button>}
     </div>
     <div className="viewer-body conflict-body">

@@ -59,7 +59,7 @@ type Props = {
   onResult: (r: ResultLine | null) => void;
   /** A write's new status (and the paths it deleted, relative to the root). */
   onWritten: (status: GitStatus | null, deleted?: string[]) => void;
-  onOpen: (path: string, mode: 'file' | 'diff', side: DiffSide) => void;
+  onOpen: (path: string, mode: 'file' | 'diff' | 'resolver', side: DiffSide) => void;
   onCompare: (range: string) => void;
 };
 
@@ -346,10 +346,12 @@ export function Changes({ agentId, rootPath, status, selected, result, onResult,
                     { label: 'Keep the file', run: () => resolveRow(it, 'keep') },
                     { label: 'Delete it', run: () => resolveRow(it, 'delete') },
                     { label: 'Open', disabled: !it.inside, run: () => onOpen(it.rel, 'file', side) },
+                    { label: 'Open in resolver', disabled: !it.inside, run: () => onOpen(it.rel, 'resolver', side) },
                   ] : [
                     { label: 'Take yours', run: () => resolveRow(it, 'yours') },
                     { label: 'Take incoming', run: () => resolveRow(it, 'incoming') },
                     { label: 'Open', disabled: !it.inside, run: () => onOpen(it.rel, 'file', side) },
+                    { label: 'Open in resolver', disabled: !it.inside, run: () => onOpen(it.rel, 'resolver', side) },
                   ]} />
                 ) : it.group === 'staged' ? (
                   <button className="icon-button small" title="Unstage (Space)" aria-label="Unstage" disabled={busy.has(rowKey)} onClick={() => unstage([it.entry.path], rowKey)}>

@@ -1,6 +1,6 @@
 # Git: changes, commits, sync, branches, log and conflicts
 
-**Status:** steps 1 to 5 (backend reads and writes, the Changes view, the diff viewer, remote and sync) done; the rest planned. Builds on the Files panel (`docs/files-plan.md`), which already shows git status and a unified diff against `HEAD`.
+**Status:** steps 1 to 9 done; step 10 planned. Builds on the Files panel (`docs/files-plan.md`), which already shows git status and a unified diff against `HEAD`.
 
 The goal: the git work you do around an agent's changes, without leaving the manager. You read the diff, stage what you want, type a message, then commit and push. You sync with the remote, switch or create a branch, and merge `master` in with your open changes put aside and restored on their own. When that conflicts, you resolve it in the same panel. Rider and VS Code are the model (research summary in §11); where they differ, this plan picks what fits a manager of agents.
 
@@ -130,12 +130,14 @@ The third segment of the panel.
 - The three versions come from the index stages (`:1:`, `:2:`, `:3:`), not from parsing the markers, so `conflictStyle` doesn't matter. The non-conflicting parts are already merged by git.
 - **Ask the agent** in the banner and the group header fills the pane's composer (it doesn't send) with a short message: the operation, the branches and the conflicted files. You edit it and send it yourself, or don't.
 
-**8b. Three-pane resolver** (later step):
+**8b. Three-pane resolver** (done):
 - Yours on the left, the result in the middle, incoming on the right, scrolling together.
 - Every change from either side is shown, the non-conflicting ones already applied (with **Ignore** to undo one).
 - A conflict gets `»` / `«` buttons in the gutter to take a side into the result, both in either order.
 - The result is editable per block, as in 8a. A **Base** toggle adds the common ancestor.
 - It needs room, so it takes the whole pane (Esc returns to the panel). Below 900 px of pane width it opens as 8a instead.
+
+As built: **Open in resolver** is in the Conflicts row menu and the inline conflict viewer. The three columns share one vertical scroll area, so long files stay aligned. The Base toggle shows the ancestor *inside each changed result block* as an overlay. Non-conflicting changes start in the result and have Ignore/Restore; every changed block has Edit. The bar counts remaining conflicts and moves between them with buttons or `Alt+↓` / `Alt+↑`. Revert resets choices and edits to the original conflicted state before Apply. Apply writes and stages through `git/resolve`, then opens the next conflicted file or returns to the list. Binary and delete/modify conflicts use the inline view. The resolver checks its reconstructed untouched text against Git's merged text before writing; an ambiguous alignment directs the user to the inline view.
 
 ## 9. Errors and feedback
 
@@ -272,5 +274,5 @@ Each step is shippable on its own and gets its own commit. Test against a test m
 6. **Branches (done):** the popover, create, switch with stash, Update from `master`, merge and rebase with autostash, compare, delete; the operation banner with Abort and Continue.
 7. **Log (done):** the segment, rows with refs and ↑↓ marks, the graph, commit details and diffs, row actions.
 8. **Conflicts, inline (8a; done):** the group, takes per file, simple ones, conflict blocks in the viewer, Mark resolved, Ask the agent.
-9. **Three-pane resolver (8b).**
+9. **Three-pane resolver (8b; done).**
 10. **Docs:** `ui-design.md` §6a (Files and git), `CLAUDE.md` layout and status, `README.md` if usage changes.

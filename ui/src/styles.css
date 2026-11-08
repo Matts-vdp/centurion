@@ -5266,6 +5266,8 @@ body.resizing .pane {
   box-shadow: none;
 }
 
+.files-panel.resolving { max-width: none; min-width: 0; box-shadow: none; z-index: 6; }
+
 .files-divider {
   position: absolute;
   top: 0;
@@ -5573,6 +5575,35 @@ body.resizing .pane {
 .conflict-edit textarea { display: block; box-sizing: border-box; width: 100%; resize: vertical; border: 1px solid var(--line); border-radius: 4px; padding: 8px; background: var(--fill); color: var(--text); }
 .conflict-whole { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .conflict-whole p { flex-basis: 100%; }
+
+/* One vertical scroll container keeps all three resolver columns aligned, even for long files. */
+.resolver-bar { gap: 7px; padding-left: 12px; }
+.resolver-bar button:not(.button), .resolver-actions button, .resolver-edit button { border: 0; background: transparent; color: var(--accent-text); cursor: pointer; padding: 3px 5px; font: inherit; }
+.resolver-bar button:disabled { opacity: .45; cursor: default; }
+.resolver-count { color: var(--waiting); font-size: 12px; }
+.resolver-spacer { flex: 1; }
+.resolver-heads, .resolver-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.resolver-heads { flex: none; border-bottom: 1px solid var(--line); background: var(--sunken); }
+.resolver-heads span { min-width: 0; padding: 9px 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--text-2); }
+.resolver-heads span:nth-child(2) { color: var(--text); font-weight: 600; }
+.resolver-heads span + span, .resolver-cell + .resolver-cell { border-left: 1px solid var(--line); }
+.resolver-scroll { flex: 1; min-height: 0; overflow: auto; scrollbar-width: thin; }
+.resolver-row { border-bottom: 1px solid var(--line); scroll-margin-top: 20px; }
+.resolver-row.active { outline: 1px solid var(--accent-line); outline-offset: -1px; }
+.resolver-cell { min-width: 0; position: relative; padding: 7px 20px 7px 12px; }
+.resolver-cell.changed { background: var(--diff-add); }
+.resolver-cell.result.unresolved { background: var(--diff-del); }
+.resolver-code { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; font: 12px/1.5 var(--mono); color: var(--text); }
+.resolver-region-title { color: var(--waiting); font-size: 11px; margin-bottom: 6px; }
+.resolver-arrow { position: absolute; right: 1px; top: 8px; border: 0; background: var(--raised); color: var(--accent-text); cursor: pointer; font: 17px var(--mono); }
+.resolver-arrow.left { left: 1px; right: auto; }
+.resolver-cell:has(.resolver-arrow.left) { padding-left: 20px; }
+.resolver-actions { display: flex; flex-wrap: wrap; gap: 5px; font-size: 11px; margin-top: 5px; }
+.resolver-base { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 5px; background: var(--diff-del); }
+.resolver-base > span { display: block; color: var(--text-2); font-size: 11px; }
+.resolver-word.add { background: var(--diff-add-word); }
+.resolver-word.del { background: var(--diff-del-word); }
+.resolver-edit textarea { box-sizing: border-box; display: block; width: 100%; resize: vertical; border: 1px solid var(--line); border-radius: 4px; background: var(--fill); color: var(--text); padding: 6px; font: 12px/1.5 var(--mono); }
 @media (max-width: 420px) { .branch-popover { right: 12px; width: auto; } }
 
 .git-ab {
@@ -5752,7 +5783,8 @@ body.resizing .pane {
 }
 
 .change-row:hover .change-actions,
-.change-row:focus-within .change-actions {
+.change-row:focus-within .change-actions,
+.change-actions:has([aria-expanded='true']) {
   opacity: 1;
   pointer-events: auto;
 }

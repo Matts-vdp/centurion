@@ -31,6 +31,7 @@ import { BackIcon, CheckIcon, Chevron, ChevronDownIcon, ChevronUpIcon, CloseIcon
 import { changeCount, Changes, ResultView, useDismiss, type ResultLine } from './Changes';
 import { DiffView, useHunkNav, type DiffActions } from './DiffView';
 import { ConflictViewer } from './ConflictViewer';
+import { ThreePaneResolver } from './ThreePaneResolver';
 import { parseDiff } from './diffModel';
 import { store } from './store';
 import { highlight, languageOf } from './highlight';
@@ -38,7 +39,7 @@ import { Markdown } from './Transcript';
 import { Log, LogViewer } from './Log';
 
 /** `line`: scroll to that line and mark it (a link from a visual). `side`: which diff (HEAD ↔ working tree when unset). */
-type View = { root: number; path: string; mode: 'file' | 'diff'; line?: number; side?: DiffSide };
+type View = { root: number; path: string; mode: 'file' | 'diff' | 'resolver'; line?: number; side?: DiffSide };
 type Dir = { entries: Entry[]; truncated: boolean } | { error: string };
 /** Where a file of the agent's folder stands in git's groups; `repoPath` is its path in the repository. */
 type Parts = { repoPath: string; staged: boolean; unstaged: boolean; conflict: boolean; untracked: boolean };
@@ -82,6 +83,7 @@ export function FilesPanel({ agent, pane, request, onRequestDone }: Props) {
   const state = usePanel(pane);
   const ref = useRef<HTMLElement>(null);
   const [compact, setCompact] = useState(false);
+  const [paneWidth, setPaneWidth] = useState(0);
   const [roots, setRoots] = useState<Root[] | null>(null);
   const [rootsError, setRootsError] = useState('');
   const [tab, setTab] = useState<'files' | 'changes' | 'log'>('files');
@@ -114,9 +116,10 @@ export function FilesPanel({ agent, pane, request, onRequestDone }: Props) {
   useLayoutEffect(() => {
     const host = ref.current?.parentElement;
     if (!host) return;
-    const observer = new ResizeObserver(() => setCompact(host.clientWidth < COMPACT_BELOW));
+    const observer = new ResizeObserver(() => { setCompact(host.clientWidth < COMPACT_BELOW); setPaneWidth(host.clientWidth); });
     observer.observe(host);
     setCompact(host.clientWidth < COMPACT_BELOW);
+    setPaneWidth(host.clientWidth);
     return () => observer.disconnect();
   }, []);
 
@@ -255,18 +258,20 @@ export function FilesPanel({ agent, pane, request, onRequestDone }: Props) {
   const statusRef = useRef(status);
   statusRef.current = status;
   const openFile = useCallback(
-    (root: number, path: string, mode: 'file' | 'diff' = 'file', line?: number, side?: DiffSide) => {
+    (root: number, path: string, mode: 'file' | 'diff' | 'resolver' = 'file', line?: number, side?: DiffSide) => {
       setMissing('');
       setLogHash(null);
       // A partly staged file has no single diff against HEAD here: its unstaged half opens.
       const parts = root === 0 ? partsOf(statusRef.current, path) : null;
       const shown = parts?.staged && parts.unstaged && (!side || side === 'head') ? 'worktree' : side;
       appliedSide.current = null;
-      setView({ root, path, mode, line, ...(shown && shown !== 'head' ? { side: shown } : {}) });
+      setView({ root, path, mode: mode === 'resolver' && paneWidth < 900 ? 'file' : mode, line, ...(shown && shown !== 'head' ? { side: shown } : {}) });
       reveal(root, path);
     },
-    [reveal],
+    [reveal, paneWidth],
   );
+
+  useEffect(() => { if (paneWidth < 900 && view?.mode === 'resolver') setView({ ...view, mode: 'file' }); }, [paneWidth, view]);
 
   // Staging from the diff can make a file partly staged, or whole again: the viewer follows.
   useEffect(() => {
@@ -303,6 +308,7 @@ export function FilesPanel({ agent, pane, request, onRequestDone }: Props) {
     } else if (e.key === 'Escape') {
       if (filter) setFilter('');
       else if (logHash) setLogHash(null);
+      else if (view?.mode === 'resolver') setView(null);
       else if (view) setView(null);
       else return;
       e.preventDefault();
@@ -322,20 +328,21 @@ export function FilesPanel({ agent, pane, request, onRequestDone }: Props) {
   }, [filter, allFiles, roots, agent.id]);
 
   const viewing = view !== null || logHash !== null || missing !== '';
-  const width = viewing ? (state.viewWidth !== null ? `${state.viewWidth}px` : '60%') : `${state.width}px`;
+  const resolving = view?.mode === 'resolver' && paneWidth >= 900;
+  const width = resolving ? '100%' : viewing ? (state.viewWidth !== null ? `${state.viewWidth}px` : '60%') : `${state.width}px`;
   const running = agent.status === 'running';
   const showTree = !(compact && viewing);
 
   return (
     <aside
       ref={ref}
-      className={`files-panel${compact ? ' compact' : ''}${viewing ? ' viewing' : ''}`}
+      className={`files-panel${compact ? ' compact' : ''}${viewing ? ' viewing' : ''}${resolving ? ' resolving' : ''}`}
       style={compact ? undefined : { width }}
       aria-label={`Files of ${agent.name}`}
       onKeyDown={onKeyDown}
     >
-      {!compact && <PanelDivider pane={pane} viewing={viewing} />}
-      {showTree && (
+      {!compact && !resolving && <PanelDivider pane={pane} viewing={viewing} />}
+      {showTree && !resolving && (
         <div className="files-side">
           <div className="files-top">
             {roots?.[0]?.git ? (
@@ -431,10 +438,24 @@ export function FilesPanel({ agent, pane, request, onRequestDone }: Props) {
           ) : (
             view &&
             roots && (
-              view.root === 0 && partsOf(status, view.path)?.conflict ? <ConflictViewer
+              view.root === 0 && partsOf(status, view.path)?.conflict && resolving ? <ThreePaneResolver
                 key={view.path}
                 agentId={agent.id} path={view.path} version={version}
                 onClose={() => setView(null)}
+                onInline={() => setView((current) => current?.mode === 'resolver' ? { ...current, mode: 'file' } : current)}
+                onApplied={(next) => {
+                  setStatus(next); scheduleRefresh();
+                  const nextPath = next?.conflicts.find((entry) => entry.path !== `${next.prefix}${view.path}`)?.path;
+                  if (nextPath) setView({ root: 0, path: nextPath.slice(next.prefix.length), mode: 'resolver' });
+                  else setView(null);
+                }}
+                onError={(text) => setGitResult({ error: true, text, details: '', commands: [] })}
+              /> : view.root === 0 && partsOf(status, view.path)?.conflict ? <ConflictViewer
+                key={view.path}
+                agentId={agent.id} path={view.path} version={version}
+                onClose={() => setView(null)}
+                onResolver={() => openFile(0, view.path, 'resolver')}
+                resolverAvailable={paneWidth >= 900}
                 onWritten={(next) => { setStatus(next); scheduleRefresh(); }}
                 onError={(text) => setGitResult({ error: true, text, details: '', commands: [] })}
               /> : <Viewer

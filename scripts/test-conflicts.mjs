@@ -4,6 +4,7 @@ import { spawn, execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import { resolverRegions } from '../ui/src/resolverModel.ts';
 
 const project = path.resolve(import.meta.dirname, '..');
 const scratch = mkdtempSync(path.join(project, '.conflict-test-'));
@@ -25,7 +26,7 @@ const repo = (name, base = 'base\n') => {
   return { work, bare };
 };
 const names = ['merge', 'rebase', 'stash', 'delete', 'binary', 'multi', 'simple'];
-const repos = Object.fromEntries(names.map((n) => [n, repo(n, n === 'multi' ? Array.from({ length: 28 }, (_, i) => `line ${i}\n`).join('') : 'base\n')]));
+const repos = Object.fromEntries(names.map((n) => [n, repo(n, n === 'multi' ? Array.from({ length: 2000 }, (_, i) => `line ${i}\n`).join('') : 'base\n')]));
 const config = path.join(scratch, 'config.json');
 writeFileSync(config, JSON.stringify({ port, token, stateFile: path.join(scratch, 'state', 'state.json'), orchestratorFolder: repos.merge.work, removeEnv: Object.keys(process.env).filter((k) => /^CLAUDE|^ANTHROPIC_/i.test(k)) }));
 const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^CLAUDE|^ANTHROPIC_/i.test(k)));
@@ -86,13 +87,23 @@ try {
   await request(`/api/agents/${ids.binary}/git/resolve`, { path: 'a.bin', take: 'incoming' }); assert.deepEqual([...readFileSync(path.join(w, 'a.bin'))], [0, 5, 6]);
 
   // Two independent blocks; unchanged text is retained around replacements.
-  w = repos.multi.work; const lines = (name) => Array.from({ length: 28 }, (_, i) => i === 2 || i === 23 ? `${name} ${i}\n` : i === 13 && name === 'main' ? 'main nonconflicting\n' : `line ${i}\n`).join('');
+  w = repos.multi.work; const lines = (name) => Array.from({ length: 2000 }, (_, i) => i === 2 || i === 1900 ? `${name} ${i}\n` : i === 800 && name === 'main' ? 'main nonconflicting\n' : i === 1000 && name === 'feature' ? 'feature nonconflicting\n' : `line ${i}\n`).join('');
   git(w, 'config', 'merge.conflictStyle', 'zdiff3');
   git(w, 'switch', '-c', 'feature'); put(w, 'a.txt', lines('feature')); commit(w, 'feature');
   git(w, 'switch', 'main'); put(w, 'a.txt', lines('main')); commit(w, 'main'); git(w, 'switch', 'feature'); attempt(w, 'merge', 'main');
   d = await conflict('multi'); assert.equal(d.blocks.length, 2);
+  const regions = resolverRegions(d);
+  assert.equal(regions.filter((r) => r.conflict).length, 2);
+  assert.equal(regions.filter((r) => r.changed && !r.conflict).length, 2);
+  let unmarked = d.merged; for (let i = d.blocks.length - 1; i >= 0; i--) unmarked = unmarked.slice(0, d.blocks[i].start) + unmarked.slice(d.blocks[i].end);
+  assert.equal(regions.map((r) => r.conflict ? '' : r.initial).join(''), unmarked);
+  if (process.env.RESOLVER_BROWSER_UI === '1') {
+    console.log(`Resolver browser fixture: http://127.0.0.1:${port}/?token=${token}`);
+    console.log(`Scratch folder: ${scratch}`);
+    await new Promise((resolve) => process.once('SIGINT', resolve));
+  }
   let result = d.merged; for (let i = d.blocks.length - 1; i >= 0; i--) result = result.slice(0, d.blocks[i].start) + d.blocks[i].yours + result.slice(d.blocks[i].end);
-  await resolve('multi', { content: result, hash: d.hash }); assert.equal(readFileSync(path.join(w, 'a.txt'), 'utf8'), lines('feature').replace('line 13\n', 'main nonconflicting\n'));
+  await resolve('multi', { content: result, hash: d.hash }); assert.equal(readFileSync(path.join(w, 'a.txt'), 'utf8'), lines('feature').replace('line 800\n', 'main nonconflicting\n'));
 
   // Whitespace-only conflict qualifies for the group action.
   w = repos.simple.work; git(w, 'switch', '-c', 'feature'); put(w, 'a.txt', 'same word\n'); commit(w, 'feature');
