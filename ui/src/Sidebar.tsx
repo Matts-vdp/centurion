@@ -6,7 +6,7 @@ import { ArchiveIcon, Chevron, PlusIcon, SearchIcon } from './icons';
 import { DRAG_TYPE } from './layout';
 import { AgentMark } from './Mark';
 import { agentState, archiveBlocker, clock, folderName, money, needsYou, rollup, scheduleNeedsYou, type AgentState } from './status';
-import { lastSeen, newExpertFor, openNewExpert, recentChatFolders, recentFolders, store, treeState, useManager } from './store';
+import { lastSeen, newExpertFor, openNewExpert, recentChatFolders, recentFolders, renamingAgent, store, treeState, useManager } from './store';
 import { continueList, indentList } from './listInput';
 
 type Props = {
@@ -29,17 +29,12 @@ export function Sidebar({ agents, selected, open: openIds, onSelect, onOpenInSpl
   const seen = lastSeen.use();
   const tree = treeState.use();
   const [creating, setCreating] = useState(false);
-  const [newMenu, setNewMenu] = useState(false);
-  const newMenuRef = useRef<HTMLDivElement>(null);
   const [menu, setMenu] = useState<RowMenu | null>(null);
   const [error, setError] = useState('');
   const expertFor = newExpertFor.use();
   const list = [...agents.values()].sort(byCreated);
   const anyRunning = list.some((a) => a.status === 'running');
   const now = useNow(true, anyRunning ? 1000 : 30_000);
-  useEffect(() => { if (!newMenu) return; const close = (e: MouseEvent | globalThis.KeyboardEvent) => {
-    if (e instanceof globalThis.KeyboardEvent ? e.key === 'Escape' : !newMenuRef.current?.contains(e.target as Node)) setNewMenu(false);
-  }; window.addEventListener('mousedown', close); window.addEventListener('keydown', close); return () => { window.removeEventListener('mousedown', close); window.removeEventListener('keydown', close); }; }, [newMenu]);
 
   // Opening an agent (from a link, the breadcrumb or archiving it) reveals it in the tree once.
   const open = selected ? agents.get(selected) : undefined;
@@ -153,7 +148,9 @@ export function Sidebar({ agents, selected, open: openIds, onSelect, onOpenInSpl
         <LogoIcon />
         <span className="app-name">Centurion</span>
         <AlertsMenu />
-        <div className="menu-anchor" ref={newMenuRef}><button className="icon-button" title="New" aria-label="New" aria-expanded={newMenu} onClick={() => setNewMenu(!newMenu)}><PlusIcon size={16} /></button>{newMenu && <div className="menu" role="menu"><button role="menuitem" onClick={() => { setNewMenu(false); setCreating(true); }}>New chat</button><button role="menuitem" onClick={() => { setNewMenu(false); onSelect('schedule:new'); }}>New scheduled task</button></div>}</div>
+        <button className="icon-button" title="New chat" aria-label="New chat" onClick={() => setCreating(true)}>
+          <PlusIcon size={16} />
+        </button>
       </div>
       <button className="search-field" onClick={onSearch}>
         <SearchIcon size={15} />
@@ -269,6 +266,7 @@ export function Sidebar({ agents, selected, open: openIds, onSelect, onOpenInSpl
               <span className="menu-hint">Starts an expert under this chat without telling it</span>
             </button>
           )}
+          <button role="menuitem" onClick={() => { setMenu(null); onSelect(menuAgent.id); renamingAgent.set(menuAgent.id); }}>Rename</button>
           <button role="menuitem" onClick={() => { setMenu(null); onSelect(`schedule:new:${menuAgent.id}`); }}>Schedule a message…</button>
           <button
             role="menuitem"
@@ -600,19 +598,33 @@ function NewExpert({ chat, agents, onDone }: { chat: AgentRecord; agents: Map<st
   );
 }
 
+/** `Chat (n)`, one past the highest such name among chats, archived ones included. */
+function defaultChatName(agents: Map<string, AgentRecord>): string {
+  let max = 0;
+  for (const a of agents.values()) {
+    const m = !a.parentId ? /^Chat \((\d+)\)$/.exec(a.name) : null;
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return `Chat (${max + 1})`;
+}
+
 /**
- * A new chat: a name and the folder it runs in. The folder is a quiet line with the default folder; clicking it
+ * A new chat: a name (a default one, selected) and the folder it runs in. The folder is a quiet line with the default folder; clicking it
  * opens a path field with the recent folders. The first message goes in the chat's own composer.
  */
 function NewChat({ agents, onDone }: { agents: Map<string, AgentRecord>; onDone: (rec: AgentRecord | null) => void }) {
   const info = useServerInfo();
-  const [name, setName] = useState('');
+  const [name, setName] = useState(() => defaultChatName(agents));
   const [folder, setFolder] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
-  useEffect(() => nameRef.current?.focus(), []);
+  // Selected, so Enter takes the default name and typing replaces it.
+  useEffect(() => {
+    nameRef.current?.focus();
+    nameRef.current?.select();
+  }, []);
 
   const defaultFolder = info?.orchestratorFolder ?? '';
   const shown = folder ?? defaultFolder;
@@ -622,12 +634,12 @@ function NewChat({ agents, onDone }: { agents: Map<string, AgentRecord>; onDone:
 
   const submit = async (e?: FormEvent) => {
     e?.preventDefault();
-    if (!name.trim() || !shown.trim() || busy) return;
+    if (!shown.trim() || busy) return;
     setBusy(true);
     setError('');
     try {
       const cwd = shown.trim();
-      const rec = await commands.createChat(name.trim(), defaultFolder && same(cwd, defaultFolder) ? undefined : cwd);
+      const rec = await commands.createChat(name.trim() || defaultChatName(agents),defaultFolder && same(cwd, defaultFolder) ? undefined : cwd);
       store.upsert(rec);
       onDone(rec);
     } catch (err) {
