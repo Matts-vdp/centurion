@@ -159,8 +159,8 @@ export type AgentRecord = {
   scheduleId?: string;
   cwd: string;
   /**
-   * Experts only: the folder of the expert's task, inside its orchestrator's folder. When set, it is the only
-   * part of the orchestrator's folder the expert may read and write (file tools, outside its own folder);
+   * Experts only: the folder of the expert's task, inside its orchestrator's folder. When set, it is the extra
+   * working folder the expert gets instead of the whole orchestrator folder (nothing else is blocked);
    * absent = the whole orchestrator folder.
    */
   taskFolder?: string;

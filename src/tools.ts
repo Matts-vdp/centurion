@@ -67,9 +67,8 @@ export function managerTools(manager: Manager, orchestratorId: string) {
         .optional()
         .describe(
           'Absolute path of the folder of this task, anywhere inside your folder (it must exist: write the prompt file there first). ' +
-            'Then the expert can read and write only this folder besides its own (the file tools; Bash is not restricted), ' +
-            'not the rest of your folder or other tasks\' folders. Default: the task folder of the plan track, else your whole folder. ' +
-            'No effect if the expert\'s own folder is your folder (it can reach everything in it anyway).',
+            'The expert gets this folder as its working folder besides its own, instead of your whole folder; other paths are not blocked, ' +
+            'but outside these folders the user may be asked first. Default: the task folder of the plan track, else your whole folder.',
         ),
       message: z.string().optional().describe('First task for the expert'),
       notify: z.boolean().optional().describe('Wake you with a notification when it finishes this message. Default true.'),

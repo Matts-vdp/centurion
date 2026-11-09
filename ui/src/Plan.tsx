@@ -55,7 +55,7 @@ function targetLine(t: Track, orchestrator: AgentRecord, agents: Map<string, Age
   let runsOn: AgentRecord | undefined = orchestrator;
   if (t.target.kind === 'new_expert') {
     parts.push('New expert', folderName(t.target.folder ?? orchestrator.cwd));
-    if (t.target.taskFolder) parts.push(`only ${folderName(t.target.taskFolder)} of ${orchestrator.name}'s folder`);
+    if (t.target.taskFolder) parts.push(`task folder ${folderName(t.target.taskFolder)}`);
   } else if (t.target.kind === 'existing_expert') {
     const e = agents.get(t.target.expertId);
     parts.push(`${e?.name ?? t.target.expertId} (existing)`);

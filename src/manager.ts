@@ -500,7 +500,7 @@ export class Manager extends EventEmitter<ManagerEvents> {
     input: {
       name: string;
       cwd?: string;
-      /** Confine the expert to this folder inside the orchestrator's (default: the plan track's, else no confinement). */
+      /** The task's folder inside the orchestrator's, given to the expert instead of the whole folder (default: the plan track's). */
       taskFolder?: string;
       message?: string;
       notify?: boolean;
@@ -1413,17 +1413,11 @@ export class Manager extends EventEmitter<ManagerEvents> {
       options.mcpServers.centurion = createManagerTools(this, rec.id);
       options.allowedTools.push('mcp__centurion');
     } else if (rec.parentId) {
-      // Experts read prompt files from and write findings to the orchestrator's folder, or only to their task's
-      // folder when they have one. blockReads/WritesOutsideWorkingDirectories make the file tools refuse every
-      // other path (in any permission mode); Bash is not restricted.
+      // Experts read prompt files from and write findings to the orchestrator's folder, or their task's folder
+      // when they have one. Other paths aren't blocked; the permission mode decides about them as usual.
       const parent = this.get(rec.parentId);
-      if (rec.taskFolder) {
-        options.additionalDirectories = [rec.taskFolder];
-        options.settings = {
-          ...(typeof options.settings === 'object' ? options.settings : {}),
-          permissions: { blockReadsOutsideWorkingDirectories: true, blockWritesOutsideWorkingDirectories: true },
-        };
-      } else if (parent.cwd !== rec.cwd) options.additionalDirectories = [parent.cwd];
+      if (rec.taskFolder) options.additionalDirectories = [rec.taskFolder];
+      else if (parent.cwd !== rec.cwd) options.additionalDirectories = [parent.cwd];
     }
     return options;
   }
