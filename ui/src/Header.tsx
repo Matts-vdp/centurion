@@ -8,7 +8,7 @@ import { CloseIcon, FolderIcon, MenuIcon, MoreIcon } from './icons';
 import { AgentMark, StateDot } from './Mark';
 import { ModelPicker } from './ModelPicker';
 import { agentState, archiveBlocker, folderName, money } from './status';
-import { lastSeen, openNewExpert, useManager } from './store';
+import { lastSeen, openNewExpert, renamingAgent, useManager } from './store';
 
 type Props = {
   agent: AgentRecord;
@@ -28,6 +28,7 @@ export function Header({ agent, parent, agents, run, onSelect, onClose, onOpenDr
   const { activity } = useManager();
   const seen = lastSeen.use();
   const [menu, setMenu] = useState(false);
+  const renaming = renamingAgent.use();
   const alertSettings = useAlertSettings();
   const alertPermission = useAlertPermission();
   const alerts = alertsOn(agent, alertSettings);
@@ -77,9 +78,13 @@ export function Header({ agent, parent, agents, run, onSelect, onClose, onOpenDr
               </span>
             </>
           )}
-          <span className="crumb current">
+          <span className="crumb current" title={renaming === agent.id ? undefined : 'Double-click to rename'}>
             <AgentMark agent={agent} size={24} />
-            <h1>{agent.name}</h1>
+            {renaming === agent.id ? (
+              <RenameField agent={agent} run={run} onDone={() => renamingAgent.set(null)} />
+            ) : (
+              <h1 onDoubleClick={() => renamingAgent.set(agent.id)}>{agent.name}</h1>
+            )}
           </span>
           {agent.archived && <span className="tag">archived</span>}
         </nav>
@@ -105,6 +110,7 @@ export function Header({ agent, parent, agents, run, onSelect, onClose, onOpenDr
             </button>
             {menu && (
               <div className="menu" role="menu">
+                <button role="menuitem" onClick={() => { setMenu(false); renamingAgent.set(agent.id); }}>Rename</button>
                 <button role="menuitem" onClick={() => { setMenu(false); onSelect(`schedule:new:${agent.id}`); }}>Schedule a message…</button>
                 {agent.kind === 'orchestrator' && !agent.archived && (
                   <button
@@ -215,6 +221,43 @@ export function Header({ agent, parent, agents, run, onSelect, onClose, onOpenDr
 }
 
 /** VS Code's own link handler opens a folder too; the browser asks once before handing the link over. */
+/** The title as a text field: Enter or leaving it saves, Escape cancels. An empty or unchanged name saves nothing. */
+function RenameField({ agent, run, onDone }: { agent: AgentRecord; run: Props['run']; onDone: () => void }) {
+  const [name, setName] = useState(agent.name);
+  const ref = useRef<HTMLInputElement>(null);
+  const done = useRef(false);
+  useEffect(() => {
+    ref.current?.focus();
+    ref.current?.select();
+  }, []);
+  const finish = (save: boolean) => {
+    if (done.current) return;
+    done.current = true;
+    const trimmed = name.trim();
+    if (save && trimmed && trimmed !== agent.name) void run(() => commands.rename(agent.id, trimmed));
+    onDone();
+  };
+  return (
+    <input
+      ref={ref}
+      className="rename-field"
+      aria-label="Name"
+      value={name}
+      maxLength={100}
+      size={Math.max(8, name.length + 1)}
+      onChange={(e) => setName(e.target.value)}
+      onBlur={() => finish(true)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') finish(true);
+        else if (e.key === 'Escape') {
+          e.stopPropagation();
+          finish(false);
+        }
+      }}
+    />
+  );
+}
+
 function openInVsCode(folder: string): void {
   const p = folder.replace(/\\/g, '/');
   const a = document.createElement('a');

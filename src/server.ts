@@ -804,6 +804,15 @@ export const routes: Route[] = [
   },
   {
     method: 'POST',
+    path: '/api/agents/:id/name',
+    summary:
+      "Renames a chat or expert (trimmed, 1 to 100 characters). A running expert's system prompt keeps its old name until its process restarts",
+    body: '`{ name: string }`',
+    result: AGENT,
+    handler: ({ manager, params, body }) => manager.rename(params.id, str(body.name, 'name')),
+  },
+  {
+    method: 'POST',
     path: '/api/agents/:id/archive',
     summary:
       'Archives or unarchives an agent; refused while running. A chat takes its idle experts with it, and unarchiving brings those back. Archiving closes the process; a new message unarchives',

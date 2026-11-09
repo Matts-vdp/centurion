@@ -762,6 +762,22 @@ export class Manager extends EventEmitter<ManagerEvents> {
   }
 
   /**
+   * Renames an agent. Only the record changes: a running expert's system prompt keeps the name it started
+   * with until its process restarts, which keeps the prompt cache intact.
+   */
+  rename(id: string, name: string): AgentRecord {
+    const rec = this.get(id);
+    const trimmed = name.trim();
+    if (!trimmed) throw new Error('The name cannot be empty');
+    if (trimmed.length > 100) throw new Error('The name can be at most 100 characters');
+    if (rec.name !== trimmed) {
+      rec.name = trimmed;
+      this.changed(rec);
+    }
+    return rec;
+  }
+
+  /**
    * Archive or unarchive an agent. A chat takes its experts with it, and unarchiving the chat brings
    * back the ones that went with it. Archiving closes the processes; the next message resumes them.
    */

@@ -124,6 +124,8 @@ export const commands = {
   stop: (id: string) => api<AgentRecord>(`/api/agents/${id}/stop`, { method: 'POST' }),
   removeQueued: (id: string, messageId: string) =>
     api<AgentRecord>(`/api/agents/${id}/queue/${messageId}`, { method: 'DELETE' }),
+  rename: (id: string, name: string) =>
+    api<AgentRecord>(`/api/agents/${id}/name`, { method: 'POST', body: { name } }),
   setArchived: (id: string, archived: boolean) =>
     api<AgentRecord>(`/api/agents/${id}/archive`, { method: 'POST', body: { archived } }),
   setKeepWarm: (id: string, settings: { minutes: number; experts: boolean }) =>

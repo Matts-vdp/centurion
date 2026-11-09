@@ -296,6 +296,9 @@ export const transcriptPin = new Signal<{ agentId: string; at: number; promptUui
 /** The chat whose New expert form is open in the sidebar (the header menu opens it too). */
 export const newExpertFor = new Signal<string | null>(null);
 
+/** The agent whose title is being renamed in its header (the sidebar's Rename opens it there). */
+export const renamingAgent = new Signal<string | null>(null);
+
 /** Folders for a new chat: chats' folders first, then experts', newest first, without repeats. */
 export function recentChatFolders(agents: Map<string, AgentRecord>): string[] {
   return recentFolders(agents, ['orchestrator', 'expert']);
